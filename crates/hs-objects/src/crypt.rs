@@ -2,10 +2,10 @@
 
 //! Encrypt replica objects.
 //!
-//! Every object that leaves your nodes is
-//! encrypted with AES-256-GCM under a key derived from the storage key and
-//! the object's name, and stored under a keyed hash of its name, so the
-//! holder sees neither the contents nor which objects are the same.
+//! Every object that leaves a person's nodes is encrypted with AES-256-GCM
+//! under a key derived from the storage key and the object's name, and stored
+//! under a keyed hash of its name, so the holder sees neither the contents nor
+//! which objects are the same.
 
 use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 

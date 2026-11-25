@@ -1,6 +1,6 @@
 ---
 title: homeserver
-description: Your digital life, on a server you own.
+description: A personal server you own, for the data you keep and share.
 ---
 
-**Status: design phase.** There is no code to run yet.
+**Status: experimental.** Version 0.1.0 is an MVP; data formats may still change.

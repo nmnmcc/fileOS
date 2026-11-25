@@ -106,7 +106,7 @@ pub enum SpaceCommand {
         space: String,
         node: String,
     },
-    /// Pull changes from the node that keeps the space, now
+    /// Pull changes now from the node that keeps the space
     Sync {
         #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
         space: String,
@@ -281,7 +281,7 @@ pub async fn space(g: &Global, cmd: SpaceCommand) -> Res {
     }
 }
 
-/// Say it worked, or print the reply with `--json`.
+/// Print `what`, or the reply with `--json`.
 fn done(g: &Global, reply: &impl serde::Serialize, what: &str) {
     if g.json {
         print_json(reply);
@@ -340,7 +340,7 @@ pub enum TokenCommand {
         /// Limit the token to these resource types [default: all]
         #[arg(long = "type", value_name = "TYPE")]
         types: Vec<String>,
-        /// Make it stop working after this long: 90m, 12h, 30d, 4w
+        /// Expire after this long: 90m, 12h, 30d, 4w
         #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
         expires_in: Option<u64>,
     },
@@ -778,7 +778,7 @@ pub async fn put(g: &Global, a: PutArgs) -> Res {
     let media_type = match a.media_type.as_deref() {
         Some(t) => t,
         None => guess_media_type(a.file.as_deref(), &bytes)
-            .ok_or("what kind of content is it? Say with --media-type")?,
+            .ok_or("unknown media type; give --media-type")?,
     };
     let mut headers = Vec::new();
     if a.new {
@@ -1073,7 +1073,7 @@ pub async fn search(g: &Global, a: SearchArgs) -> Res {
 
 #[derive(Args)]
 pub struct TimelineArgs {
-    /// Only what is from before this day (YYYY-MM-DD, UTC)
+    /// Only items before this day (YYYY-MM-DD, UTC)
     #[arg(long, value_name = "DATE", value_parser = parse_date)]
     before: Option<u64>,
     #[arg(long, default_value_t = 50)]

@@ -46,7 +46,7 @@ def main(
     # Everything in the Nix store is read-only; make the copies ours.
     for path in [target, *target.rglob("*")]:
         path.chmod(0o755 if path.is_dir() or path == hs else 0o644)
-    # Started under this name, hs is `hs ctl`.
+    # Run as `hsctl`, hs behaves as `hs ctl`.
     hsctl = target / "hsctl"
     hsctl.symlink_to("hs")
 

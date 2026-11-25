@@ -194,9 +194,10 @@ fn from_mapped(ip: Ipv6Addr) -> IpAddr {
 
 /// Encode a PCP MAP request for TCP.
 ///
-/// The 24-byte common header precedes the 36-byte MAP opcode body. `client` is our own address as the gateway
-/// sees it. Without a suggested external address we send the all-zeros
-/// address of the client's family. Lifetime 0 deletes the mapping.
+/// The 24-byte common header precedes the 36-byte MAP opcode body.
+/// `client` is our own address as the gateway sees it. Without a suggested
+/// external address we send the all-zeros address of the client's family.
+/// Lifetime 0 deletes the mapping.
 pub fn pcp_map_request(
     client: IpAddr,
     nonce: &[u8; 12],

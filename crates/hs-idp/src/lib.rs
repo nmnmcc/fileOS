@@ -36,9 +36,6 @@ pub(crate) fn err<T>(msg: impl Into<String>) -> Result<T> {
 
 /// Fill an array with bytes from the system random number generator.
 ///
-/// Panics only if the operating system cannot provide randomness, which
-/// leaves nothing safe to do.
-///
 /// # Panics
 ///
 /// Panics if the operating system cannot supply random bytes.

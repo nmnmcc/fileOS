@@ -11,7 +11,8 @@ on:
   pull_request:
 
 jobs:
-  # fmt, clippy, tests and cargo-deny: the `check` script in devenv.nix.
+  # Formatting, lints, tests, docs, the wasm build, dependency policy and Python
+  # types: scripts/check.py.
   check:
     runs-on: ubuntu-latest
     steps:
@@ -19,7 +20,7 @@ jobs:
       - uses: ./.github/actions/devenv
       - run: devenv shell -- check
 
-  # Compile time is a feature: a PR that blows the budget fails like a failing test.
+  # Fails if a build exceeds its compile-time budget (scripts/budget.py).
   build-budget:
     runs-on: ubuntu-latest
     steps:
@@ -32,7 +33,7 @@ jobs:
           name: cargo-timings
           path: target/cargo-timings/cargo-timing.html
 
-  # Release artifacts, built in the Nix sandbox exactly as `devenv build` does locally.
+  # Release artifacts, built in the Nix sandbox as `devenv build` does locally.
   build:
     runs-on: ubuntu-latest
     steps:

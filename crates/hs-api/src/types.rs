@@ -401,10 +401,10 @@ pub struct NewToken {
     pub id: String,
 }
 
-/// How the node is.
+/// The node's health.
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Health {
-    /// Whether all is well.
+    /// Whether every check passed.
     pub ok: bool,
     /// Whether the index answers.
     pub index: bool,
@@ -412,7 +412,7 @@ pub struct Health {
     pub counts: BTreeMap<String, u64>,
     /// How many spaces it keeps.
     pub spaces: u64,
-    /// The node's clock.
+    /// The node's current time.
     pub time: u64,
 }
 

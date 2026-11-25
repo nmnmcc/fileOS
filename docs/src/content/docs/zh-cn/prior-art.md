@@ -3,18 +3,18 @@ title: 值得学习的项目
 description: 在自己动手之前要研究的已有项目，以及从每个项目中学什么。
 ---
 
-homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更符合我们自己的目标。
-前提是广泛地学习前人的成果：软件、协议、论文、文章，以及那些尝试过却失败了的项目的历史。
-本页按领域列出这些项目，写明每个项目值得学习的地方；必要时也写明我们选择了哪些不同的做法。
+homeserver 自己编写核心，使它保持轻量、易于扩展，并符合我们的目标。
+为此需要研究已有的工作：软件、协议、论文、文章，以及未能成功的项目。
+本页按领域列出这些项目，写明各自值得学习之处；必要时也写明我们的不同做法。
 
 **学习，而不是照搬。** 我们读代码和论文是为了理解思路。复制任何代码之前，
-先确认它的许可证与 AGPL-3.0-only 兼容。GPL-2.0-only 的代码一律不能复制。
+先确认它的许可证与 AGPL-3.0-only 兼容。GPL-2.0-only 的代码不得复制。
 
 新增条目时，写上链接、值得学什么，以及我们的不同之处。
 
 ## 同一愿景的前人尝试
 
-已经有人试过让每个人拥有自己的服务器。要弄清楚它们为什么没能走进普通人的生活。
+已经有人尝试让每个人拥有自己的服务器。需要弄清它们为什么都没能普及到普通人。
 
 - **[FreedomBox](https://freedombox.org/)**：基于 Debian 的个人服务器，
   源自 Eben Moglen 的演讲 "Freedom in the Cloud"。它说明了在家里运行服务器难在哪里。
@@ -24,22 +24,22 @@ homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更
   学习它的设计，也学习它为什么难以持续。
 - **[Cozy Cloud](https://github.com/cozy)**：所有应用共享同一个数据存储的个人云。
 - **[Urbit](https://urbit.org/)**：拥有自己身份体系和网络的个人服务器。
-  学习它的雄心，也看清它的复杂。_我们的不同：_ 不搞稀缺身份，也不发代币。
+  学习它的设计范围，以及随之而来的复杂度。_我们的不同：_ 没有稀缺身份，也没有代币。
 - **[Upspin](https://upspin.io/)**：Google Go 团队设计的个人文件全局命名空间。
 - **[Mail-in-a-Box](https://mailinabox.email/)**：不需要专业知识就能搭起来的自托管邮件服务器。
 - **Helm**：以硬件形式销售的个人邮件服务器，2022 年停止服务。
-  说明了依赖硬件的商业模式有多脆弱。
-- **Synology DSM** 和 **Apple iCloud**：虽然是闭源的，但它们定下了普通人期待的易用性标准。
+  说明了依赖硬件的商业模式存在的风险。
+- **Synology DSM** 和 **Apple iCloud**：闭源，但它们决定了普通人对易用性的预期。
 
 ## 思想与著作
 
 - **[本地优先软件](https://www.inkandswitch.com/local-first/)**（Ink & Switch）：
-  把我们认同的理念写得很清楚。
+  清楚地阐述了我们认同的理念。
 - **[Freedom in the Cloud](https://www.softwarefreedom.org/events/2010/isoc-ny/)**
   （Eben Moglen，2010）：为个人服务器提出的论证。
 - **《Tools for Conviviality》**（Ivan Illich）：工具应当服务于人，而不是让人依赖它。
 - **《Governing the Commons》**（Elinor Ostrom，中译《公共事物的治理之道》）：
-  社区如何在没有中央权威、也没有市场的情况下管理共享资源。理解互助必读。
+  社区如何在没有中央权威、也没有市场的情况下管理共享资源。是互助机制的理论背景。
 - **[Calm technology](https://calmtech.com/)**：平时退居幕后、需要时才出现的技术。
 - **《A Pattern Language》**（Christopher Alexander，中译《建筑模式语言》）：
   把设计变成人人都能使用的共同词汇。
@@ -64,7 +64,7 @@ homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更
 
 - **[Tailscale](https://github.com/tailscale/tailscale)**：DERP 中继、`magicsock`，
   以及 [How NAT traversal works](https://tailscale.com/blog/how-nat-traversal-works)
-  这篇文章，它是这个主题最好的入门材料。_我们的不同：_ 没有中心化的协调服务器。
+  这篇文章，是这个主题很好的入门材料。_我们的不同：_ 没有中心化的协调服务器。
 - **[quinn](https://github.com/quinn-rs/quinn)**：Rust 的 QUIC 实现。
   重点看它如何把协议状态机和 I/O 分开（`quinn-proto`）。
 - **[WireGuard](https://www.wireguard.com/papers/wireguard.pdf)**：
@@ -72,9 +72,9 @@ homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更
 - **[Noise Protocol Framework](https://noiseprotocol.org/noise.html)**：
   在密钥之间建立认证加密的握手模式。
 - **[libp2p](https://libp2p.io/)**：circuit relay v2、DCUtR 打洞，
-  以及高度通用的模块化设计带来的麻烦。_我们的不同：_ 更少的选项，更少的抽象。
+  以及高度通用的模块化设计带来的代价。_我们的不同：_ 更少的选项，更少的抽象。
 - **[Syncthing](https://syncthing.net/)**：社区维护的中继池、全局和本地发现、
-  由密钥派生的设备 ID。它在普通人日常使用的点对点软件上积累了多年经验。
+  由密钥派生的设备 ID。它是普通人日常使用的点对点软件，积累了多年经验。
 - **[Yggdrasil](https://yggdrasil-network.github.io/)** 和
   **[cjdns](https://github.com/cjdelisle/cjdns)**：地址由公钥派生的网状网络。
 - **[Reticulum](https://reticulum.network/)** 和
@@ -114,13 +114,13 @@ homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更
 - **[通行密钥](https://passkeys.dev/)**：不用密码登录，普通人已经在用。
 - **[Kanidm](https://kanidm.com/)**：用 Rust 编写的身份管理服务器，支持 OpenID Connect 和通行密钥。
 - **[Authelia](https://www.authelia.com/)** 和 **[Authentik](https://goauthentik.io/)**：
-  自托管用户今天不得不自己维护的认证网关。homeserver 内置身份提供方，就是为了替代它们。
+  自托管用户目前需要单独运行和维护的认证网关。homeserver 内置的身份提供方用来替代它们。
 - **[IndieAuth](https://indieauth.spec.indieweb.org/)**：用你自己的网址作为身份登录别的网站。
 
 ## 加密
 
 - **[Signal 协议](https://signal.org/docs/)**：双棘轮（double ratchet）、X3DH 和 sealed sender。
-  私密通讯的标杆。
+  私密通讯的参考。
 - **[OpenMLS](https://github.com/openmls/openmls)**：Rust 的 MLS 实现，
   用于家庭这样的加密群组。
 - **[age](https://age-encryption.org/)**：简单的文件加密，密钥短小、明确。
@@ -135,18 +135,18 @@ homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更
 "为什么只有联邦还不够"。
 
 - **[Matrix](https://spec.matrix.org/)**：跨服务器的房间状态解析。尽管是联邦的，
-  大多数用户仍在少数几个大服务器上。要研究原因：身份绑定在服务器域名上；
+  大多数用户仍在少数几个大服务器上。需要研究原因：身份绑定在服务器域名上；
   加入房间的每个服务器都要复制并解析整个房间的状态，所以小服务器加入大房间代价很高；
-  运行服务器本身也不轻松。它的点对点实验（Pinecone）也值得一读。
+  运行服务器本身也需要持续投入。它的点对点实验（Pinecone）也值得一读。
   注意 "homeserver" 也是 Matrix 的术语。
 - **[ActivityPub](https://www.w3.org/TR/activitypub/)** 和 Mastodon：
   使用最广的联邦协议，以服务器而不是以人为中心。身份绑定在实例上，迁移会丢掉过去的帖子；
-  小实例冷清，审核和反垃圾又全靠管理员，于是人们聚集到大实例上。
+  小实例活跃度低，审核和反垃圾的工作又落在管理员身上，于是人们聚集到大实例上。
 - **[AT Protocol](https://atproto.com/)**：个人数据服务器（PDS）、签名仓库（Merkle 搜索树）
   和在不同托管方之间迁移。PDS 可以自托管，但大多数人的数据仍在官方 PDS 上，
   中继和 AppView 也主要由一家公司运营。_我们的不同：_ 不需要全局的中继或索引服务。
 - **[Nostr](https://github.com/nostr-protocol/nips)**：密钥加上简单的中继，
-  看一个极简协议能走多远。身份不属于任何服务器，这一点和我们一致。
+  看一个极简协议能走多远。身份不属于任何服务器，这一点和 homeserver 一致。
 - **[Briar](https://briarproject.org/)** 及其
   [Mailbox](https://briarproject.org/download-briar-mailbox/)：替离线的联系人暂存消息，
   正是我们的"信箱"角色。
@@ -166,8 +166,8 @@ homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更
 
 ## 存储、数据库与搜索
 
-- **[SQLite](https://www.sqlite.org/)**：小巧、快速、可靠，文件格式为几十年的寿命而设计。
-  读一读[它是如何测试的](https://www.sqlite.org/testing.html)。
+- **[SQLite](https://www.sqlite.org/)**：小巧、快速、可靠的嵌入式数据库，带 FTS5 和 R*Tree，
+  文件格式承诺可读到 2050 年。我们的派生索引使用它。可参考[它的测试方法](https://www.sqlite.org/testing.html)。
 - **[redb](https://github.com/cberner/redb)** 和
   **[fjall](https://github.com/fjall-rs/fjall)**：纯 Rust 的嵌入式键值存储。
 - **[Tantivy](https://github.com/quickwit-oss/tantivy)** 和
@@ -183,10 +183,9 @@ homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更
 - **[BLAKE3](https://github.com/BLAKE3-team/BLAKE3)** 和
   **[Bao](https://github.com/oconnor663/bao)**：快速哈希，以及按内容寻址数据的可验证流式传输。
 - **[Litestream](https://litestream.io/)**：SQLite 的流式复制。
-- **[SQLite](https://sqlite.org/)**：嵌入式数据库，带 FTS5 和 R*Tree，文件格式承诺可读到 2050 年。
-  我们的派生索引使用它。
 - **[DuckDB](https://duckdb.org/)** 和 **[DuckLake](https://ducklake.select/)**：
-  嵌入式分析数据库，以及把表以 Parquet 文件存放在对象存储中、支持快照和时间旅行的格式。我们测量过它们，最终选择了 SQLite，见总体架构页面。
+  嵌入式分析数据库，以及把表以 Parquet 文件存放在对象存储中、支持快照和时间旅行的格式。
+  我们测量过它们，最终选择了 SQLite，见总体架构页面。
 - **[duckdb-tantivy](https://github.com/alitrack/duckdb-tantivy)**：用 Rust 编写，
   在 DuckDB 中以 SQL 函数提供 BM25 搜索和中文分词。
 - **[Turso](https://github.com/tursodatabase/turso)**：用 Rust 重写的 SQLite。
@@ -208,9 +207,9 @@ homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更
 ## 点对点分享与激励
 
 - **[BitTorrent](https://www.bittorrent.org/beps/bep_0003.html)**：以牙还牙（tit-for-tat），
-  节点优先回报愿意付出的节点。一条简单的本地规则产生了巨大的效果。
+  节点优先回报愿意付出的节点。一条简单的本地规则影响整个网络的行为。
 - **[IPFS](https://docs.ipfs.tech/)**：大规模的内容寻址，以及一个教训：
-  没有人主动固定（pin）的数据，就没有人保存。_我们的不同：_ 不搞代币经济（Filecoin）。
+  没有人主动固定（pin）的数据，就没有人保存。_我们的不同：_ 没有代币经济（Filecoin）。
 - **[Hyphanet](https://www.hyphanet.org/)**（原 Freenet）及其朋友对朋友模式：只连接你信任的人。
 
 ## 零运维自托管
@@ -219,12 +218,12 @@ homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更
   **[Cloudron](https://www.cloudron.io/)**：自托管应用商店，以及更新出问题时会发生什么。
 - **[Home Assistant](https://www.home-assistant.io/)**：庞大的集成生态，
   以及普通人也能接受的升级体验。智能家居本身是专业需求，通过插件接入。
-- **[Caddy](https://caddyserver.com/)**：开箱即用的 TLS 证书。
+- **[Caddy](https://caddyserver.com/)**：自动获取和续期 TLS 证书。
 - **[NixOS](https://nixos.org/)** 和 **[OSTree](https://ostreedev.github.io/ostree/)**：
   原子升级和回滚。
 - **[Android A/B 更新](https://source.android.com/docs/core/ota/ab)**、
   **[RAUC](https://rauc.io/)** 和 **[Mender](https://mender.io/)**：
-  更新无人看管的设备，而不把它们变成砖头。
+  更新无人看管的设备，且不会让设备无法启动。
 - **[PocketBase](https://pocketbase.io/)**：一个文件加 SQLite 就是完整的后端。
 
 ## 可靠性与测试
@@ -297,7 +296,7 @@ homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更
 - **[Obsidian](https://obsidian.md/)** 和 **[Logseq](https://logseq.com/)**：
   以你拥有的纯文本文件保存的笔记。
 - **[Datasette](https://datasette.io/)** 和
-  **[Dogsheep](https://dogsheep.github.io/)**：把散落在各个服务里的个人数据汇集到一处，随意探索。
+  **[Dogsheep](https://dogsheep.github.io/)**：把分散在各个服务中的个人数据汇集到一处，便于浏览和查询。
 - **[Conduit](https://conduit.rs/)**：用 Rust 编写的轻量 Matrix 服务器。
 
 ## 通过插件接入的专业软件
@@ -311,7 +310,7 @@ homeserver 的核心由我们自己编写：更轻量，更容易扩展，也更
 
 ## 社区与可持续性
 
-- **[Debian 社会契约](https://www.debian.org/social_contract)**：项目对用户的承诺，白纸黑字。
+- **[Debian 社会契约](https://www.debian.org/social_contract)**：以书面形式写下项目对用户的承诺。
 - **[Rust RFC](https://rust-lang.github.io/rfcs/)** 和
   **[Python PEP](https://peps.python.org/)**：公开地做决定。
 - **[NLnet](https://nlnet.nl/)**：资助开放互联网软件的公共基金。

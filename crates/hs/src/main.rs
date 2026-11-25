@@ -56,13 +56,12 @@ const LONG_VERSION: &str = concat!(
 
 type Res<T = ()> = Result<T, String>;
 
-/// homeserver: your own server for the things you keep and share.
+/// homeserver: a personal server for your data and what you share.
 ///
-/// The commands at the top work with a running node over its API, here or
-/// elsewhere, once signed in with `hs login URL`. `hs ctl` (or `hsctl`)
-/// looks after a node: sets it up, runs it, configures and backs it up, and
-/// hands out tokens. Commands that can do either use the data directory while the
-/// node is stopped, and its API while it runs.
+/// The top-level commands use a running node's API, local or remote, after
+/// `hs login URL`. `hs ctl` (or `hsctl`) manages a node: setup, running,
+/// configuration, backups and tokens. Commands that work either way use the
+/// data directory while the node is stopped and its API while it runs.
 #[derive(Parser)]
 #[command(name = "hs", version, long_version = LONG_VERSION, arg_required_else_help = true)]
 struct Cli {
@@ -73,10 +72,9 @@ struct Cli {
     command: Command,
 }
 
-/// hsctl: look after a homeserver node.
+/// hsctl: manage a homeserver node.
 ///
-/// The same as `hs ctl`: set a node up, run it, configure and back it up,
-/// and hand out tokens.
+/// The same as `hs ctl`: setup, running, configuration, backups and tokens.
 #[derive(Parser)]
 #[command(name = "hsctl", version, long_version = LONG_VERSION, arg_required_else_help = true)]
 struct CtlCli {
@@ -107,7 +105,7 @@ struct Options {
 enum Command {
     #[command(flatten)]
     Public(Public),
-    /// Commands for the program itself and its developers, not for people
+    /// Internal commands, not for direct use
     #[command(subcommand, hide = true)]
     Internal(Internal),
 }
@@ -119,13 +117,13 @@ enum Public {
     Login {
         /// Its address, such as hs.example.org [default: 127.0.0.1:8080]
         url: Option<String>,
-        /// Accept a certificate nobody vouches for (from `hs ctl serve --tls self-signed`)
+        /// Accept an untrusted certificate, such as from `hs ctl serve --tls self-signed`
         #[arg(long)]
         insecure: bool,
     },
     /// Forget the sign-in to a node [default: the current one]
     Logout { url: Option<String> },
-    /// Show the node signed in to, and how it is doing
+    /// Show the current node and its status
     Status,
     /// List resources in a space
     Ls(commands::LsArgs),
@@ -143,18 +141,18 @@ enum Public {
     Upload(commands::UploadArgs),
     /// Search everything you can read
     Search(commands::SearchArgs),
-    /// The newest things first
+    /// List recent items, newest first
     Timeline(commands::TimelineArgs),
-    /// Things that happened near a place
+    /// List items near a place
     Near(commands::NearArgs),
-    /// What links to or from a resource
+    /// List what links to or from a resource
     Related(commands::RelatedArgs),
-    /// Raw bytes, by hash
+    /// Store and fetch blobs by hash
     #[command(subcommand)]
     Blob(commands::BlobCommand),
     /// Print changes as they happen
     Watch,
-    /// Spaces and their members
+    /// Manage spaces and their members
     #[command(subcommand)]
     Space(commands::SpaceCommand),
     /// Print the DID document of your identity
@@ -172,7 +170,7 @@ enum Public {
         /// The shell
         shell: clap_complete::Shell,
     },
-    /// Look after a node: set it up, run it, configure, back up, hand out tokens
+    /// Manage a node: setup, running, configuration, backups, tokens
     #[command(subcommand)]
     Ctl(Ctl),
 }
@@ -186,7 +184,7 @@ enum Internal {
     ThumbnailWorker { side: u32 },
 }
 
-/// Looking after a node.
+/// Managing a node.
 #[derive(Subcommand)]
 enum Ctl {
     /// Create a node; prints the recovery code once
@@ -203,12 +201,12 @@ enum Ctl {
     /// Read or change the configuration
     #[command(subcommand)]
     Config(ConfigCommand),
-    /// Tokens for apps and people
+    /// Manage tokens for apps and people
     #[command(subcommand)]
     Token(commands::TokenCommand),
     /// Write a plain tar archive of everything to stdout
     Export,
-    /// Encrypted copies of the data directory elsewhere
+    /// Manage encrypted replicas of the data directory
     #[command(subcommand)]
     Replica(commands::ReplicaCommand),
     /// Bring a node back from a replica
@@ -219,7 +217,7 @@ enum Ctl {
         #[arg(long, value_name = "REPLICA")]
         from: String,
     },
-    /// Split the recovery code among friends, or put it back together
+    /// Split the recovery code into shares, or combine them
     #[command(subcommand)]
     Recovery(RecoveryCommand),
     /// Rebuild the derived index from the logs and blobs

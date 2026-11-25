@@ -53,7 +53,7 @@ in
   env.CC_wasm32_unknown_unknown = "${pkgs.llvmPackages.clang-unwrapped}/bin/clang";
   env.AR_wasm32_unknown_unknown = "${pkgs.llvmPackages.llvm}/bin/llvm-ar";
 
-  # Astro collects anonymous telemetry by default. We turn it off.
+  # Astro collects anonymous telemetry by default; turn it off.
   env.ASTRO_TELEMETRY_DISABLED = "1";
   env.HS_MSRV_CARGO = "${msrv}/bin/cargo";
 
@@ -100,9 +100,9 @@ in
     };
   };
 
-  # devenv formats the whole tree on every shell entry by default. Formatting
-  # should never rewrite files behind your back, and it would hide unformatted
-  # code from `treefmt --ci` in CI. Run `treefmt` yourself instead.
+  # devenv formats the whole tree on every shell entry by default. That rewrites
+  # files unasked and hides unformatted code from `treefmt --ci` in CI, so it is
+  # off; run `treefmt` yourself.
   tasks."devenv:treefmt:run".before = lib.mkForce [ ];
 
   # Build artifacts: `devenv build outputs.hs` or `devenv build outputs.docs`.
@@ -128,7 +128,7 @@ in
         "hs"
       ];
       cargoTestFlags = [ "--workspace" ];
-      # Started under this name, hs is `hs ctl`.
+      # Run as `hsctl`, hs behaves as `hs ctl`.
       postInstall = ''
         ln -s hs "$out/bin/hsctl"
       '';

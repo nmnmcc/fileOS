@@ -2,8 +2,8 @@
 
 ## 0.1.0 — 2026-11-25
 
-The first release: an experimental MVP that shows the whole design working
-end to end in one executable. Data formats may still change; keep an export.
+First release: an experimental MVP that runs the core design end to end in
+one executable. Data formats may still change; keep an export.
 
 ### What works
 
@@ -40,11 +40,9 @@ end to end in one executable. Data formats may still change; keep an export.
   `put`, `edit`, `patch`, `rm`, `upload`), search, timeline, places, blobs
   and live changes (`watch`). `hs ctl` looks after a node: `init`,
   `serve`, `config`, `token`, `export`, `replica`, `restore`, `recovery`
-  and `rebuild-index`; started as `hsctl` (a link to `hs`), the program is
-  `hs ctl`. `--json` prints what the API returns. `hs completion SHELL`
-  hooks both into bash, zsh, fish, elvish or PowerShell; it completes
-  commands and options, and spaces, grants and configuration keys from the
-  node.
+  and `rebuild-index`. `hsctl`, a link to `hs`, behaves as `hs ctl`. `--json` prints what the API returns. `hs completion SHELL`
+  sets up completion for both in bash, zsh, fish, elvish or PowerShell,
+  including spaces, grants and configuration keys from the node.
 - **A described API.** The REST API's requests and responses are shared
   Rust types (`hs_api::types`); its OpenAPI 3.1 document is served at
   `/api/openapi.json`, printed by `hs openapi` and kept in
@@ -52,7 +50,7 @@ end to end in one executable. Data formats may still change; keep an export.
 
 ### Not yet
 
-These are in the architecture but not in 0.1.0: a web app, QUIC and HTTP/3, the path
+Designed but not in 0.1.0: a web app, QUIC and HTTP/3, the path
 layer, relays and mailboxes; end-to-end encrypted spaces (MLS); WebAssembly
 plugins; checkpoints and segment compaction; signed self-updates.
 

@@ -2,7 +2,7 @@
 
 //! `GET /api/export`: the whole data directory as a tar archive, streamed.
 //!
-//! The archive holds the truth (config, identity log, space logs, blobs) and
+//! The archive holds the source data (config, identity log, space logs, blobs) and
 //! leaves out what must not travel or can be rebuilt: `keys/` and the index.
 //! It is for keeping and for reading with other tools; 0.1.0 does not restore
 //! a node from it. `hs ctl restore` brings a node back from a replica.

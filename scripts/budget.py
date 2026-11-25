@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Enforce the compile-time budget. Compile time is a feature.
+"""Enforce the compile-time budget.
 
 Measures a clean debug build, a rebuild after editing a leaf crate, and a
 rebuild after editing the core crate. Fails if any of them exceeds its budget.
@@ -51,7 +51,7 @@ def main(
         float, typer.Option(envvar="BUDGET_CORE", help="Budget after editing hs-core.")
     ] = 20,
 ) -> None:
-    """Enforce the compile-time budget. Compile time is a feature."""
+    """Enforce the compile-time budget."""
     subprocess.run(["cargo", "clean", "--quiet"], cwd=ROOT, check=True)
 
     with console.status("Clean build..."):

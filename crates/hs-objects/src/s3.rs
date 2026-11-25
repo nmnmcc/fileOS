@@ -2,9 +2,9 @@
 
 //! Sign S3 requests and parse S3 listings.
 //!
-//! The API supports AWS Signature
-//! Version 4 for signing requests (client) and checking them (server), and the
-//! `ListObjectsV2` response. Sans-IO: callers send the requests.
+//! AWS Signature Version 4: signing requests (client) and checking them
+//! (server), plus the `ListObjectsV2` response. Sans-IO: callers send the
+//! requests.
 
 use ring::{digest, hmac};
 

@@ -2,8 +2,9 @@
 
 //! Plugin host for homeserver.
 //!
-//! Runs WebAssembly plugins in a sandbox. A plugin can only call the host
-//! functions it was granted in its manifest, within memory and time limits.
+//! Not implemented yet. It will run WebAssembly plugins in a sandbox, where a
+//! plugin can call only the host functions its manifest grants, within memory
+//! and time limits.
 //!
 //! Plugins that use only the Plugin Interface are covered by the homeserver Plugin
 //! Exception (see PLUGIN-EXCEPTION.md) and may use any license.

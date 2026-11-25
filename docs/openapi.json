@@ -299,7 +299,7 @@
         "tags": [
           "node"
         ],
-        "summary": "How the node is.",
+        "summary": "The node's health.",
         "operationId": "health",
         "responses": {
           "200": {
@@ -1933,7 +1933,7 @@
       },
       "Health": {
         "type": "object",
-        "description": "How the node is.",
+        "description": "The node's health.",
         "required": [
           "ok",
           "index",
@@ -1960,7 +1960,7 @@
           },
           "ok": {
             "type": "boolean",
-            "description": "Whether all is well."
+            "description": "Whether every check passed."
           },
           "spaces": {
             "type": "integer",
@@ -1971,7 +1971,7 @@
           "time": {
             "type": "integer",
             "format": "int64",
-            "description": "The node's clock.",
+            "description": "The node's current time.",
             "minimum": 0
           }
         }

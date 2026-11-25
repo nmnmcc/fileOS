@@ -425,7 +425,7 @@ async fn oauth(api: &Api, req: &Request, peer: Peer, access: &Access, step: &str
                 return Ok(page(
                     "Sign in first",
                     &format!(
-                        "<p>{} wants to know who you are. Sign in to this homeserver, then <a href=\"{}\">continue</a>.</p><p><a href=\"/\">Sign in</a></p>",
+                        "<p>{} asks to sign you in with this homeserver. Sign in here, then <a href=\"{}\">continue</a>.</p><p><a href=\"/\">Sign in</a></p>",
                         escape(&client.name),
                         escape(&back)
                     ),

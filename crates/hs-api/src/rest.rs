@@ -11,7 +11,7 @@
 //! (the payload hash), `If-Match`, `If-None-Match` and `Idempotency-Key`.
 //!
 //! Timeline and resource lists accept `page=1` to return `items` with a
-//! `next_offset`. Requests without that flag retain the array response.
+//! `next_offset`; without it they return a bare array.
 
 use hs_core::Hash;
 use hs_core::event::Kind;
@@ -1269,7 +1269,7 @@ fn identity(api: &Api) -> Response {
     )
 }
 
-/// How the node is.
+/// The node's health.
 #[utoipa::path(get, path = "/api/health", tag = "node",
     responses((status = 200, body = t::Health)))]
 async fn health(api: &Api, access: &Access) -> Result {

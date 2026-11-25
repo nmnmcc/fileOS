@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! The part of S3 that replicas need, under `/s3/{bucket}/{key}`, so a
-//! friend's homeserver (or your second one) can hold your encrypted replica.
+//! The part of S3 that replicas need, under `/s3/{bucket}/{key}`, so another
+//! homeserver (a friend's, or the owner's second one) can hold an
+//! encrypted replica.
 //!
 //! Path-style only: GET, HEAD, PUT and DELETE of objects, and
 //! `ListObjectsV2` on a bucket. Requests must carry AWS Signature Version 4.

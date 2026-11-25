@@ -477,7 +477,7 @@ impl Index {
         .await?)
     }
 
-    /// Everything linked to or from a resource: "everything about this person".
+    /// Everything linked to or from a resource.
     ///
     /// # Errors
     ///

@@ -11,11 +11,11 @@ change without a discussion.
 Measurements on this page were taken on 2026-11-25 with Rust 1.100, on a
 15-core Apple Silicon machine unless noted otherwise. "Crates" counts the
 normal (non-dev) dependency graph. Crate counts are context, not a verdict:
-a library carefully split into small crates builds in parallel and rebuilds
-less, so it can cost less than one big crate. We judge a dependency by clean
-and incremental build time, binary size, and what it brings with it: a
-second crypto library or HTTP stack, banned crates such as `async-trait`,
-heavy procedural macros, build scripts, or C and C++ code.
+a library split into small crates builds in parallel and rebuilds less, so
+it can cost less than one big crate. We judge a dependency by clean and
+incremental build time, binary size, and what it brings with it: a second
+crypto library or HTTP stack, banned crates such as `async-trait`, heavy
+procedural macros, build scripts, or C and C++ code.
 
 ## Where the architecture comes from
 
@@ -185,7 +185,7 @@ are ordered and auditable like everything else.
 Why an ordered log instead of CRDTs everywhere: permission changes need a
 total order anyway (Matrix's state resolution shows the cost of avoiding one),
 an ordered log is cheap for small servers, and MLS needs an ordering service
-for its commits, which the home server provides for free. CRDTs are used only
+for its commits, which the home server already provides. CRDTs are used only
 inside resources that are edited together, such as collaborative documents,
 carried as event payloads. Offline edits queue on the client and are ordered
 when they reach the home server.
@@ -197,11 +197,11 @@ server with a signed handover, the same way a person moves their identity.
 stored once. Transfers are verified as they stream, in the style of Bao, so
 an untrusted node can serve a blob.
 
-**Forgetting.** An append-only log must still let a person delete things for
-real. The hash chain covers the hash of each event's payload, not the payload
-itself, so a payload can be erased later while the chain still verifies. A
-delete event erases the payloads and blobs it makes unreachable on every node
-that follows the log. How long earlier versions are kept is the person's
+**Forgetting.** An append-only log must still allow real deletion. The hash
+chain covers the hash of each event's payload, not the payload itself, so a
+payload can be erased later while the chain still verifies. A delete event
+erases the payloads and blobs it makes unreachable on every node that follows
+the log. How long earlier versions are kept is the person's
 policy: forever, a year, or not at all.
 
 **Checkpoints.** Replaying years of events on every start would be slow, so
@@ -247,8 +247,8 @@ Because sealed segments and blobs never change, every replica operation is
 the same: list what the other side has, and copy what it lacks.
 
 - Sync and backup: keep a replica up to date.
-- Migrate: sync, make the replica primary, then delete the old copy if you
-  want to.
+- Migrate: sync, make the replica primary, and optionally delete the old
+  copy.
 - Mixed placement: logs everywhere and photos only on the replica with a
   local cache, or the other way round. Which data lives where is the
   person's policy.
@@ -272,8 +272,7 @@ a second crypto library (RustCrypto's `hmac`, `sha2` and `md-5`).
 **Encryption at the boundary.** `hs` encrypts every segment, checkpoint and
 blob before it leaves your nodes (AES-256-GCM in `ring`, with a key per
 object derived from the storage key) and names it by a keyed hash, so the
-holder sees neither the contents nor which files are equal. A replica never
-needs to read what it stores.
+holder sees neither the contents nor which files are equal.
 
 ### Derived state: SQLite
 
@@ -311,13 +310,13 @@ Word segmentation, such as jieba, can be added later if the quality is not
 good enough.
 
 **Analysis.** Personal data is small: a hundred thousand photos and a few
-million messages fit SQLite easily. For heavy analysis, export writes
-Parquet or CSV, and a tool such as DuckDB can run as a connected app.
+million messages fit in SQLite. For heavy analysis, export writes Parquet
+or CSV, and a tool such as DuckDB can run as a connected app.
 
 **What we measured and did not choose.**
 
 - **DuckDB with DuckLake**, the previous choice. It gives snapshots, time
-  travel and very good analysis, and we got DuckDB linked statically into one
+  travel and strong analytics, and we got DuckDB linked statically into one
   56 MB binary. But Chinese search needed the tantivy extension and jieba
   (133 crates, with no settled way to compile them in), DuckLake does not run
   in the browser, building `ducklake` and `fts` into a static library
@@ -358,13 +357,13 @@ hashes matched the native build.
 **Roles are capabilities, not kinds of program.** A node advertises what it
 can do: whether it is always on and publicly reachable, how much it can
 store, whether it may hold plaintext, and whether it may be the home server
-of a space. A box at home does everything. A rented VPS can be a blind node
-that holds only ciphertext. A phone can become a small node later if a
+of a space. A box at home can take every role. A rented VPS can be a blind
+node that holds only ciphertext. A phone can become a small node later if a
 real need shows up; the protocol already allows it.
 
 **Why not run the server in the browser.** We designed that first. It meant
 DuckDB-Wasm in a worker, OPFS, and a second storage path that could not run
-DuckLake, all to answer queries locally. A cache answers most of what people
+DuckLake, only to answer queries locally. A cache answers most of what people
 do offline (read what they looked at recently, write things down), costs a
 few kilobytes, and is how the Web already works. What a cache cannot do, such
 as searching the whole archive offline, is left out on purpose.
@@ -382,7 +381,7 @@ document, so other software can resolve it with standard tools. We learn
 from KERI, `did:plc` and Keybase's sigchains, without depending on any of
 them.
 
-**Recovery.** Losing the person key must not mean losing your life. The
+**Recovery.** Losing the person key must not mean losing everything. The
 person chooses one or more ways to recover: a printed recovery kit, a
 passphrase, or social recovery that splits a key between trusted friends
 (Shamir secret sharing, as in Dark Crystal). Which ones to use is the
@@ -420,8 +419,8 @@ back. That is only possible if there is one place to look.
 
 **Everyone is a client of the same API.** Your devices, the web app, a
 connected app, a plugin, an AI assistant over MCP and a friend's homeserver
-all reach your data through the same HTTP resources. None of them gets a side
-door into the database.
+all reach your data through the same HTTP resources. None of them reaches the
+database directly.
 
 **Grants.** A grant says who (a device key, an OAuth client, a plugin, a
 person), what (URL prefixes, resource types, spaces), how (read, write,
@@ -434,7 +433,7 @@ roles, which work the same way.
 reach?" are queries over grants and memberships. Every grant has an access
 log kept on your node. Revoking is one event. For end-to-end encrypted
 spaces, removing a member also rotates the MLS group key. What someone has
-already copied cannot be taken back; the interface says so plainly.
+already copied cannot be taken back; the interface states this.
 
 ## Networking
 
@@ -489,8 +488,8 @@ URL, for you and for a friend opening a link to a shared album:
   Replicas).
 - **Shared spaces:** end-to-end encrypted with **MLS (RFC 9420)** between the
   members' homeservers. Each person's homeserver is one MLS member, not each
-  device. This avoids most of the multi-device complexity that troubles
-  end-to-end encrypted messengers. The space's home server orders MLS
+  device. This avoids most of the multi-device complexity that end-to-end
+  encrypted messengers have to handle. The space's home server orders MLS
   commits, just like other events. Relays, mailboxes and replicas hold only
   ciphertext.
 - **Blind nodes:** a node you rent can be set to keep only ciphertext. It
@@ -604,11 +603,11 @@ Logs stay local. There is no telemetry.
 
 - Deterministic simulation of many nodes, networks, replicas and failures in
   one process, built on the sans-IO cores. quinn's protocol core is sans-IO
-  too, so QUIC runs in the simulation. We learn this from FoundationDB and
+  too, so QUIC runs in the simulation. The approach follows FoundationDB and
   TigerBeetle.
-- Property tests for log ordering, membership, grants and replica sync. One
-  property matters most: an index built event by event equals an index
-  rebuilt from scratch.
+- Property tests for log ordering, membership, grants and replica sync. The
+  key property: an index built event by event equals an index rebuilt from
+  scratch.
 - Fuzzing for every parser (CBOR, WebDAV XML, WebAuthn data, ACME and S3
   responses).
 - `check` builds the portable crates for `wasm32-unknown-unknown`.

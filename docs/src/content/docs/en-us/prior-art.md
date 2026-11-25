@@ -3,22 +3,21 @@ title: Projects to learn from
 description: Prior art we study before building our own, and what we take from each.
 ---
 
-homeserver builds its own core: lighter, easier to extend and shaped by our
-own goals. That only works if we study widely what came before: software,
-protocols, papers, essays and the history of projects that tried and failed.
-This page lists them by area, with what each one teaches us and, where it
-matters, how we choose to go a different way.
+homeserver writes its own core so that it stays light, is easy to extend and
+fits our goals. To do that well we study earlier work: software, protocols,
+papers, essays and projects that did not succeed. This page lists them by
+area, with what to learn from each and, where relevant, how we differ.
 
 **Learn, don't copy.** We read code and papers to understand ideas. Before
 copying any code, check that its license is compatible with AGPL-3.0-only.
-GPL-2.0-only code must never be copied.
+GPL-2.0-only code must not be copied.
 
 To add an entry, give it a link, what to learn from it, and how we differ.
 
 ## Earlier attempts at the same vision
 
-Others have tried to give every person their own server. Learn why each one
-did not reach ordinary people.
+Others have tried to give every person their own server. Learn why none of
+them reached ordinary people.
 
 - **[FreedomBox](https://freedombox.org/)**: a personal server on Debian,
   started after Eben Moglen's talk "Freedom in the Cloud". Shows what is
@@ -31,28 +30,28 @@ did not reach ordinary people.
 - **[Cozy Cloud](https://github.com/cozy)**: a personal cloud with apps that
   share one data store.
 - **[Urbit](https://urbit.org/)**: a personal server with its own identity
-  system and networking. Learn from its ambition and its complexity. _We
-  differ:_ no scarce identities and no tokens.
+  system and networking. Learn from its scope and the complexity that came
+  with it. _We differ:_ no scarce identities and no tokens.
 - **[Upspin](https://upspin.io/)**: a global namespace for personal files,
   from the Go team at Google.
 - **[Mail-in-a-Box](https://mailinabox.email/)**: a self-hosted mail server you
   can set up without being an expert.
 - **Helm**: a personal email server sold as hardware, which shut down in 2022.
-  Shows how fragile a business built on hardware is.
+  Shows the risks of a business built on hardware.
 - **Synology DSM** and **Apple iCloud**: closed, but they set the usability
-  bar that ordinary people expect.
+  that ordinary people expect.
 
 ## Ideas and writing
 
 - **[Local-first software](https://www.inkandswitch.com/local-first/)** (Ink &
-  Switch): the ideals we share, written down well.
+  Switch): a clear statement of principles we share.
 - **[Freedom in the Cloud](https://www.softwarefreedom.org/events/2010/isoc-ny/)**
   (Eben Moglen, 2010): the argument for personal servers.
 - **_Tools for Conviviality_** (Ivan Illich): tools that serve people rather
   than make them dependent.
 - **_Governing the Commons_** (Elinor Ostrom): how communities manage shared
-  resources without a central authority or a market. Essential reading for
-  mutual aid.
+  resources without a central authority or a market. Background for mutual
+  aid.
 - **[Calm technology](https://calmtech.com/)**: technology that stays in the
   background until it is needed.
 - **_A Pattern Language_** (Christopher Alexander): design as a shared
@@ -82,7 +81,7 @@ did not reach ordinary people.
 - **[Tailscale](https://github.com/tailscale/tailscale)**: DERP relays,
   `magicsock`, and the essay
   [How NAT traversal works](https://tailscale.com/blog/how-nat-traversal-works),
-  the best introduction to the topic. _We differ:_ no central coordination
+  a good introduction to the topic. _We differ:_ no central coordination
   server.
 - **[quinn](https://github.com/quinn-rs/quinn)**: QUIC in Rust. Read it for
   how the protocol state machine is kept separate from I/O (`quinn-proto`).
@@ -92,11 +91,11 @@ did not reach ordinary people.
 - **[Noise Protocol Framework](https://noiseprotocol.org/noise.html)**:
   handshake patterns for authenticated encryption between keys.
 - **[libp2p](https://libp2p.io/)**: circuit relay v2, DCUtR hole punching,
-  and the trouble a very general modular stack brings. _We differ:_ fewer
+  and the costs of a very general modular stack. _We differ:_ fewer
   options and less abstraction.
 - **[Syncthing](https://syncthing.net/)**: a community relay pool, global and
-  local discovery, and device IDs derived from keys. Years of work on
-  peer-to-peer software that ordinary people use.
+  local discovery, and device IDs derived from keys. Many years of
+  experience with peer-to-peer software that ordinary people use.
 - **[Yggdrasil](https://yggdrasil-network.github.io/)** and
   **[cjdns](https://github.com/cjdelisle/cjdns)**: mesh networks where an
   address is derived from a public key.
@@ -148,8 +147,8 @@ them.
 - **[Kanidm](https://kanidm.com/)**: an identity management server in Rust,
   with OpenID Connect and passkeys.
 - **[Authelia](https://www.authelia.com/)** and
-  **[Authentik](https://goauthentik.io/)**: the authentication gateways
-  self-hosters have to maintain today. homeserver's built-in identity provider
+  **[Authentik](https://goauthentik.io/)**: authentication gateways that
+  self-hosters currently run and maintain separately. homeserver's built-in identity provider
   is meant to replace them.
 - **[IndieAuth](https://indieauth.spec.indieweb.org/)**: signing in to other
   sites with your own URL as your identity.
@@ -178,7 +177,7 @@ reasons and our answers.
   servers. Despite federation, most users sit on a few large servers. Study
   why: identity is tied to the server's domain; every server in a room must
   replicate and resolve that room's whole state, so a small server joining a
-  large room pays a lot; and running a server is real work. Its peer-to-peer
+  large room pays a lot; and running a server takes ongoing effort. Its peer-to-peer
   experiments (Pinecone) are worth reading too. Note that "homeserver" is also
   a Matrix term.
 - **[ActivityPub](https://www.w3.org/TR/activitypub/)** and Mastodon: the most
@@ -215,8 +214,9 @@ reasons and our answers.
 
 ## Storage, databases and search
 
-- **[SQLite](https://www.sqlite.org/)**: small, fast and reliable, with a file
-  format meant to last for decades. Read
+- **[SQLite](https://www.sqlite.org/)**: a small, fast and reliable embedded
+  database, with FTS5 and R*Tree, and a file format meant to stay readable
+  until 2050. Our derived index uses it. Read
   [how it is tested](https://www.sqlite.org/testing.html).
 - **[redb](https://github.com/cberner/redb)** and
   **[fjall](https://github.com/fjall-rs/fjall)**: embedded key-value stores in
@@ -237,9 +237,6 @@ reasons and our answers.
   **[Bao](https://github.com/oconnor663/bao)**: fast hashing and verified
   streaming of content-addressed data.
 - **[Litestream](https://litestream.io/)**: streaming SQLite replication.
-- **[SQLite](https://sqlite.org/)**: the embedded database, with FTS5 and
-  R*Tree, and a file format meant to stay readable until 2050. Our derived
-  index uses it.
 - **[DuckDB](https://duckdb.org/)** and **[DuckLake](https://ducklake.select/)**:
   an embedded analytical database, and tables kept as Parquet files in object
   storage with snapshots and time travel. We measured them and chose SQLite;
@@ -267,8 +264,8 @@ reasons and our answers.
 ## Peer-to-peer sharing and incentives
 
 - **[BitTorrent](https://www.bittorrent.org/beps/bep_0003.html)**: tit-for-tat,
-  where peers reward those who give back. A simple local rule with large
-  effects.
+  where peers reward those who give back. A simple local rule with
+  network-wide effects.
 - **[IPFS](https://docs.ipfs.tech/)**: content addressing at scale, and the
   lesson that nobody keeps data unless someone chooses to pin it. _We differ:_
   no token economy (Filecoin).
@@ -283,12 +280,12 @@ reasons and our answers.
 - **[Home Assistant](https://www.home-assistant.io/)**: a large ecosystem of
   integrations, and upgrades that ordinary people can live with. Home
   automation itself is a specialist need, connected through a plugin.
-- **[Caddy](https://caddyserver.com/)**: TLS certificates that just work.
+- **[Caddy](https://caddyserver.com/)**: automatic TLS certificates.
 - **[NixOS](https://nixos.org/)** and **[OSTree](https://ostreedev.github.io/ostree/)**:
   atomic upgrades and rollback.
 - **[Android A/B updates](https://source.android.com/docs/core/ota/ab)**,
   **[RAUC](https://rauc.io/)** and **[Mender](https://mender.io/)**: updating
-  devices nobody watches, without turning them into bricks.
+  unattended devices without leaving them unable to boot.
 - **[PocketBase](https://pocketbase.io/)**: a whole backend in one file plus
   SQLite.
 
