@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- **`--tls acme`**, with `--email`, `--acme-directory` and `--http-listen`.
+  homeserver focuses on peer-to-peer connections; for HTTPS on a public
+  domain, put Caddy or nginx in front of `hs ctl serve` (see Running a node).
+  `--listen` now always defaults to `127.0.0.1:8080`.
+
 ## 0.1.0 — 2026-11-25
 
 First release: an experimental MVP that runs the core design end to end in

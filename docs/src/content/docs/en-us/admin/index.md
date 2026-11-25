@@ -27,15 +27,15 @@ program) and uses it (`hs ls`, `hs search`, …).
 - Little memory and CPU: the design target is one core and 1 GB of RAM for a
   family of ten.
 - Disk for what you keep, plus thumbnails.
-- To be reached from outside your home: either a public address with ports
-  80 and 443, or a router that supports NAT-PMP or PCP. Without either, the
-  node works on your local network.
+- To be reached from outside your home: a router that supports NAT-PMP or
+  PCP, or a port forwarded by hand. Without either, the node works on your
+  local network. A public HTTPS domain is optional and needs your own
+  reverse proxy.
 
 ## The path through this manual
 
 1. [Install](install/) `hs`.
-2. Create the node and [run it](running/), with TLS if it is reachable from
-   outside.
+2. Create the node and [run it](running/).
 3. Give people and apps [tokens](access/).
 4. Set up [backups](backups/), and keep the recovery code safe.
 5. Optionally, let other apps [sign in](sign-in/) with the node.

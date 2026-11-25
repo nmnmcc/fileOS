@@ -90,7 +90,6 @@ homeserver 自己编写核心，使它保持轻量、易于扩展，并符合我
   [STUN](https://www.rfc-editor.org/rfc/rfc8489)、
   [TURN](https://www.rfc-editor.org/rfc/rfc8656)，以及用于端口映射的
   [PCP](https://www.rfc-editor.org/rfc/rfc6887)。
-- **证书**：[ACME](https://www.rfc-editor.org/rfc/rfc8555)，Let's Encrypt 使用的协议。
 - **群组加密**：[MLS](https://www.rfc-editor.org/rfc/rfc9420)。
 - **邮件、日历和联系人**：[JMAP](https://jmap.io/)、
   [CalDAV](https://www.rfc-editor.org/rfc/rfc4791) 和

@@ -212,7 +212,7 @@ data/
 
 **从浏览器访问你的 homeserver。** 浏览器需要普通的 HTTPS URL，你自己需要，打开共享相册链接的朋友也需要：
 
-1. 有公网地址和域名时，`hs` 自己通过 ACME 申请证书。ACME 客户端我们在 `ring` 和 hyper 之上自己写；`instant-acme` 依赖 `async-trait`。
+1. 有公网地址和域名时，由主人在 `hs` 前面放一个反向代理（Caddy、nginx）。`hs` 不实现 ACME：公网域名的 HTTPS 已有成熟方案，项目的精力放在点对点可达性上。
 2. 没有公网地址时，一台可达的 homeserver（朋友的、你自己的 VPS 或官方的）按 SNI 转发 TLS，但不终止 TLS。TLS 仍然在家里结束，转发者只能看到密文。
 3. 在局域网里，或者 Web 应用已经知道节点的密钥时，浏览器可以使用带 `serverCertificateHashes` 的 WebTransport，两者都不需要。WebTransport 自 2026 年 3 月起已是所有主流浏览器的 Baseline 功能。
 
@@ -270,7 +270,7 @@ wasmtime 带 Cranelift 比基础栈多 64 个 crate，release 二进制增加约
 
 - 在一个进程里，对许多节点、网络、副本和故障做确定性模拟，建立在不含 IO 的核心之上。quinn 的协议核心也是 sans-IO 的，所以 QUIC 也能在模拟中运行。做法借鉴 FoundationDB 和 TigerBeetle。
 - 对日志排序、成员关系、授权和副本同步做属性测试。关键的性质是：逐个事件增量构建的索引，与从头重建的索引完全相同。
-- 对每个解析器（CBOR、WebDAV XML、WebAuthn 数据、ACME 和 S3 响应）做模糊测试。
+- 对每个解析器（CBOR、WebDAV XML、WebAuthn 数据和 S3 响应）做模糊测试。
 - `check` 会为 `wasm32-unknown-unknown` 构建可移植 crate。
 - 针对真实客户端和服务做兼容性测试：DAVx⁵、Thunderbird、Bitwarden 客户端、常见的 OIDC 依赖方，以及兼容 S3 的存储（几家大的云服务商、Garage 和 MinIO，以及用 `rclone` 和 AWS CLI 访问作为服务端的 `hs`）。
 
@@ -288,7 +288,7 @@ wasmtime 带 Cranelift 比基础栈多 64 个 crate，release 二进制增加约
 | `hs-api`         | 作为请求处理程序的 HTTP API、WebDAV、CalDAV/CardDAV、MCP     |   否   | 无                   |
 | `hs-idp`         | OpenID Connect 提供方、通行密钥、forward auth                |   否   | 无                   |
 | `hs-node`        | 把上面的 crate 组装成一个节点                                |   否   | 无                   |
-| `hs-net`         | QUIC、HTTP/3、路径层、中继、信箱、ACME                       |   否   | quinn、rustls、hyper |
+| `hs-net`         | QUIC、HTTP/3、路径层、中继、信箱                             |   否   | quinn、rustls、hyper |
 | `hs-media`       | 元数据、预览图                                               |   否   | 图像解码器           |
 | `hs-plugin-host` | WebAssembly 组件                                             |   否   | wasmtime             |
 | `hs-plugin-api`  | 插件接口（WIT、插件端绑定；MIT OR Apache-2.0）               |   是   | 无                   |
@@ -328,7 +328,6 @@ wasmtime 带 Cranelift 比基础栈多 64 个 crate，release 二进制增加约
 | OpenMLS                                     |                   95 | 不采用：只需要一个 MLS 库；构建时间尚未对比                                           |
 | webauthn-rs                                 |                  134 | 不采用：第二套加密库（RustCrypto）                                                    |
 | openidconnect                               |                  102 | 不采用：它是客户端库，而且带进 RustCrypto                                             |
-| instant-acme                                |                   28 | 不采用：会引入 `async-trait`；ACME 我们自己写                                         |
 | igd-next                                    |                   33 | 不采用：第二个 HTTP 客户端；只支持 UPnP-IGD                                           |
 | s3s                                         |                  115 | 不采用：`async-trait` 和 RustCrypto；子集我们自己写                                   |
 | axum                                        |                   14 | 未定；在 hyper 上自己写一个小路由可能就够了                                           |

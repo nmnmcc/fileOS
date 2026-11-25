@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use clap_complete::engine::ArgValueCandidates;
@@ -42,9 +42,6 @@ const COMPONENTS: &[&str] = &[
     hs_plugin_api::NAME,
     hs_plugin_host::NAME,
 ];
-
-const LETS_ENCRYPT: &str = "https://acme-v02.api.letsencrypt.org/directory";
-const RENEW_AFTER: Duration = Duration::from_hours(1440);
 
 const LONG_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -229,29 +226,19 @@ enum Tls {
     Off,
     /// A certificate made and signed by this node
     SelfSigned,
-    /// A certificate from an ACME authority such as Let's Encrypt (HTTP-01)
-    Acme,
 }
 
 #[derive(Args)]
 struct ServeArgs {
-    /// Listen address. Defaults to `127.0.0.1:8080`, or `[::]:443` with `--tls acme`.
-    #[arg(long, value_name = "ADDR")]
-    listen: Option<SocketAddr>,
+    /// Listen address. For HTTPS on a public domain, put a reverse proxy
+    /// such as Caddy or nginx in front.
+    #[arg(long, value_name = "ADDR", default_value = "127.0.0.1:8080")]
+    listen: SocketAddr,
     #[arg(long, value_enum, default_value_t = Tls::Off)]
     tls: Tls,
-    /// Domain names for the certificate [default: the host of the configured url]
+    /// Extra names for the self-signed certificate [default: the host of the configured url]
     #[arg(long = "domain", value_name = "DOMAIN")]
     domains: Vec<String>,
-    /// Contact address for the ACME account
-    #[arg(long)]
-    email: Option<String>,
-    /// ACME directory URL
-    #[arg(long, value_name = "URL", default_value = LETS_ENCRYPT)]
-    acme_directory: String,
-    /// Plain HTTP address for ACME challenges, with --tls acme
-    #[arg(long, value_name = "ADDR", default_value = "[::]:80")]
-    http_listen: SocketAddr,
     /// Ask the home router to forward the port (NAT-PMP/PCP)
     #[arg(long)]
     map_port: bool,
@@ -447,13 +434,10 @@ fn domains(api: &Api, args: &ServeArgs) -> Vec<String> {
     d
 }
 
-fn read_pem(dir: &Path, name: &str) -> Option<(String, String, SystemTime)> {
-    let cert = dir.join(format!("keys/{name}.pem"));
-    let modified = std::fs::metadata(&cert).and_then(|m| m.modified()).ok()?;
+fn read_pem(dir: &Path, name: &str) -> Option<(String, String)> {
     Some((
-        std::fs::read_to_string(cert).ok()?,
+        std::fs::read_to_string(dir.join(format!("keys/{name}.pem"))).ok()?,
         std::fs::read_to_string(dir.join(format!("keys/{name}.key"))).ok()?,
-        modified,
     ))
 }
 
@@ -462,35 +446,12 @@ fn write_pem(dir: &Path, name: &str, cert: &str, key: &str) -> Res {
     std::fs::write(dir.join(format!("keys/{name}.key")), key).map_err(|e| e.to_string())
 }
 
-async fn acme_certificate(api: &Api, args: &ServeArgs, names: &[String]) -> Res<(String, String)> {
-    let dir = api.node.dir();
-    let account_path = dir.join("keys/acme-account");
-    let account = std::fs::read(&account_path).ok();
-    let acme =
-        hs_net::acme::Acme::new(api.web.clone(), &args.acme_directory, account).map_err(|e| e.0)?;
-    std::fs::write(&account_path, acme.account_key_pkcs8()).map_err(|e| e.to_string())?;
-    let contact = args.email.as_ref().map(|e| format!("mailto:{e}"));
-    let (cert, key) = acme
-        .obtain(names, contact.as_deref(), &api.acme)
-        .await
-        .map_err(|e| e.0)?;
-    write_pem(dir, "acme", &cert, &key)?;
-    Ok((cert, key))
-}
-
 async fn serve(dir: &Path, args: &ServeArgs) -> Res {
     let node = Arc::new(open(dir).await?);
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let api = Api::with_thumbnail_worker(Arc::clone(&node), executable);
     api.start();
-    let listen = args.listen.unwrap_or_else(|| {
-        if args.tls == Tls::Acme {
-            SocketAddr::from(([0u16; 8], 443))
-        } else {
-            SocketAddr::from(([127, 0, 0, 1], 8080))
-        }
-    });
-    let listener = bind(listen)?;
+    let listener = bind(args.listen)?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let stop = stop_signal();
     if args.map_port {
@@ -514,7 +475,7 @@ async fn serve(dir: &Path, args: &ServeArgs) -> Res {
             .await;
         }
         Tls::SelfSigned => {
-            let (cert, key) = if let Some((c, k, _)) = read_pem(dir, "self-signed") {
+            let (cert, key) = if let Some((c, k)) = read_pem(dir, "self-signed") {
                 (c, k)
             } else {
                 let mut names = domains(&api, args);
@@ -531,58 +492,6 @@ async fn serve(dir: &Path, args: &ServeArgs) -> Res {
                 stopped(stop),
             )
             .await;
-        }
-        Tls::Acme => {
-            let names = domains(&api, args);
-            if names.is_empty() {
-                return Err("--tls acme needs --domain, or a url in the config".into());
-            }
-            // HTTP-01 challenges, and everything else, on plain HTTP too.
-            let http = bind(args.http_listen)?;
-            if args.map_port {
-                map_port(http.local_addr().map_err(|e| e.to_string())?.port());
-            }
-            tokio::spawn(hs_net::server::serve(
-                tokio_listener(&http)?,
-                Arc::clone(&api),
-                None,
-                stopped(stop.clone()),
-            ));
-            loop {
-                let (cert, key) = match read_pem(dir, "acme") {
-                    Some((c, k, t)) if t.elapsed().unwrap_or_default() < RENEW_AFTER => (c, k),
-                    old => match acme_certificate(&api, args, &names).await {
-                        Ok(ck) => ck,
-                        Err(e) => match old {
-                            Some((c, k, _)) => {
-                                tracing::warn!(name: "tls.certificate.renewal_failed", error = %e,
-                                    "Could not renew the certificate, keeping the previous one");
-                                (c, k)
-                            }
-                            None => return Err(format!("getting a certificate failed: {e}")),
-                        },
-                    },
-                };
-                let tls = hs_net::server::tls_config(&cert, &key)?;
-                // Serve until a day passes (then check the certificate's age) or we are stopped.
-                let mut s = stop.clone();
-                let until = async move {
-                    tokio::select! {
-                        () = tokio::time::sleep(Duration::from_hours(24)) => {}
-                        _ = s.wait_for(|v| *v) => {}
-                    }
-                };
-                hs_net::server::serve(
-                    tokio_listener(&listener)?,
-                    Arc::clone(&api),
-                    Some(tls),
-                    until,
-                )
-                .await;
-                if *stop.borrow() {
-                    break;
-                }
-            }
         }
     }
     api.flush_access_log().await;

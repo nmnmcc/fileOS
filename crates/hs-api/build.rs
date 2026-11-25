@@ -12,20 +12,25 @@ use std::{
 
 fn main() {
     println!("cargo::rerun-if-env-changed=HS_WEB_DIR");
-    let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("set by cargo"));
-    let dir = env::var_os("HS_WEB_DIR").map_or_else(
-        || {
-            let dir = out_dir.join("web-missing");
-            fs::create_dir_all(&dir).expect("OUT_DIR is writable");
-            fs::write(dir.join("index.html"), MISSING).expect("OUT_DIR is writable");
-            dir
-        },
-        PathBuf::from,
-    );
+    let manifest = match env::var_os("HS_WEB_DIR") {
+        Some(dir) => web_files(Path::new(&dir)),
+        None => format!(
+            r#"&[File {{ path: "index.html", media_type: {:?}, immutable: false, bytes: {MISSING:?}.as_bytes(), br: None }}]"#,
+            media_type("index.html")
+        ),
+    };
+    let target = PathBuf::from(env::var_os("OUT_DIR").expect("set by cargo")).join("web_files.rs");
+    // A redundant write can trigger another editor check.
+    if !fs::read(&target).is_ok_and(|current| current == manifest.as_bytes()) {
+        fs::write(target, manifest).expect("OUT_DIR is writable");
+    }
+}
+
+fn web_files(dir: &Path) -> String {
     println!("cargo::rerun-if-changed={}", dir.display());
 
     let mut files = Vec::new();
-    walk(&dir, &dir, &mut files);
+    walk(dir, dir, &mut files);
     files.sort();
     assert!(
         files.iter().any(|f| f == "index.html"),
@@ -50,8 +55,7 @@ fn main() {
         );
     }
     out.push(']');
-    let target = out_dir.join("web_files.rs");
-    fs::write(target, out).expect("OUT_DIR is writable");
+    out
 }
 
 /// The page served when this build has no web app.

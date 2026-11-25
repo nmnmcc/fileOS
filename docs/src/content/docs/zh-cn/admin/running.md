@@ -1,6 +1,6 @@
 ---
 title: 运行节点
-description: 运行节点，启用 TLS、端口映射，或作为系统服务。
+description: 运行节点，放在反向代理后面，启用端口映射，或作为系统服务。
 ---
 
 ```sh
@@ -12,26 +12,55 @@ hs ctl serve
 
 ## 从局域网或互联网访问
 
-| 你的情况                 | 运行                                                |
-| ------------------------ | --------------------------------------------------- |
-| 只在本机使用             | `hs ctl serve`                                      |
-| 家庭网络，没有域名       | `hs ctl serve --listen [::]:8443 --tls self-signed` |
-| 有指向公网地址的域名     | `hs ctl serve --tls acme --email you@example.org`   |
-| 同上，但在家用路由器后面 | 再加上 `--map-port`                                 |
+| 你的情况             | 运行                                                    |
+| -------------------- | ------------------------------------------------------- |
+| 只在本机使用         | `hs ctl serve`                                          |
+| 家庭网络，没有域名   | `hs ctl serve --listen [::]:8443 --tls self-signed`     |
+| 有指向公网地址的域名 | `hs ctl serve`，前面放[反向代理](#公网域名上的-https)   |
+| 在家用路由器后面     | 再加上 `--map-port`                                     |
 
 **`--tls self-signed`** 生成一次证书并保存在 `keys/self-signed.pem`。应用
 会对它发出警告；`hs login --insecure` 可以接受它。
 
-**`--tls acme`** 为配置中 `url` 的主机名（或每个 `--domain`）向 Let's
-Encrypt 申请证书，并自动续期。它监听 `[::]:443`，并在 `[::]:80` 上应答
-ACME 验证，两者都必须能从互联网访问。用 `--acme-directory URL` 换用其他
-ACME 服务，用 `--http-listen` 改变验证用的监听地址。
-
 **`--map-port`** 请家用路由器转发端口（NAT-PMP 或 PCP），并持续续期映射。
 0.1.0 不支持只会 UPnP 的路由器，请在路由器上手动转发端口。
 
-监听 1024 以下的端口需要 root 或相应的权限；下面的服务配置在不以 root
-运行的前提下授予这个权限。
+## 公网域名上的 HTTPS
+
+homeserver 为节点之间直接、点对点的连接而设计，不会自己为公网域名申请
+证书。如果需要公网 HTTPS 地址，请在 `hs ctl serve` 前面放一个 Caddy 或
+nginx 之类的反向代理，并把配置中的 `url` 设为公网地址。
+
+用 Caddy，由它申请和续期证书：
+
+```
+home.example.org {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+用 nginx，证书由你自己管理：
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name home.example.org;
+    ssl_certificate     /etc/ssl/home.example.org.pem;
+    ssl_certificate_key /etc/ssl/home.example.org.key;
+    client_max_body_size 0;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_request_buffering off;
+        proxy_buffering off;
+    }
+}
+```
+
+让 `hs` 只监听 `127.0.0.1`，这样只有代理能访问它。
 
 ## 作为系统服务
 
@@ -47,10 +76,9 @@ Wants=network-online.target
 [Service]
 User=hs
 Environment=HS_DIR=/var/lib/homeserver
-ExecStart=/usr/local/bin/hs ctl serve --tls acme --email you@example.org
+ExecStart=/usr/local/bin/hs ctl serve
 KillSignal=SIGINT
 Restart=on-failure
-AmbientCapabilities=CAP_NET_BIND_SERVICE
 StateDirectory=homeserver
 
 [Install]

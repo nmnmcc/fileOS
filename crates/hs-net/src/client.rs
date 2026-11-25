@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! A small HTTP client for talking to other nodes, push services and ACME
-//! servers. One connection per request, HTTP/1.1, TLS through rustls with
+//! A small HTTP client for talking to other nodes and push services. One connection per request, HTTP/1.1, TLS through rustls with
 //! the ring backend and the Mozilla root certificates.
 //!
 //! Nodes are authenticated by their signatures (requests are signed with
@@ -113,12 +112,6 @@ impl Default for Client {
 
 fn provider() -> Arc<rustls::crypto::CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
-}
-
-impl crate::acme::Transport for Client {
-    async fn send(&self, req: http::Request<Vec<u8>>) -> Result<http::Response<Vec<u8>>, String> {
-        Client::send(self, req).await.map_err(String::from)
-    }
 }
 
 impl Client {

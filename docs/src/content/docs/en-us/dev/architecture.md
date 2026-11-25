@@ -469,9 +469,10 @@ connections over TLS on TCP port 443.
 **Reaching your homeserver from a browser.** Browsers need an ordinary HTTPS
 URL, for you and for a friend opening a link to a shared album:
 
-1. With a public address and a domain, `hs` gets certificates itself with
-   ACME. We write the ACME client on top of `ring` and hyper; `instant-acme`
-   depends on `async-trait`.
+1. With a public address and a domain, the owner runs a reverse proxy
+   (Caddy, nginx) in front of `hs`. `hs` does not speak ACME: public-domain
+   HTTPS is a solved problem, and the project's effort goes to peer-to-peer
+   reachability.
 2. Without a public address, a reachable homeserver (a friend's, your own
    VPS, or an official one) forwards TLS by SNI without terminating it. TLS
    still ends at home, and the forwarder sees only ciphertext.
@@ -608,7 +609,7 @@ Logs stay local. There is no telemetry.
 - Property tests for log ordering, membership, grants and replica sync. The
   key property: an index built event by event equals an index rebuilt from
   scratch.
-- Fuzzing for every parser (CBOR, WebDAV XML, WebAuthn data, ACME and S3
+- Fuzzing for every parser (CBOR, WebDAV XML, WebAuthn data and S3
   responses).
 - `check` builds the portable crates for `wasm32-unknown-unknown`.
 - Compatibility tests against real clients and services: DAVx⁵, Thunderbird,
@@ -631,7 +632,7 @@ dependencies stay inside the one crate that needs them.
 | `hs-api`         | the HTTP API as a request handler, WebDAV, CalDAV/CardDAV, MCP                    |    no    | none                 |
 | `hs-idp`         | OpenID Connect provider, passkeys, forward auth                                   |    no    | none                 |
 | `hs-node`        | wires the crates above into one node                                              |    no    | none                 |
-| `hs-net`         | QUIC, HTTP/3, path layer, relay, mailbox, ACME                                    |    no    | quinn, rustls, hyper |
+| `hs-net`         | QUIC, HTTP/3, path layer, relay, mailbox                                          |    no    | quinn, rustls, hyper |
 | `hs-media`       | metadata, previews                                                                |    no    | image decoders       |
 | `hs-plugin-host` | WebAssembly components                                                            |    no    | wasmtime             |
 | `hs-plugin-api`  | Plugin Interface (WIT, guest bindings; MIT OR Apache-2.0)                         |   yes    | none                 |
@@ -679,7 +680,6 @@ Candidates we measured:
 | OpenMLS                                     |               95 | Not adopted: we need one MLS library; build times not compared                                                     |
 | webauthn-rs                                 |              134 | Not adopted: a second crypto library (RustCrypto)                                                                  |
 | openidconnect                               |              102 | Not adopted: a client library, and RustCrypto                                                                      |
-| instant-acme                                |               28 | Not adopted: pulls in `async-trait`; we write ACME                                                                 |
 | igd-next                                    |               33 | Not adopted: a second HTTP client; UPnP-IGD only                                                                   |
 | s3s                                         |              115 | Not adopted: `async-trait` and RustCrypto; we write the subset                                                     |
 | axum                                        |               14 | Not decided; a small router of our own on hyper may be enough                                                      |

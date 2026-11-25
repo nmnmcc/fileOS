@@ -114,8 +114,6 @@ them.
   [STUN](https://www.rfc-editor.org/rfc/rfc8489),
   [TURN](https://www.rfc-editor.org/rfc/rfc8656) and port mapping with
   [PCP](https://www.rfc-editor.org/rfc/rfc6887).
-- **Certificates**: [ACME](https://www.rfc-editor.org/rfc/rfc8555), which Let's
-  Encrypt uses.
 - **Group encryption**: [MLS](https://www.rfc-editor.org/rfc/rfc9420).
 - **Mail, calendar and contacts**: [JMAP](https://jmap.io/),
   [CalDAV](https://www.rfc-editor.org/rfc/rfc4791) and

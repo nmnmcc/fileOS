@@ -21,7 +21,7 @@ a change.
 | Key                  | Value             | What it does                                                                                    |
 | -------------------- | ----------------- | ----------------------------------------------------------------------------------------------- |
 | `name`               | string            | Your name, shown to the people you share with                                                   |
-| `url`                | string            | The address others reach this node at; also the domain for `--tls acme`                         |
+| `url`                | string            | The address others reach this node at                                                           |
 | `replicas`           | list of strings   | Where encrypted replicas go; see [Backups](../backups/)                                         |
 | `s3_keys`            | list of objects   | Keys that let others keep their replica here; see [Backups](../backups/#hold-a-friends-replica) |
 | `bitwarden_register` | `true` or `false` | Lets one Bitwarden account be created; set it back to `false` afterwards                        |

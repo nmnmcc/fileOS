@@ -52,10 +52,8 @@ pub struct Api {
     /// For requests to other nodes. Nodes are authenticated by signatures,
     /// so self-signed certificates are accepted.
     pub nodes: Client,
-    /// For requests to the rest of the Web (push services, ACME).
+    /// For requests to the rest of the Web (push services).
     pub web: Client,
-    /// Answers for ACME HTTP-01 challenges.
-    pub acme: hs_net::acme::Challenges,
     auth: auth::State,
     preview: Option<preview::Preview>,
     access_log: access_log::AccessLog,
@@ -87,7 +85,6 @@ impl Api {
             node,
             nodes: Client::accepting_self_signed(),
             web: Client::new(),
-            acme: hs_net::acme::Challenges::new(),
             auth,
             preview,
             access_log: access_log::AccessLog::default(),
@@ -199,10 +196,6 @@ impl Api {
             ["s3", ..] => s3::handle(self, req),
             ["bitwarden", rest @ ..] => bitwarden::handle(self, req, rest).await,
             [".well-known", "homeserver"] => Ok(util::typed(StatusCode::OK, &self.info())),
-            [".well-known", "acme-challenge", token] => match self.acme.get(token) {
-                Some(answer) => Ok(util::respond(StatusCode::OK, "text/plain", answer)),
-                None => Err(ApiError::not_found()),
-            },
             ["auth" | "oauth", ..] | [".well-known", "openid-configuration"] => {
                 let access = self.access(req).await;
                 auth::handle(self, req, peer, &access, &segs).await

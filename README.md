@@ -34,7 +34,7 @@ AI assistants add a reason. A useful assistant needs context about your relation
 This describes the design; the [changelog](CHANGELOG.md) lists what is implemented.
 
 - **Organized around your life, not apps.** A person's page shows every chat, shared photo, file and event with them. A day, place or project shows everything that belongs to it. Files, photos and chat are implementation details.
-- **An appliance, not a service.** One program and one data directory, with no external dependencies. TLS certificates and NAT traversal are automatic, so no public IP is needed. Upgrades are automatic and roll back on failure. Nothing requires SSH.
+- **An appliance, not a service.** One program and one data directory, with no external dependencies. Encryption and NAT traversal are automatic, so no public IP or domain is needed. Upgrades are automatic and roll back on failure. Nothing requires SSH.
 - **Portable for life.** Identity is your own key; a domain is only an alias. When you move servers, your contacts and groups follow. You can export everything in open formats at any time.
 - **Federated between people.** Your homeserver talks directly to your friends' homeservers. Albums, folders and documents can be shared across servers, updated live and revoked at any time. End-to-end encrypted.
 - **Mutual aid.** Every homeserver stores your data and can act as a relay, mailbox and encrypted backup for people you trust. No blockchain or tokens.

@@ -1,6 +1,6 @@
 ---
 title: Running a node
-description: Serve the node, with TLS, port mapping and as a system service.
+description: Serve the node, behind a reverse proxy, with port mapping and as a system service.
 ---
 
 ```sh
@@ -13,29 +13,58 @@ writing first.
 
 ## Reachable from your network or the Internet
 
-| You have                              | Run                                                 |
-| ------------------------------------- | --------------------------------------------------- |
-| Only this machine                     | `hs ctl serve`                                      |
-| A home network, no domain             | `hs ctl serve --listen [::]:8443 --tls self-signed` |
-| A domain pointing at a public address | `hs ctl serve --tls acme --email you@example.org`   |
-| The same, behind a home router        | add `--map-port`                                    |
+| You have                              | Run                                                     |
+| ------------------------------------- | ------------------------------------------------------- |
+| Only this machine                     | `hs ctl serve`                                          |
+| A home network, no domain             | `hs ctl serve --listen [::]:8443 --tls self-signed`     |
+| A domain pointing at a public address | `hs ctl serve` behind [a reverse proxy](#https-on-a-public-domain) |
+| A home router in the way              | add `--map-port`                                        |
 
 **`--tls self-signed`** makes a certificate once and keeps it in
 `keys/self-signed.pem`. Apps will warn about it; `hs login --insecure`
 accepts it.
 
-**`--tls acme`** gets a certificate from Let's Encrypt for the host in the
-configured `url` (or each `--domain`), and renews it automatically. It
-listens on `[::]:443`, and on `[::]:80` for the ACME challenge; both must be
-reachable from the Internet. Use `--acme-directory URL` for another ACME
-authority, and `--http-listen` to move the challenge listener.
-
 **`--map-port`** asks the home router to forward the ports (NAT-PMP or PCP)
 and keeps renewing the mapping. Routers that only speak UPnP are not
 supported in 0.1.0; forward the ports by hand there.
 
-Ports below 1024 need root or the capability to bind them; the service
-below grants that capability without running as root.
+## HTTPS on a public domain
+
+homeserver is built for reaching nodes directly, peer to peer. It does not
+get certificates for public domains itself. If you want a public HTTPS
+address, run a reverse proxy such as Caddy or nginx in front of
+`hs ctl serve`, and set `url` in the config to the public address.
+
+With Caddy, which gets and renews the certificate:
+
+```
+home.example.org {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+With nginx, given a certificate you manage:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name home.example.org;
+    ssl_certificate     /etc/ssl/home.example.org.pem;
+    ssl_certificate_key /etc/ssl/home.example.org.key;
+    client_max_body_size 0;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_request_buffering off;
+        proxy_buffering off;
+    }
+}
+```
+
+Keep `hs` on `127.0.0.1` so that only the proxy reaches it.
 
 ## As a system service
 
@@ -52,10 +81,9 @@ Wants=network-online.target
 [Service]
 User=hs
 Environment=HS_DIR=/var/lib/homeserver
-ExecStart=/usr/local/bin/hs ctl serve --tls acme --email you@example.org
+ExecStart=/usr/local/bin/hs ctl serve
 KillSignal=SIGINT
 Restart=on-failure
-AmbientCapabilities=CAP_NET_BIND_SERVICE
 StateDirectory=homeserver
 
 [Install]

@@ -33,11 +33,6 @@ Check `hs ctl token list` on the node and create a new one.
 **A certificate error with `hs login`**: the node uses a self-signed
 certificate. Use `hs login --insecure`.
 
-**`--tls acme` fails to get a certificate**: the domain in `url` (or
-`--domain`) must point at this machine, and ports 80 and 443 must be
-reachable from the Internet. If a renewal fails, the node keeps serving the
-previous certificate and tries again a day later.
-
 **"Could not map port"**: the router does not speak NAT-PMP or PCP, or has
 it turned off. Forward the ports on the router by hand.
 
