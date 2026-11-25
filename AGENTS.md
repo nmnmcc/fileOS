@@ -24,7 +24,7 @@ The devenv shell (`direnv allow`, or `devenv shell -- <command>`) has every tool
 
 ## Worktrees
 
-- Never switch the branch of the main folder (the repository root), and do not make commits there. Someone else may be working in it.
+- The main folder (the repository root) always stays on `main`. Never switch its branch, and do not make commits there. Someone else may be working in it.
 - For every piece of work, make a worktree in `.worktrees/`, from an up-to-date `main`:
 
   ```sh
