@@ -3,11 +3,14 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# The web app is its own workspace: it builds for the browser with NSH,
+# whose dependencies the server's policy (deny.toml) does not admit.
+exclude = ["crates/hs-ui"]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
-rust-version = "1.100"
+rust-version = "1.98.1"
 license = "AGPL-3.0-only"
 publish = false
 
@@ -22,13 +25,194 @@ hs-net = { path = "crates/hs-net" }
 hs-node = { path = "crates/hs-node" }
 hs-plugin-api = { path = "crates/hs-plugin-api" }
 hs-plugin-host = { path = "crates/hs-plugin-host" }
+hs-space = { path = "crates/hs-space" }
+hs-objects = { path = "crates/hs-objects" }
+hs-api = { path = "crates/hs-api" }
+hs-idp = { path = "crates/hs-idp" }
+hs-media = { path = "crates/hs-media" }
+
+# External. Each was measured; see the dependency budget in the architecture page.
+blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
+ring = { version = "0.17.14", default-features = false, features = ["alloc"] }
+serde = { version = "1.0.229", default-features = false, features = [
+  "std",
+  "derive",
+] }
+serde_json = { version = "1.0.154", default-features = false, features = [
+  "std",
+] }
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+# The SQLx core and SQLite driver directly: the `sqlx` facade forces its
+# `migrate` feature, which brings SHA-2 from RustCrypto for checksums.
+sqlx-core = { version = "0.9.1", default-features = false, features = [
+  "_rt-tokio",
+] }
+sqlx-sqlite = { version = "0.9.1", default-features = false, features = [
+  "bundled",
+] }
+tokio = { version = "1.54.1", default-features = false, features = [
+  "rt-multi-thread",
+  "net",
+  "io-util",
+  "time",
+  "sync",
+  "macros",
+  "fs",
+  "signal",
+] }
+hyper = { version = "1.13.0", default-features = false, features = [
+  "server",
+  "client",
+  "http1",
+  "http2",
+] }
+hyper-util = { version = "0.1.21", default-features = false, features = [
+  "tokio",
+  "server",
+  "server-auto",
+  "client-legacy",
+  "http1",
+  "http2",
+] }
+http-body-util = { version = "0.1.5", default-features = false }
+http-body = { version = "1.0.1", default-features = false }
+http = { version = "1.5.0", default-features = false, features = ["std"] }
+bytes = { version = "1.12.2", default-features = false, features = ["std"] }
+rustls = { version = "0.23.46", default-features = false, features = [
+  "ring",
+  "std",
+  "tls12",
+  "logging",
+] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = [
+  "ring",
+  "tls12",
+] }
+webpki-roots = { version = "1.0.12", default-features = false }
+rcgen = { version = "0.14.10", default-features = false, features = [
+  "ring",
+  "pem",
+] }
+quick-xml = { version = "0.42.0", default-features = false }
+# Thumbnails. Pure Rust, no build scripts or proc macros; together about 1 s
+# of a clean build.
+zune-jpeg = { version = "0.5.15", default-features = false, features = [
+  "std",
+  "x86",
+  "neon",
+] }
+zune-png = { version = "0.5.2", default-features = false, features = [
+  "std",
+  "sse",
+] }
+jpeg-encoder = { version = "0.7.1", default-features = false, features = [
+  "std",
+] }
+# EXIF reader. Pure Rust, one small dependency.
+exif = { package = "kamadak-exif", version = "0.6.2", default-features = false }
+# Image dimensions from headers. Pure Rust, no dependencies.
+imagesize = { version = "0.15.0", default-features = false, features = [
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+  "heif",
+] }
+
+# Small, well-known building blocks instead of our own copies. Most were
+# already compiled for SQLx, rcgen or hyper.
+clap = { version = "4.6.10", default-features = false, features = [
+  "std",
+  "help",
+  "usage",
+  "error-context",
+  "suggestions",
+  "derive",
+  "env",
+] }
+data-encoding = { version = "2.11.1", default-features = false, features = [
+  "alloc",
+] }
+percent-encoding = { version = "2.3.2", default-features = false, features = [
+  "std",
+] }
+form_urlencoded = { version = "1.2.3", default-features = false, features = [
+  "std",
+] }
+time = { version = "0.3.55", default-features = false, features = [
+  "std",
+  "formatting",
+  "parsing",
+  "macros",
+] }
+httpdate = { version = "1.0.3", default-features = false }
+# Structured Field Values (RFC 9651) for HTTP Message Signatures.
+sfv = { version = "0.16.1", default-features = false, features = [
+  "parsed-types",
+] }
+tar = { version = "0.4.46", default-features = false }
+tempfile = { version = "3.27.0", default-features = false }
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = [
+  "fmt",
+] }
+mimalloc = { version = "0.1.52", default-features = false }
+# The command line: turning off echo while a token is typed, and aligning
+# table columns that hold wide (CJK) characters. rustix is already built for
+# tempfile.
+rustix = { version = "1.1.6", default-features = false, features = [
+  "std",
+  "termios",
+] }
+unicode-width = { version = "0.2.2", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
+ambiguous_negative_literals = "warn"
+missing_debug_implementations = "warn"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+trivial_numeric_casts = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+unused_lifetimes = "warn"
 
 [workspace.lints.clippy]
+cargo = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+correctness = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+
+allow_attributes_without_reason = "warn"
+clone_on_ref_ptr = "warn"
 dbg_macro = "warn"
 todo = "warn"
+too_long_first_doc_paragraph = "warn"
+undocumented_unsafe_blocks = "warn"
+
+# The dependency duplicate policy and its narrow exceptions live in deny.toml.
+multiple_crate_versions = "allow"
+# Public contracts use explicit must-use annotations where discarding a value is a bug.
+must_use_candidate = "allow"
+# The wire and storage formats use deliberately mixed integer widths and signedness.
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+# Protocol implementations use conventional names and literal field layouts.
+case_sensitive_file_extension_comparisons = "allow"
+decimal_bitwise_operands = "allow"
+many_single_char_names = "allow"
+similar_names = "allow"
+struct_field_names = "allow"
+# These patterns preserve readability across the existing protocol implementations.
+format_collect = "allow"
+format_push_string = "allow"
+map_unwrap_or = "allow"
+needless_pass_by_value = "allow"
+too_many_lines = "allow"
 
 # Compile time is a feature. These settings keep debug builds and links fast.
 [profile.dev]
@@ -41,3 +225,7 @@ opt-level = 1
 [profile.release]
 lto = "thin"
 strip = true
+
+[profile.bench]
+debug = "line-tables-only"
+strip = false

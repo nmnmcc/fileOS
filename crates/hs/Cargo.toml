@@ -17,6 +17,27 @@ hs-net.workspace = true
 hs-node.workspace = true
 hs-plugin-api.workspace = true
 hs-plugin-host.workspace = true
+hs-api.workspace = true
+hs-media.workspace = true
+mimalloc.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+hs-space.workspace = true
+clap.workspace = true
+form_urlencoded.workspace = true
+http.workspace = true
+percent-encoding.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+time.workspace = true
+tokio.workspace = true
+unicode-width.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
+[dev-dependencies]
+bytes.workspace = true
 
 [lints]
 workspace = true

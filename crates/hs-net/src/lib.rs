@@ -9,5 +9,12 @@
 //! and how much, is a local policy chosen by each person; this crate never
 //! hard-codes one.
 
+pub mod acme;
+pub mod client;
+pub mod natpmp;
+pub mod push;
+pub mod server;
+pub mod sig;
+
 /// The name of this component.
 pub const NAME: &str = env!("CARGO_PKG_NAME");

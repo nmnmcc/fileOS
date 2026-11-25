@@ -30,6 +30,9 @@ allow = [
   "MPL-2.0",
   "Unicode-3.0",
   "Zlib",
+  # jpeg-encoder (thumbnails). FSF-free and GPL-compatible; binary
+  # distributions acknowledge the Independent JPEG Group (see README).
+  "IJG",
 ]
 
 [bans]
@@ -41,6 +44,13 @@ deny = [
   { crate = "openssl-sys", reason = "C build dependency; use rustls with the ring backend" },
   { crate = "aws-lc-sys", reason = "needs cmake/clang and is slow to build; use rustls with the ring backend" },
   { crate = "async-trait", reason = "native async fn in traits is stable" },
+]
+# Duplicates we cannot remove: each comes from an upstream default.
+skip = [
+  { crate = "base64@0.22.1", reason = "sqlx-core; rcgen's pem is on the newer one" },
+  { crate = "hashbrown@0.16.1", reason = "sqlx-core's hashlink; indexmap is on the newer one" },
+  { crate = "syn@2.0.119", reason = "tracing-attributes, through sqlx-core's tracing defaults" },
+  { crate = "windows-sys@0.52.0", reason = "ring, on Windows only" },
 ]
 
 [sources]

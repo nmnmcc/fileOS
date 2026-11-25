@@ -2,7 +2,7 @@
 
 [package]
 name = "hs-core"
-description = "Object model shared by every homeserver component"
+description = "Core formats: deterministic CBOR, COSE, hashes and the log format"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,6 +14,8 @@ publish.workspace = true
 portable = true
 
 [dependencies]
+blake3.workspace = true
+data-encoding.workspace = true
 
 [lints]
 workspace = true

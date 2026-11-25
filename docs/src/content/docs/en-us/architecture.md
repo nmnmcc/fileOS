@@ -278,7 +278,9 @@ needs to read what it stores.
 ### Derived state: SQLite
 
 Each node that holds plaintext builds its own `index.db` from the logs, with
-`rusqlite` and SQLite compiled in (the `bundled` feature):
+SQLx and SQLite compiled in (the SQLite driver's `bundled` feature). SQLx is async and
+works directly with the node's tokio runtime; its macros are off, and every
+query is a static SQL string with bound parameters:
 
 - **Current resources:** the latest representation of each resource, so
   reads are one lookup.
@@ -292,9 +294,9 @@ Each node that holds plaintext builds its own `index.db` from the logs, with
 
 The index is never replicated and never leaves the node. Its schema can
 change freely: a new version of `hs` that needs a different schema rebuilds
-it from the logs instead of migrating it. Writes go through one thread that
-owns the write connection, in WAL mode; reads use a small pool of
-connections. Extension loading stays off.
+it from the logs instead of migrating it. It runs in WAL mode: writes
+go through a pool with one connection, so they are serial; reads use a
+second pool of a few read-only connections. Extension loading stays off.
 
 **Search.** FTS5's built-in tokenizers do not handle Chinese well. We tested
 SQLite 3.51: with the `trigram` tokenizer, `人民公园` and `妈妈去` are found,
@@ -574,9 +576,9 @@ WebAssembly plugin, describes the app. homeserver then provides:
 ## Operations
 
 **Process.** One executable and one data directory. One tokio runtime with a
-few workers, one thread that appends to the logs and owns the SQLite write
-connection, a few SQLite read connections, and a blocking pool for hashing,
-encryption and media.
+few workers. Each space's log is appended under one async lock; SQLite has
+one write connection and a few read connections; a blocking pool handles
+hashing, encryption and media.
 
 **Updates.** `hs` downloads a signed release (an Ed25519 signature over a
 reproducible Nix build). It keeps the previous binary, restarts, and runs a
@@ -626,7 +628,7 @@ dependencies stay inside the one crate that needs them.
 | `hs-identity`    | person and node keys, identity log, DID documents, recovery                       |   yes    | ring                 |
 | `hs-space`       | logs, ordering, checkpoints, membership, grants, MLS                              |    no    | mls-rs               |
 | `hs-objects`     | blobs, replicas (local directory, another `hs`, S3 client and server), encryption |    no    | ring                 |
-| `hs-store`       | the derived index in SQLite: current resources, links, search, places             |    no    | rusqlite             |
+| `hs-store`       | the derived index in SQLite: current resources, links, search, places             |    no    | SQLx                 |
 | `hs-api`         | the HTTP API as a request handler, WebDAV, CalDAV/CardDAV, MCP                    |    no    | none                 |
 | `hs-idp`         | OpenID Connect provider, passkeys, forward auth                                   |    no    | none                 |
 | `hs-node`        | wires the crates above into one node                                              |    no    | none                 |
@@ -637,40 +639,67 @@ dependencies stay inside the one crate that needs them.
 | `hs-sim`         | deterministic simulation for tests                                                |    no    | none                 |
 | `hs`             | the executable                                                                    |    no    | none                 |
 
-The web app lives in `web/` as HTML, CSS and JavaScript, built by Nix and
-embedded in `hs`.
+Release 0.1.0 implements part of this; `CHANGELOG.md` in the repository lists what is not there yet.
+
+The web app is `crates/hs-ui`, written in Rust with Native Shell and packaged
+as a static site by `nsh package --target web`, which `hs` embeds. It is a
+workspace of its own, with its own `Cargo.lock`, because Native Shell's
+dependencies fall outside the server's dependency policy.
 
 ## Dependency budget
 
 | Stack                                                                              | Crates | Clean build                  | Release binary |
 | ---------------------------------------------------------------------------------- | -----: | ---------------------------- | -------------: |
-| Network base: tokio, quinn, rustls (ring), hyper, BLAKE3, Ed25519, serde, minicbor |     74 | not measured                 |   not measured |
-| The same with rusqlite (bundled)                                                   |     84 | 13 s with 4 jobs             |         2.5 MB |
+| Network base: tokio, quinn, rustls (ring), hyper, BLAKE3, Ed25519, serde, minicbor |     68 | 10 s with 4 jobs             |         0.6 MB |
+| The same with rusqlite (bundled)                                                   |     77 | 10 s with 4 jobs             |         2.3 MB |
+| The same with SQLx instead (sqlx-core and sqlx-sqlite, bundled)                    |    130 | 15 s with 4 jobs             |         3.0 MB |
 | Base with rusqlite + wasmtime (Cranelift, components) + mls-rs + an ACME client    |    232 | 36 s with 4 jobs (dev build) |        10.2 MB |
 | For comparison: an iroh endpoint alone (Linux)                                     |    231 | 40 s                         |          12 MB |
 
+These rows were measured on one machine: separate target directories, no
+compiler cache, and a program that really opens SQLite and runs a query (or
+unused code is stripped). SQLx is used through `sqlx-core` and `sqlx-sqlite`,
+not `sqlx`, which forces its `migrate` feature and with it SHA-2 from
+RustCrypto. The row with wasmtime and the Turso comparison were measured
+earlier, with rusqlite.
+
 Candidates we measured:
 
-| Candidate              | Crates over base | Decision                                                       |
-| ---------------------- | ---------------: | -------------------------------------------------------------- |
-| rusqlite (bundled)     |               10 | Adopt, for the derived index                                   |
-| DuckDB, prebuilt       |      71 in total | Not adopted: see Storage                                       |
-| tantivy + jieba-rs     |     133 in total | Not adopted for now: a second index; FTS5 is enough for now    |
-| Turso                  |    268 with base | Not adopted for now: 50 s against 13 s; look again at 1.0      |
-| h3 + h3-quinn          |                9 | Adopt, for HTTP/3 between nodes                                |
-| wasmtime, Cranelift    |               64 | Adopt, for release builds                                      |
-| wasmtime, Pulley only  |               42 | Build option for slow machines                                 |
-| wasmi                  |      16 in total | Not adopted: no Component Model                                |
-| mls-rs                 |               63 | Adopt, with our own `ring` provider                            |
-| OpenMLS                |               95 | Not adopted: we need one MLS library; build times not compared |
-| webauthn-rs            |              134 | Not adopted: a second crypto library (RustCrypto)              |
-| openidconnect          |              102 | Not adopted: a client library, and RustCrypto                  |
-| instant-acme           |               28 | Not adopted: pulls in `async-trait`; we write ACME             |
-| igd-next               |               33 | Not adopted: a second HTTP client; UPnP-IGD only               |
-| s3s                    |              115 | Not adopted: `async-trait` and RustCrypto; we write the subset |
-| axum                   |               14 | Not decided; a small router of our own on hyper may be enough  |
-| rmcp                   |               23 | Not decided                                                    |
-| Automerge / Loro / Yrs |     13 / 80 / 17 | Decide when collaborative documents start                      |
+| Candidate                                   | Crates over base | Decision                                                           |
+| ------------------------------------------- | ---------------: | ------------------------------------------------------------------ |
+| SQLx (bundled)                              |               62 | Adopt, for the derived index: async, works with tokio directly     |
+| rusqlite (bundled)                          |                9 | Not adopted: lighter, but blocking; needs a thread pool            |
+| DuckDB, prebuilt                            |      71 in total | Not adopted: see Storage                                           |
+| tantivy + jieba-rs                          |     133 in total | Not adopted for now: a second index; FTS5 is enough for now        |
+| Turso                                       |    268 with base | Not adopted for now: 50 s against 13 s; look again at 1.0          |
+| h3 + h3-quinn                               |                9 | Adopt, for HTTP/3 between nodes                                    |
+| wasmtime, Cranelift                         |               64 | Adopt, for release builds                                          |
+| wasmtime, Pulley only                       |               42 | Build option for slow machines                                     |
+| wasmi                                       |      16 in total | Not adopted: no Component Model                                    |
+| mls-rs                                      |               63 | Adopt, with our own `ring` provider                                |
+| OpenMLS                                     |               95 | Not adopted: we need one MLS library; build times not compared     |
+| webauthn-rs                                 |              134 | Not adopted: a second crypto library (RustCrypto)                  |
+| openidconnect                               |              102 | Not adopted: a client library, and RustCrypto                      |
+| instant-acme                                |               28 | Not adopted: pulls in `async-trait`; we write ACME                 |
+| igd-next                                    |               33 | Not adopted: a second HTTP client; UPnP-IGD only                   |
+| s3s                                         |              115 | Not adopted: `async-trait` and RustCrypto; we write the subset     |
+| axum                                        |               14 | Not decided; a small router of our own on hyper may be enough      |
+| rmcp                                        |               23 | Not decided                                                        |
+| Automerge / Loro / Yrs                      |     13 / 80 / 17 | Decide when collaborative documents start                          |
+| clap (derive)                               |                7 | Adopt, for the command line: help, errors, suggestions             |
+| time                                        |                1 | Adopt: already built for SQLx and rcgen; only `time-macros` is new |
+| percent-encoding, form_urlencoded, httpdate |                0 | Adopt: already built for hyper and url                             |
+| data-encoding                               |                1 | Adopt, for hex and lowercase base32                                |
+| sfv                                         |                3 | Adopt, for the structured fields of HTTP Message Signatures        |
+| tar                                         |                2 | Adopt, for `hs export`                                             |
+| unicode-width                               |                1 | Adopt, to align CLI tables that hold CJK text                      |
+| rustix (`termios`)                          |                0 | Adopt: already built for tempfile; hides a typed token             |
+| kamadak-exif + imagesize                    |                3 | Adopt: EXIF and image sizes from JPEG, PNG, WebP and HEIF          |
+| crab_nat                                    |      30 in total | Not adopted: `rand` and `toml_edit` for NAT-PMP; we write it       |
+| coset                                       |      15 in total | Not adopted: a second CBOR library; our COSE subset is small       |
+| blahaj                                      |      11 in total | Not adopted: `rand` for Shamir sharing; we use `ring`              |
+| calcard                                     |      25 in total | Not adopted: chrono, chrono-tz and a mail parser                   |
+| ical                                        |       7 in total | Not adopted: second major versions of `thiserror` and `syn`        |
 
 The "Crates over base" column is context. Decisions rest on the reason in
 the last column. The CI build-time budget grows only when a measured

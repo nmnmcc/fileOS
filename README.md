@@ -142,3 +142,5 @@ homeserver is free software, licensed under the [GNU Affero General Public Licen
 Like the Free Software Foundation, we believe software should defend the freedom of the people who use it. The AGPL guarantees that anyone who runs homeserver for others, including as a hosted service, must share their changes with those users. homeserver can never be turned into a closed platform, by us or by anyone else.
 
 Plugins that talk to homeserver only through its Plugin Interface may use any license, under the [homeserver Plugin Exception](PLUGIN-EXCEPTION.md). Your own small tools shouldn't be bound by our license. The plugin SDK, `hs-plugin-api`, is licensed under MIT OR Apache-2.0.
+
+This software is based in part on the work of the Independent JPEG Group (through `jpeg-encoder`, used for thumbnails).

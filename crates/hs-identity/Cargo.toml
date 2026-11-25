@@ -14,6 +14,13 @@ publish.workspace = true
 portable = true
 
 [dependencies]
+hs-core.workspace = true
+ring.workspace = true
+serde_json.workspace = true
+
+# ring needs a source of randomness in the browser, even though this crate never asks for one.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+ring = { workspace = true, features = ["wasm32_unknown_unknown_js"] }
 
 [lints]
 workspace = true

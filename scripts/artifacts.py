@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Build the release artifacts with Nix and copy them into one directory.
 
-Runs `devenv build outputs.hs outputs.docs`, copies the results, then runs
+Packages the browser app, builds both Nix outputs, then runs
 `hs --version` as a smoke test.
 """
 
@@ -26,6 +26,7 @@ def main(
     ] = ROOT / "artifacts",
 ) -> None:
     """Build the release artifacts with Nix and copy them into TARGET."""
+    subprocess.run([ROOT / "scripts" / "web-build.py"], cwd=ROOT, check=True)
     with console.status("devenv build outputs.hs outputs.docs"):
         built = subprocess.run(
             ["devenv", "build", "outputs.hs", "outputs.docs"],
@@ -34,7 +35,9 @@ def main(
             capture_output=True,
             text=True,
         )
-    outputs: dict[str, str] = json.loads(built.stdout)
+    # A cold Nix build can print fetch and build logs before the final JSON object.
+    output_start = built.stdout.rfind("\n{") + 1
+    outputs: dict[str, str] = json.loads(built.stdout[output_start:])
 
     shutil.rmtree(target, ignore_errors=True)
     target.mkdir(parents=True)

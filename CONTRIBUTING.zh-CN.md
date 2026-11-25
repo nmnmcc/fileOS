@@ -19,7 +19,7 @@
 direnv allow
 ```
 
-之后每次进入目录，shell 都会自动加载开发环境。推送前运行 `check`，运行 `budget` 可以检查编译时间预算，运行 `docs` 可以预览文档。用 `devenv build outputs.hs` 和 `devenv build outputs.docs` 构建发布产物。不用 direnv 的话，运行 `devenv shell` 即可。个人定制写在 `devenv.local.nix` 中，它已被 git 忽略。
+之后每次进入目录，shell 都会自动加载开发环境。推送前运行 `check`，运行 `budget` 可以检查编译时间预算，运行 `docs` 可以预览文档。用 `devenv shell -- artifacts` 构建发布产物。该命令先打包 Native Shell 浏览器应用，再构建服务端与文档。只构建发布版服务端时，先运行 `devenv shell -- web-build`，再运行 `devenv build outputs.hs`。不用 direnv 的话，运行 `devenv shell` 即可。个人定制写在 `devenv.local.nix` 中，它已被 git 忽略。
 
 ### 不使用 Nix
 
@@ -51,7 +51,7 @@ homeserver 需要的就这些。
 1. **每个新增的外部依赖都要评审。** 在 PR 中说明为什么需要它，以及它让全新编译多花了多少时间（对比前后的 `cargo build --timings`）。评判一个依赖，看的是构建时间、二进制体积和它带进来了什么（第二套加密库或 HTTP 栈、被禁用的 crate、沉重的过程宏、构建脚本、C 或 C++），而不是它被拆成了多少个 crate：一个仔细拆分成小 crate 的库，代价可能比一个大 crate 还小。
 2. 只在根目录 `Cargo.toml` 的 `[workspace.dependencies]` 中声明一次，使用 `default-features = false`，只开启用到的功能。
 3. 每个库只允许一个版本。`cargo deny check` 会拒绝重复版本，因为每个副本都要单独编译。
-4. 不使用需要 cmake 的 C 或 C++ 代码。由 `cc` crate 编译的小型 C 代码可以使用，例如通过 rusqlite 的 `bundled` 特性编译的 SQLite。TLS 使用 rustls 的 `ring` 后端。`hs` 以单个可执行文件发布，运行时不下载、不加载任何东西。
+4. 不使用需要 cmake 的 C 或 C++ 代码。由 `cc` crate 编译的小型 C 代码可以使用，例如通过 SQLx SQLite 驱动的 `bundled` 特性编译的 SQLite。TLS 使用 rustls 的 `ring` 后端。`hs` 以单个可执行文件发布，运行时不下载、不加载任何东西。
 5. 重型依赖（网络、加密、搜索、WASM）只放在需要它的 crate 里，这样日常改动其他代码时不会重编它们。
 
 ### 写出编译快的代码
@@ -135,9 +135,13 @@ CI 的每个任务都通过同一份 `devenv.nix` 在 Nix 中执行，所以在 
 
 ```sh
 treefmt  # 格式化所有文件（Rust、Nix、Python、TOML、Markdown、JS/TS 等）
-check    # treefmt --ci、clippy、测试、cargo deny、Python 类型检查（basedpyright standard）
+check    # 格式、Clippy、测试、Rustdoc、依赖、WASM、Python、MSRV
 budget   # 编译时间预算
 ```
+
+工作区在 `Cargo.toml` 中声明最低 Rust 版本。Nix 使用该版本检查锁定依赖下的所有原生目标。
+
+运行 `cargo bench -p hs-api --bench request_path` 可测量开启访问日志后的请求处理速度，用 `HS_BENCH_REQUESTS` 调整样本量。该基准包含日志入队和刷盘。队列满时，请求会异步等待。
 
 格式化工具及其配置只在 `devenv.nix` 中定义（通过 treefmt-nix）。进入 shell 不会改写任何文件，需要你自己运行 `treefmt`。
 

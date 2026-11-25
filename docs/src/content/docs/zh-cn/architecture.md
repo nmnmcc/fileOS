@@ -138,7 +138,7 @@ data/
 
 ### 派生状态：SQLite
 
-每个保存明文的节点，都用 `rusqlite` 和编译进来的 SQLite（`bundled` 特性）从日志构建自己的 `index.db`：
+每个保存明文的节点，都用 SQLx 和编译进来的 SQLite（SQLite 驱动的 `bundled` 特性）从日志构建自己的 `index.db`。SQLx 是异步的，与节点的 tokio 运行时直接配合；不启用宏，查询都是静态 SQL 字符串加绑定参数：
 
 - **当前资源：** 每个资源的最新表示，读取只需一次查找。
 - **链接：** 资源与实体之间的边表。"和这个人有关的一切"、"这个地方这些年"以及时间线，都是带索引的查询。
@@ -146,7 +146,7 @@ data/
 - **地点：** R*Tree 模块，用于"在这附近发生过什么"。
 - **本地 AI 的记忆：** 本人可以查看、修改和删除的事实与摘要，和其他东西一样作为资源保存。
 
-索引从不复制，也从不离开节点。它的模式可以自由改变：需要不同模式的新版 `hs` 会从日志重建索引，而不是迁移它。写入通过一个独占写连接的线程，使用 WAL 模式；读取使用一个小的连接池。扩展加载始终关闭。
+索引从不复制，也从不离开节点。它的模式可以自由改变：需要不同模式的新版 `hs` 会从日志重建索引，而不是迁移它。使用 WAL 模式：写入走只有一个连接的写连接池，所以写入是串行的；读取走另一个有几个只读连接的连接池。扩展加载始终关闭。
 
 **搜索。** FTS5 自带的分词器处理不好中文。我们在 SQLite 3.51 上测试过：用 `trigram` 分词器，`人民公园` 和 `妈妈去` 能找到，但 `公园` 这样的两字词找不到，因为 trigram 至少需要三个字符；`LIKE '%公园%'` 只能靠扫描整张表才找得到。可行的做法是：在建索引和查询时，把连续的中日韩字符切成相互重叠的两字片段，其他文字交给 `unicode61` 分词器。这样，`公园`、`妈妈`、`散步`、`人民公园` 和 `walk` 都找到了正确的行，并按 BM25 排序。我们把它注册为自己的 FTS5 分词器，所以原文只存一份。如果质量不够，以后可以加入 jieba 这样的分词。
 
@@ -256,7 +256,7 @@ wasmtime 带 Cranelift 比基础栈多 64 个 crate，release 二进制增加约
 
 ## 运维
 
-**进程。** 一个可执行文件，一个数据目录。一个 tokio 运行时，少量工作线程；一个线程负责追加日志并独占 SQLite 写连接；几个 SQLite 读连接；另有一个阻塞线程池处理哈希、加密和媒体。
+**进程。** 一个可执行文件，一个数据目录。一个 tokio 运行时，少量工作线程；每个空间的日志由一把异步锁串行追加；SQLite 只有一个写连接和几个读连接；另有一个阻塞线程池处理哈希、加密和媒体。
 
 **更新。** `hs` 下载签名的发布版本（对可复现的 Nix 构建做 Ed25519 签名），保留上一个二进制，重启并运行健康检查。检查失败就回滚到上一个二进制。更新从不原地迁移日志：新版本能读旧的事件格式，索引直接重建，所以回滚不会丢失任何东西。在 systemd 下使用 systemd 的重启机制。带 A/B 更新的设备镜像以后再做。
 
@@ -284,7 +284,7 @@ wasmtime 带 Cranelift 比基础栈多 64 个 crate，release 二进制增加约
 | `hs-identity`    | 个人和节点密钥、身份日志、DID 文档、恢复                     |   是   | ring                 |
 | `hs-space`       | 日志、排序、检查点、成员关系、授权、MLS                      |   否   | mls-rs               |
 | `hs-objects`     | blob、副本（本地目录、另一个 `hs`、S3 客户端和服务端）、加密 |   否   | ring                 |
-| `hs-store`       | SQLite 中的派生索引：当前资源、链接、搜索、地点              |   否   | rusqlite             |
+| `hs-store`       | SQLite 中的派生索引：当前资源、链接、搜索、地点              |   否   | SQLx                 |
 | `hs-api`         | 作为请求处理程序的 HTTP API、WebDAV、CalDAV/CardDAV、MCP     |   否   | 无                   |
 | `hs-idp`         | OpenID Connect 提供方、通行密钥、forward auth                |   否   | 无                   |
 | `hs-node`        | 把上面的 crate 组装成一个节点                                |   否   | 无                   |
@@ -295,39 +295,59 @@ wasmtime 带 Cranelift 比基础栈多 64 个 crate，release 二进制增加约
 | `hs-sim`         | 用于测试的确定性模拟                                         |   否   | 无                   |
 | `hs`             | 可执行文件                                                   |   否   | 无                   |
 
-Web 应用以 HTML、CSS 和 JavaScript 的形式放在 `web/` 里，由 Nix 构建并嵌入 `hs`。
+0.1.0 版实现了其中一部分，尚未实现的内容见仓库中的 `CHANGELOG.md`。
+
+Web 应用是 `crates/hs-ui`，用 Native Shell 以 Rust 编写，由 `nsh package --target web` 打包成静态网站并嵌入 `hs`。它是独立的 Cargo workspace，有自己的 `Cargo.lock`，因为 Native Shell 的依赖不符合服务器的依赖策略。
 
 ## 依赖预算
 
 | 技术栈                                                                            | crate 数 | 完整构建                       | release 二进制 |
 | --------------------------------------------------------------------------------- | -------: | ------------------------------ | -------------: |
-| 网络基础栈：tokio、quinn、rustls（ring）、hyper、BLAKE3、Ed25519、serde、minicbor |       74 | 未测量                         |         未测量 |
-| 同上，加 rusqlite（bundled）                                                      |       84 | 4 个并行任务 13 秒             |         2.5 MB |
+| 网络基础栈：tokio、quinn、rustls（ring）、hyper、BLAKE3、Ed25519、serde、minicbor |       68 | 4 个并行任务 10 秒             |         0.6 MB |
+| 同上，加 rusqlite（bundled）                                                      |       77 | 4 个并行任务 10 秒             |         2.3 MB |
+| 同上，改加 SQLx（sqlx-core 和 sqlx-sqlite，bundled）                              |      130 | 4 个并行任务 15 秒             |         3.0 MB |
 | 基础栈加 rusqlite、wasmtime（Cranelift、组件）、mls-rs 和一个 ACME 客户端         |      232 | 4 个并行任务 36 秒（dev 构建） |        10.2 MB |
 | 对照：单独一个 iroh endpoint（Linux）                                             |      231 | 40 秒                          |          12 MB |
 
+这几行在同一台机器上测量：各自独立的 target 目录，不用编译缓存，程序真的打开 SQLite 执行一次查询（否则未用到的代码会被裁掉）。SQLx 直接依赖 `sqlx-core` 和 `sqlx-sqlite` 而不是 `sqlx`，因为 `sqlx` 会强制启用 `migrate` 特性，从而引入 RustCrypto 的 SHA-2。基础栈加 wasmtime 那一行和 Turso 的对比是更早用 rusqlite 测的。
+
 测量过的候选：
 
-| 候选                   | 比基础栈多出的 crate | 决定                                                |
-| ---------------------- | -------------------: | --------------------------------------------------- |
-| rusqlite（bundled）    |                   10 | 采用，用于派生索引                                  |
-| DuckDB，预构建         |             共 71 个 | 不采用：见"存储"                                    |
-| tantivy + jieba-rs     |            共 133 个 | 暂不采用：会多一个索引；目前 FTS5 已够用            |
-| Turso                  |    连同基础栈 268 个 | 暂不采用：50 秒对 13 秒；到 1.0 时再评估            |
-| h3 + h3-quinn          |                    9 | 采用，用于节点之间的 HTTP/3                         |
-| wasmtime，Cranelift    |                   64 | 采用，用于 release 构建                             |
-| wasmtime，仅 Pulley    |                   42 | 给慢机器的构建选项                                  |
-| wasmi                  |             共 16 个 | 不采用：不支持组件模型                              |
-| mls-rs                 |                   63 | 采用，配我们自己的 `ring` 提供者                    |
-| OpenMLS                |                   95 | 不采用：只需要一个 MLS 库；构建时间尚未对比         |
-| webauthn-rs            |                  134 | 不采用：第二套加密库（RustCrypto）                  |
-| openidconnect          |                  102 | 不采用：它是客户端库，而且带进 RustCrypto           |
-| instant-acme           |                   28 | 不采用：会引入 `async-trait`；ACME 我们自己写       |
-| igd-next               |                   33 | 不采用：第二个 HTTP 客户端；只支持 UPnP-IGD         |
-| s3s                    |                  115 | 不采用：`async-trait` 和 RustCrypto；子集我们自己写 |
-| axum                   |                   14 | 未定；在 hyper 上自己写个小路由可能就够了           |
-| rmcp                   |                   23 | 未定                                                |
-| Automerge / Loro / Yrs |         13 / 80 / 17 | 开始做协作文档时再定                                |
+| 候选                                        | 比基础栈多出的 crate | 决定                                                        |
+| ------------------------------------------- | -------------------: | ----------------------------------------------------------- |
+| SQLx（bundled）                             |                   62 | 采用，用于派生索引：异步，与 tokio 直接配合                 |
+| rusqlite（bundled）                         |                    9 | 不采用：更轻，但是同步的，要自己放进阻塞线程池              |
+| DuckDB，预构建                              |             共 71 个 | 不采用：见"存储"                                            |
+| tantivy + jieba-rs                          |            共 133 个 | 暂不采用：会多一个索引；目前 FTS5 已够用                    |
+| Turso                                       |    连同基础栈 268 个 | 暂不采用：50 秒对 13 秒；到 1.0 时再评估                    |
+| h3 + h3-quinn                               |                    9 | 采用，用于节点之间的 HTTP/3                                 |
+| wasmtime，Cranelift                         |                   64 | 采用，用于 release 构建                                     |
+| wasmtime，仅 Pulley                         |                   42 | 给慢机器的构建选项                                          |
+| wasmi                                       |             共 16 个 | 不采用：不支持组件模型                                      |
+| mls-rs                                      |                   63 | 采用，配我们自己的 `ring` 提供者                            |
+| OpenMLS                                     |                   95 | 不采用：只需要一个 MLS 库；构建时间尚未对比                 |
+| webauthn-rs                                 |                  134 | 不采用：第二套加密库（RustCrypto）                          |
+| openidconnect                               |                  102 | 不采用：它是客户端库，而且带进 RustCrypto                   |
+| instant-acme                                |                   28 | 不采用：会引入 `async-trait`；ACME 我们自己写               |
+| igd-next                                    |                   33 | 不采用：第二个 HTTP 客户端；只支持 UPnP-IGD                 |
+| s3s                                         |                  115 | 不采用：`async-trait` 和 RustCrypto；子集我们自己写         |
+| axum                                        |                   14 | 未定；在 hyper 上自己写个小路由可能就够了                   |
+| rmcp                                        |                   23 | 未定                                                        |
+| Automerge / Loro / Yrs                      |         13 / 80 / 17 | 开始做协作文档时再定                                        |
+| clap（derive）                              |                    7 | 采用，用于命令行：帮助、错误提示、拼写建议                  |
+| time                                        |                    1 | 采用：SQLx 和 rcgen 已经在编译它，新增的只有 `time-macros`  |
+| percent-encoding、form_urlencoded、httpdate |                    0 | 采用：hyper 和 url 已经在编译它们                           |
+| data-encoding                               |                    1 | 采用，用于十六进制和小写 base32                             |
+| sfv                                         |                    3 | 采用，用于 HTTP 消息签名的结构化字段                        |
+| tar                                         |                    2 | 采用，用于 `hs export`                                      |
+| unicode-width                               |                    1 | 采用，让含中日韩文字的命令行表格对齐                        |
+| rustix（`termios`）                         |                    0 | 采用：tempfile 已经在编译它；输入令牌时不回显               |
+| kamadak-exif + imagesize                    |                    3 | 采用：从 JPEG、PNG、WebP 和 HEIF 读取 EXIF 和图片尺寸       |
+| crab_nat                                    |             共 30 个 | 不采用：为了 NAT-PMP 带进 `rand` 和 `toml_edit`；我们自己写 |
+| coset                                       |             共 15 个 | 不采用：第二个 CBOR 库；我们用到的 COSE 子集很小            |
+| blahaj                                      |             共 11 个 | 不采用：Shamir 分享带进 `rand`；我们用 `ring`               |
+| calcard                                     |             共 25 个 | 不采用：chrono、chrono-tz 和一个邮件解析器                  |
+| ical                                        |              共 7 个 | 不采用：`thiserror` 和 `syn` 的第二个主版本                 |
 
 "比基础栈多出的 crate"一列只是背景信息，决定依据的是最后一列的理由。只有当一个测量过的依赖因为写在 PR 里的理由被接受时，CI 的构建时间预算才会增加。
 

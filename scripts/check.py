@@ -8,6 +8,7 @@ Stops at the first failing check.
 """
 
 import json
+import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -48,21 +49,43 @@ CHECKS: list[list[str] | Callable[[], list[str]]] = [
     ["treefmt", "--ci"],
     ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"],
     ["cargo", "test", "--workspace", "--locked"],
+    ["cargo", "doc", "--workspace", "--no-deps", "--locked"],
     portable_check,  # shared with plugins, phone shells and the web app
     ["cargo", "deny", "check"],
+    ["cargo", "machete"],
     ["uv", "run", "--locked", "basedpyright"],
 ]
+
+UI = ["--manifest-path", "crates/hs-ui/Cargo.toml", "--locked"]
+UI_CHECKS = [
+    ["cargo", "clippy", *UI, "--all-targets", "--", "-D", "warnings"],
+    ["cargo", "test", *UI],
+    ["cargo", "doc", *UI, "--no-deps"],
+    ["cargo", "check", *UI, "--target", WASM_TARGET],
+]
+
 
 console = Console()
 
 
 def main() -> None:
     """Run the checks CI runs. Stops at the first failing check."""
-    for check in CHECKS:
+    checks: list[list[str] | Callable[[], list[str]]] = [*CHECKS, *UI_CHECKS]
+    if msrv_cargo := os.environ.get("HS_MSRV_CARGO"):
+        checks.extend(
+            [
+                [msrv_cargo, "check", "--workspace", "--all-targets", "--locked"],
+                [msrv_cargo, "check", *UI, "--all-targets"],
+            ]
+        )
+    for check in checks:
         command = check() if callable(check) else check
         line = " ".join(command)
         console.print(f"[bold]$ {line}[/bold]", markup=True, highlight=False)
-        if subprocess.run(command, cwd=ROOT).returncode != 0:
+        env = os.environ.copy()
+        if command[:2] == ["cargo", "doc"]:
+            env["RUSTDOCFLAGS"] = f"{env.get('RUSTDOCFLAGS', '')} -D warnings".strip()
+        if subprocess.run(command, cwd=ROOT, env=env).returncode != 0:
             console.print(f"\n[red]failed:[/red] {line}", highlight=False)
             raise typer.Exit(1)
     console.print("\n[green]All checks passed.[/green]")

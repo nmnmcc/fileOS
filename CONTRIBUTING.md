@@ -19,7 +19,7 @@ The repository defines its environment in `devenv.nix`: the Rust toolchain pinne
 direnv allow
 ```
 
-Your shell now loads the environment whenever you enter the directory. Run `check` before pushing, `budget` to check the compile-time budget and `docs` to preview the documentation. Build release artifacts with `devenv build outputs.hs` and `devenv build outputs.docs`. Without direnv, run `devenv shell` instead. Personal tweaks go in `devenv.local.nix`, which is ignored by git.
+Your shell now loads the environment whenever you enter the directory. Run `check` before pushing, `budget` to check the compile-time budget and `docs` to preview the documentation. Build release artifacts with `devenv shell -- artifacts`. It packages the Native Shell browser app before building the server and documentation. To build just the release server, run `devenv shell -- web-build` followed by `devenv build outputs.hs`. Without direnv, run `devenv shell` instead. Personal tweaks go in `devenv.local.nix`, which is ignored by git.
 
 ### Without Nix
 
@@ -51,7 +51,7 @@ The reference machine is a 4-core laptop with 8 GB of RAM. The budgets will be r
 1. **Every new external dependency is reviewed.** Say in the PR why it is needed and how much it adds to the clean build (compare `cargo build --timings` before and after). Judge it by build time, binary size and what it brings in (a second cryptography library or HTTP stack, a banned crate, heavy procedural macros, build scripts, C or C++), not by how many crates it is split into: a library split carefully into small crates can cost less than one big crate.
 2. Declare it once in the root `Cargo.toml` under `[workspace.dependencies]`, with `default-features = false`, enabling only the features you use.
 3. One version per crate. `cargo deny check` rejects duplicates, because each copy compiles separately.
-4. No C or C++ that needs cmake. Small C compiled by the `cc` crate is fine, such as SQLite through rusqlite's `bundled` feature. For TLS, use rustls with the `ring` backend. `hs` ships as one executable; nothing is downloaded or loaded at run time.
+4. No C or C++ that needs cmake. Small C compiled by the `cc` crate is fine, such as SQLite through the `bundled` feature of SQLx's SQLite driver. For TLS, use rustls with the `ring` backend. `hs` ships as one executable; nothing is downloaded or loaded at run time.
 5. Keep heavy dependencies (networking, cryptography, search, WASM) inside the crate that needs them, so day-to-day edits elsewhere don't rebuild them.
 
 ### Writing code that compiles fast
@@ -135,9 +135,13 @@ CI runs every job inside Nix, through the same `devenv.nix`, so what passes in t
 
 ```sh
 treefmt  # format every file (Rust, Nix, Python, TOML, Markdown, JS/TS, ...)
-check    # treefmt --ci, clippy, tests, cargo deny, Python types (basedpyright, standard)
+check    # formatting, Clippy, tests, Rustdoc, dependencies, WASM, Python, MSRV
 budget   # compile-time budget
 ```
+
+The workspace declares its MSRV in `Cargo.toml`. Nix supplies that compiler for a locked check of all native targets.
+
+To measure request handling with access logging enabled, run `cargo bench -p hs-api --bench request_path`. Set `HS_BENCH_REQUESTS` to change the sample size. The benchmark measures handler speed, including queueing and flushing access events. The bounded queue applies backpressure under load.
 
 Formatters and their settings are defined only in `devenv.nix` (via treefmt-nix). Entering the shell never rewrites files; run `treefmt` yourself.
 
