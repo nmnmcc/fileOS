@@ -641,10 +641,10 @@ dependencies stay inside the one crate that needs them.
 
 Release 0.1.0 implements part of this; `CHANGELOG.md` in the repository lists what is not there yet.
 
-The web app is `crates/hs-ui`, written in Rust with Native Shell and packaged
-as a static site by `nsh package --target web`, which `hs` embeds. It is a
-workspace of its own, with its own `Cargo.lock`, because Native Shell's
-dependencies fall outside the server's dependency policy.
+Release 0.1.0 has no web app; people use the `hs` command line, which works
+with a node through the same API every client uses. A build embeds the static
+files in `HS_WEB_DIR` if it is set, and otherwise serves a page that points to
+the command line.
 
 ## Dependency budget
 

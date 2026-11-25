@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Embed the web app: `crates/hs-ui` as `web-build` packages it, or the
-//! directory in `HS_WEB_DIR`. Release builds (`HS_REQUIRE_NSH_WEB`) must name
-//! one. Without a package, a page that says how to make one stands in, so the
-//! server builds and tests without the NSH tools.
+//! Embed a web app: the static files in the directory `HS_WEB_DIR` names.
+//! Without one, a page pointing to the command line stands in.
 
 use std::{
     env,
@@ -13,29 +11,17 @@ use std::{
 };
 
 fn main() {
-    let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("set by cargo"));
-    let root = manifest.join("../..");
     println!("cargo::rerun-if-env-changed=HS_WEB_DIR");
-    println!("cargo::rerun-if-env-changed=HS_REQUIRE_NSH_WEB");
-    let release = env::var_os("HS_REQUIRE_NSH_WEB").is_some();
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("set by cargo"));
-    let package = root.join("crates/hs-ui/.nsh/web/homeserver");
-    let dir = match env::var_os("HS_WEB_DIR") {
-        Some(dir) => PathBuf::from(dir),
-        None if release => panic!("release builds require an explicit HS_WEB_DIR"),
-        None if package.join("index.html").is_file() => package,
-        None => {
-            // Notice when a package appears.
-            println!(
-                "cargo::rerun-if-changed={}",
-                root.join("crates/hs-ui/.nsh").display()
-            );
+    let dir = env::var_os("HS_WEB_DIR").map_or_else(
+        || {
             let dir = out_dir.join("web-missing");
             fs::create_dir_all(&dir).expect("OUT_DIR is writable");
             fs::write(dir.join("index.html"), MISSING).expect("OUT_DIR is writable");
             dir
-        }
-    };
+        },
+        PathBuf::from,
+    );
     println!("cargo::rerun-if-changed={}", dir.display());
 
     let mut files = Vec::new();
@@ -44,15 +30,6 @@ fn main() {
     assert!(
         files.iter().any(|f| f == "index.html"),
         "no index.html in {}",
-        dir.display()
-    );
-    assert!(
-        !release
-            || (files
-                .iter()
-                .any(|f| f.starts_with("nsh-start.") && f.ends_with(".js"))
-                && files.iter().any(|f| f.ends_with(".wasm"))),
-        "{} does not contain a Native Shell browser bundle",
         dir.display()
     );
 
@@ -78,7 +55,7 @@ fn main() {
 }
 
 /// The page served when this build has no web app.
-const MISSING: &str = "<!doctype html>\n<meta charset=\"utf-8\">\n<title>homeserver</title>\n<p>This build of homeserver has no web app. Run <code>web-build</code>, then build again.</p>\n";
+const MISSING: &str = "<!doctype html>\n<meta charset=\"utf-8\">\n<title>homeserver</title>\n<p>This homeserver has no web app yet. Use the <code>hs</code> command line: <code>hs login</code>, then <code>hs --help</code>.</p>\n";
 
 /// `path`, made absolute, as a Rust string literal.
 fn literal(path: &Path) -> String {
@@ -109,8 +86,8 @@ fn walk(base: &Path, dir: &Path, files: &mut Vec<String>) {
     }
 }
 
-/// Whether a part of the path is a content digest (`nsh.685a9f0a1f.wasm`,
-/// `browser.de8aa0f5a1/`), so the file never changes under that path.
+/// Whether a part of the path is a content digest (`app.685a9f0a1f.wasm`,
+/// `assets.de8aa0f5a1/`), so the file never changes under that path.
 fn named_by_content(path: &str) -> bool {
     path.split(['/', '.'])
         .any(|part| part.len() >= 8 && part.bytes().all(|b| b.is_ascii_hexdigit()))

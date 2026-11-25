@@ -3,9 +3,6 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# The web app is its own workspace: it builds for the browser with NSH,
-# whose dependencies the server's policy (deny.toml) does not admit.
-exclude = ["crates/hs-ui"]
 
 [workspace.package]
 version = "0.1.0"

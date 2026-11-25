@@ -21,19 +21,6 @@ let
     cargo = toolchain;
     rustc = toolchain;
   };
-
-  nsh = import ./nsh.nix { inherit pkgs lib; };
-  webBundle =
-    let
-      directory = ./crates/hs-ui/.nsh/web/homeserver;
-    in
-    if builtins.pathExists (directory + "/index.html") then
-      builtins.path {
-        path = directory;
-        name = "homeserver-web";
-      }
-    else
-      throw "Native Shell bundle missing. Run devenv shell -- web-build before building outputs.hs.";
 in
 {
   languages.rust = {
@@ -75,7 +62,6 @@ in
     pkgs.cargo-machete
     pkgs.cargo-llvm-lines
     pkgs.git
-    nsh
   ];
 
   # One command formats every file in the repository: `treefmt`.
@@ -88,8 +74,6 @@ in
         "crates/*/LICENSE-*"
         ".envrc"
         ".python-version"
-        "crates/hs-ui/.nsh/**"
-        "crates/hs-ui/target/**"
       ];
       programs = {
         rustfmt = {
@@ -118,7 +102,7 @@ in
   # code from `treefmt --ci` in CI. Run `treefmt` yourself instead.
   tasks."devenv:treefmt:run".before = lib.mkForce [ ];
 
-  # The artifacts command packages the web app before building the release.
+  # Build artifacts: `devenv build outputs.hs` or `devenv build outputs.docs`.
   outputs = {
     hs = rustPlatform.buildRustPackage {
       pname = "hs";
@@ -128,12 +112,10 @@ in
         fileset = lib.fileset.unions [
           ./Cargo.toml
           ./Cargo.lock
-          (lib.fileset.difference ./crates ./crates/hs-ui)
+          ./crates
         ];
       };
       cargoLock.lockFile = ./Cargo.lock;
-      env.HS_WEB_DIR = "${webBundle}";
-      env.HS_REQUIRE_NSH_WEB = "1";
       # One executable: SQLite is compiled in (sqlx-sqlite's `bundled`).
       # Without this, nixpkgs' cargo hook asks libsqlite3-sys (and others)
       # to link system libraries instead.

@@ -40,11 +40,10 @@ end to end in one executable. Data formats may still change; keep an export.
   and members, tokens, resources (`ls`, `get`, `put`, `edit`, `patch`, `rm`,
   `upload`), search, timeline, places, blobs and live changes (`watch`).
   `--json` prints what the API returns.
-- **Web app.** An installable web app embedded in the executable.
 
 ### Not yet
 
-These are in the architecture but not in 0.1.0: QUIC and HTTP/3, the path
+These are in the architecture but not in 0.1.0: a web app, QUIC and HTTP/3, the path
 layer, relays and mailboxes; end-to-end encrypted spaces (MLS); WebAssembly
 plugins; checkpoints and segment compaction; signed self-updates.
 

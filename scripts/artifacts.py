@@ -26,7 +26,6 @@ def main(
     ] = ROOT / "artifacts",
 ) -> None:
     """Build the release artifacts with Nix and copy them into TARGET."""
-    subprocess.run([ROOT / "scripts" / "web-build.py"], cwd=ROOT, check=True)
     with console.status("devenv build outputs.hs outputs.docs"):
         built = subprocess.run(
             ["devenv", "build", "outputs.hs", "outputs.docs"],

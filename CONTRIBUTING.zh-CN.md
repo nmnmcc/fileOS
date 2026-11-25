@@ -19,7 +19,7 @@
 direnv allow
 ```
 
-之后每次进入目录，shell 都会自动加载开发环境。推送前运行 `check`，运行 `budget` 可以检查编译时间预算，运行 `docs` 可以预览文档。用 `devenv shell -- artifacts` 构建发布产物。该命令先打包 Native Shell 浏览器应用，再构建服务端与文档。只构建发布版服务端时，先运行 `devenv shell -- web-build`，再运行 `devenv build outputs.hs`。不用 direnv 的话，运行 `devenv shell` 即可。个人定制写在 `devenv.local.nix` 中，它已被 git 忽略。
+之后每次进入目录，shell 都会自动加载开发环境。推送前运行 `check`，运行 `budget` 可以检查编译时间预算，运行 `docs` 可以预览文档。用 `devenv shell -- artifacts` 构建发布产物。只构建发布版服务端时，运行 `devenv build outputs.hs`。不用 direnv 的话，运行 `devenv shell` 即可。个人定制写在 `devenv.local.nix` 中，它已被 git 忽略。
 
 ### 不使用 Nix
 

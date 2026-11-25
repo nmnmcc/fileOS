@@ -19,7 +19,7 @@ The repository defines its environment in `devenv.nix`: the Rust toolchain pinne
 direnv allow
 ```
 
-Your shell now loads the environment whenever you enter the directory. Run `check` before pushing, `budget` to check the compile-time budget and `docs` to preview the documentation. Build release artifacts with `devenv shell -- artifacts`. It packages the Native Shell browser app before building the server and documentation. To build just the release server, run `devenv shell -- web-build` followed by `devenv build outputs.hs`. Without direnv, run `devenv shell` instead. Personal tweaks go in `devenv.local.nix`, which is ignored by git.
+Your shell now loads the environment whenever you enter the directory. Run `check` before pushing, `budget` to check the compile-time budget and `docs` to preview the documentation. Build release artifacts with `devenv shell -- artifacts`. To build just the release server, run `devenv build outputs.hs`. Without direnv, run `devenv shell` instead. Personal tweaks go in `devenv.local.nix`, which is ignored by git.
 
 ### Without Nix
 

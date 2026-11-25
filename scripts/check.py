@@ -56,28 +56,15 @@ CHECKS: list[list[str] | Callable[[], list[str]]] = [
     ["uv", "run", "--locked", "basedpyright"],
 ]
 
-UI = ["--manifest-path", "crates/hs-ui/Cargo.toml", "--locked"]
-UI_CHECKS = [
-    ["cargo", "clippy", *UI, "--all-targets", "--", "-D", "warnings"],
-    ["cargo", "test", *UI],
-    ["cargo", "doc", *UI, "--no-deps"],
-    ["cargo", "check", *UI, "--target", WASM_TARGET],
-]
-
 
 console = Console()
 
 
 def main() -> None:
     """Run the checks CI runs. Stops at the first failing check."""
-    checks: list[list[str] | Callable[[], list[str]]] = [*CHECKS, *UI_CHECKS]
+    checks: list[list[str] | Callable[[], list[str]]] = [*CHECKS]
     if msrv_cargo := os.environ.get("HS_MSRV_CARGO"):
-        checks.extend(
-            [
-                [msrv_cargo, "check", "--workspace", "--all-targets", "--locked"],
-                [msrv_cargo, "check", *UI, "--all-targets"],
-            ]
-        )
+        checks.append([msrv_cargo, "check", "--workspace", "--all-targets", "--locked"])
     for check in checks:
         command = check() if callable(check) else check
         line = " ".join(command)

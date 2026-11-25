@@ -297,7 +297,7 @@ wasmtime 带 Cranelift 比基础栈多 64 个 crate，release 二进制增加约
 
 0.1.0 版实现了其中一部分，尚未实现的内容见仓库中的 `CHANGELOG.md`。
 
-Web 应用是 `crates/hs-ui`，用 Native Shell 以 Rust 编写，由 `nsh package --target web` 打包成静态网站并嵌入 `hs`。它是独立的 Cargo workspace，有自己的 `Cargo.lock`，因为 Native Shell 的依赖不符合服务器的依赖策略。
+0.1.0 版本没有 Web 应用，用的是 `hs` 命令行，它和其他客户端一样通过同一套 API 操作节点。构建时如果设置了 `HS_WEB_DIR`，就把其中的静态文件嵌入程序，否则提供一个指向命令行的页面。
 
 ## 依赖预算
 
