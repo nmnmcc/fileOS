@@ -1,0 +1,32 @@
+---
+title: homeserver 文档
+description: 一台属于你自己的个人服务器，存放你保存和分享的数据。
+template: splash
+hero:
+  tagline: 一台属于你自己的个人服务器，存放你保存和分享的数据。按你要做的事选择手册。
+---
+
+import { Aside, CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <LinkCard
+    title="用户手册"
+    href="user/"
+    description="写给在 homeserver 上保存东西的每个人：登录、添加和查找数据、与认识的人分享，以及接入你已经在用的应用。"
+  />
+  <LinkCard
+    title="管理手册"
+    href="admin/"
+    description="写给为自己或家人搭建节点的人：安装 hs、运行、配置、令牌、备份与恢复。"
+  />
+  <LinkCard
+    title="开发者手册"
+    href="dev/"
+    description="写给开发 homeserver 或基于它开发的人：参与贡献、REST API、架构，以及我们学习的项目。"
+  />
+</CardGrid>
+
+<Aside type="caution" title="实验阶段">
+  0.1.0 是最小可用版本，数据格式仍可能变化，请保留一份导出。各手册描述 0.1.0
+  实际能做的事；[架构](dev/architecture/)描述它的方向。
+</Aside>

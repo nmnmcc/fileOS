@@ -96,7 +96,7 @@ crates/
 
 Crates marked _portable_ have `portable = true` under `[package.metadata.hs]` in their `Cargo.toml`. They must build for `wasm32-unknown-unknown`, because plugins, phone shells and the web app share them; `check` verifies this. Keep threads, files, sockets and clocks out of them; reach those through interfaces that each host implements.
 
-The documentation site lives in `docs/` and is built with [Astro Starlight](https://starlight.astro.build) (full-text search, translations). English pages are in `docs/src/content/docs/en-us/`, Simplified Chinese pages in `docs/src/content/docs/zh-cn/`, with the same file names.
+The documentation site lives in `docs/` and is built with [Astro Starlight](https://starlight.astro.build) (full-text search, translations). English pages are in `docs/src/content/docs/en-us/`, Simplified Chinese pages in `docs/src/content/docs/zh-cn/`, with the same file names. Pages are grouped into three manuals, each a topic in the switcher at the top of the sidebar: `user/` for people who use a homeserver, `admin/` for people who run one, and `dev/` for developers. Add a new page in both languages and to the `topics` list in `docs/astro.config.mjs`, and write for the reader of its manual.
 
 For production builds, set `DOCS_SITE_URL` to the public site origin to generate canonical URLs, `hreflang` links and the sitemap. The language redirect at `/` is not indexed or included in the sitemap.
 

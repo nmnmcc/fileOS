@@ -96,7 +96,7 @@ crates/
 
 标记为*可移植*的 crate 在 `Cargo.toml` 的 `[package.metadata.hs]` 下写有 `portable = true`。它们必须能为 `wasm32-unknown-unknown` 构建，因为插件、手机外壳和 Web 应用共用它们；`check` 会验证这一点。其中不要直接使用线程、文件、socket 和时钟，应通过各宿主实现的接口访问。
 
-文档站点位于 `docs/`，使用 [Astro Starlight](https://starlight.astro.build) 构建，支持全文搜索和多语言。英文页面在 `docs/src/content/docs/en-us/`，简体中文页面在 `docs/src/content/docs/zh-cn/`，文件名一一对应。
+文档站点位于 `docs/`，使用 [Astro Starlight](https://starlight.astro.build) 构建，支持全文搜索和多语言。英文页面在 `docs/src/content/docs/en-us/`，简体中文页面在 `docs/src/content/docs/zh-cn/`，文件名一一对应。页面分为三本手册，每本是侧栏顶部切换器中的一个主题：`user/` 写给使用 homeserver 的人，`admin/` 写给运行它的人，`dev/` 写给开发者。新页面要用两种语言编写，加入 `docs/astro.config.mjs` 的 `topics` 列表，并为该手册的读者而写。
 
 生产构建时，将 `DOCS_SITE_URL` 设为站点的公开源地址，以生成规范网址、`hreflang` 链接和站点地图。根路径 `/` 仅用于语言跳转，不参与搜索索引，也不列入站点地图。
 

@@ -116,7 +116,7 @@ Matrix 和 Mastodon 是联邦的，但大多数用户集中在少数大服务器
 - 资源占用随你自己的数据和关系增长，与网络规模无关
 - 群组加密基于 **MLS（RFC 9420）**
 
-技术路线：使用 Rust，以自包含的单个可执行文件发布，基于 Web 标准构建（一切都有 URL、都使用 HTTP，homeserver 之间也是）。签名的只追加日志和内容寻址的 blob 是事实来源，SQLite 索引由它们派生，随时可以重建。所有节点使用同一套协议，浏览器和手机是你 homeserver 的用户代理。封存的日志和 blob 可以复制到本地目录、另一个 `hs`（你自己的或朋友的）或任何兼容 S3 的存储，因此同步、备份、迁移和联邦是同一个操作，存储只需要 `hs`。网络使用基于 QUIC（quinn 和 rustls）的 HTTP/3 和自己实现的 NAT 穿透，homeserver 之间互相中继。每个共享空间有一条用 MLS 加密的有序事件日志。插件使用 WebAssembly 组件。内置 OpenID Connect 身份提供方。理由和测量数据见[总体架构与技术路线](docs/src/content/docs/zh-cn/architecture.md)。
+技术路线：使用 Rust，以自包含的单个可执行文件发布，基于 Web 标准构建（一切都有 URL、都使用 HTTP，homeserver 之间也是）。签名的只追加日志和内容寻址的 blob 是事实来源，SQLite 索引由它们派生，随时可以重建。所有节点使用同一套协议，浏览器和手机是你 homeserver 的用户代理。封存的日志和 blob 可以复制到本地目录、另一个 `hs`（你自己的或朋友的）或任何兼容 S3 的存储，因此同步、备份、迁移和联邦是同一个操作，存储只需要 `hs`。网络使用基于 QUIC（quinn 和 rustls）的 HTTP/3 和自己实现的 NAT 穿透，homeserver 之间互相中继。每个共享空间有一条用 MLS 加密的有序事件日志。插件使用 WebAssembly 组件。内置 OpenID Connect 身份提供方。理由和测量数据见[总体架构与技术路线](docs/src/content/docs/zh-cn/dev/architecture.md)。
 
 Rust 编译慢会把没有高性能电脑的贡献者挡在门外，因此我们把编译速度当作一项功能：小 crate、少而精的依赖、不做重型代码生成，并在 CI 中强制执行编译时间预算。一台普通笔记本应当足以参与开发。
 
