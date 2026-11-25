@@ -2,36 +2,65 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> A personal server you own, for the data you keep and share.
+A personal server you own, for your notes, files, photos, contacts, calendars and passwords, shared straight with the homeservers of people you know.
 
-homeserver is one program, `hs`, and one data directory. It keeps your photos, files, chat, passwords, notes and calendars, and puts them in order by people, time, places and things. It talks straight to the homeservers of people you know. You do not need to be a server administrator.
+**How it works:** every change is a signed entry added to the end of a log, and files are blobs named by their hash; search, sync, sharing and backup are all made from copying these logs and blobs between nodes.
 
 > [!NOTE]
-> **Status: experimental.** Version 0.1.0 is an MVP (a first, minimal version). Data formats may still change, so keep an export. See the [changelog](CHANGELOG.md) for what it does.
+> Experimental. Version 0.1.0 is an MVP; data formats may still change, so keep an export.
 
-## Quick start
+## Features
 
-```sh
-cargo build --release --package hs   # or: devenv build outputs.hs
-hs ctl init --name "Ada"             # write down the recovery code it prints
-hs ctl serve                         # http://127.0.0.1:8080
-```
+**Your data**
 
-See [Installation](docs/src/content/docs/en-us/admin/install.md) and [Running a node](docs/src/content/docs/en-us/admin/running.md) for more.
+- [x] Notes, files, photos, contacts, events and other items, in spaces
+- [x] Search, timeline, places and links between items
+- [x] Photo metadata (time, place, camera) and thumbnails
+- [ ] Pages for people, days, places and projects
+- [ ] Chat
+- [ ] Documents that people make together
+- [ ] Importers: Google Takeout, iCloud, chat exports, password managers
+- [ ] A web app
+
+**Identity and access**
+
+- [x] Your identity is your own key (`did:hs`), with a recovery code
+- [x] Recovery code in parts, kept by friends (Shamir's secret sharing)
+- [x] A token for every app and person, limited by role, space and type, and able to be taken back
+- [x] OpenID Connect provider, passkeys and forward auth for other self-hosted apps
+
+**Sharing between homeservers**
+
+- [x] Spaces shared with people on other homeservers, kept up to date as they change
+- [ ] End-to-end encrypted spaces (MLS)
+- [ ] Relays and mailboxes for people you trust
+- [ ] QUIC and HTTP/3, with our own NAT traversal
+
+**Works with the apps you have**
+
+- [x] REST API with Server-Sent Events and an OpenAPI document
+- [x] CardDAV and CalDAV
+- [x] Bitwarden-compatible password vault
+- [x] Model Context Protocol (MCP) for AI assistants
+- [x] Web Push
+- [ ] WebDAV for files
+- [ ] WebAssembly plugins
+
+**Backups and running a node**
+
+- [x] One program (`hs`) and one data directory; no config file needed
+- [x] Export to a plain tar file
+- [x] Encrypted replicas in a directory, S3 or a friend's homeserver, synced every hour
+- [x] Restore a node with only the recovery code
+- [x] Port mapping on home routers (NAT-PMP/PCP)
+- [ ] Signed automatic updates, going back to the old version when one goes wrong
+- [ ] One identity on a number of your own nodes (home, VPS, laptop)
+- [ ] Personal AI memory, and small tools made from a description
 
 ## Documentation
 
-- [User manual](docs/src/content/docs/en-us/user/index.md): signing in, your data, sharing, apps and assistants.
-- [Administration manual](docs/src/content/docs/en-us/admin/index.md): installing, running, configuration, backups.
-- [Developer manual](docs/src/content/docs/en-us/dev/index.md): contributing, the REST API, the [architecture](docs/src/content/docs/en-us/dev/architecture.md).
-- [Manifesto](MANIFESTO.md): why homeserver is made, its principles, what it will not do, and the roadmap.
-
-## Contributing
-
-Open an issue to talk about a principle, question a design decision or give a use case. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get ready for development, and for the rules.
+[User manual](docs/src/content/docs/en-us/user/index.md) · [Administration manual](docs/src/content/docs/en-us/admin/index.md) · [Developer manual](docs/src/content/docs/en-us/dev/index.md) · [Manifesto](MANIFESTO.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 ## License
 
-homeserver is free software under the [GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`), and comes with **ABSOLUTELY NO WARRANTY**, to the degree that the law lets. Plugins that talk to homeserver only through its Plugin Interface may use any license, under the [homeserver Plugin Exception](PLUGIN-EXCEPTION.md). The plugin SDK, `hs-plugin-api`, is under MIT OR Apache-2.0.
-
-This software is based in part on the work of the Independent JPEG Group (through `jpeg-encoder`, used for thumbnails).
+[AGPL-3.0-only](LICENSE), with a [Plugin Exception](PLUGIN-EXCEPTION.md). The plugin SDK, `hs-plugin-api`, is MIT OR Apache-2.0. This software is based in part on the work of the Independent JPEG Group.
