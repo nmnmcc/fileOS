@@ -34,6 +34,7 @@ use hs_objects::s3::{self, Credentials};
 use serde_json::{Value as Json, json};
 
 use crate::Api;
+use crate::types::ReplicaSync;
 
 const MANIFEST: &str = "manifest";
 const SYNC_EVERY: Duration = Duration::from_secs(3600);
@@ -464,7 +465,7 @@ pub fn configured(api: &Api) -> Vec<String> {
 }
 
 /// Sync every configured replica now. Returns one line per replica.
-pub async fn sync_all(api: &Api) -> Vec<Json> {
+pub async fn sync_all(api: &Api) -> Vec<ReplicaSync> {
     let mut out = Vec::new();
     for spec in configured(api) {
         let shown = redact(&spec);
@@ -472,9 +473,26 @@ pub async fn sync_all(api: &Api) -> Vec<Json> {
             Ok(store) => sync(api.node.dir(), &api.node.storage_key(), &store).await,
             Err(e) => Err(e),
         };
+        let count = |n: usize| Some(u64::try_from(n).unwrap_or(u64::MAX));
         out.push(match r {
-            Ok(r) => json!({ "replica": shown, "ok": true, "sent": r.sent, "bytes": r.bytes, "unchanged": r.unchanged, "deleted": r.deleted }),
-            Err(e) => json!({ "replica": shown, "ok": false, "error": e }),
+            Ok(r) => ReplicaSync {
+                replica: shown,
+                ok: true,
+                sent: count(r.sent),
+                bytes: Some(r.bytes),
+                unchanged: count(r.unchanged),
+                deleted: count(r.deleted),
+                error: None,
+            },
+            Err(e) => ReplicaSync {
+                replica: shown,
+                ok: false,
+                sent: None,
+                bytes: None,
+                unchanged: None,
+                deleted: None,
+                error: Some(e),
+            },
         });
     }
     out
@@ -499,9 +517,9 @@ pub fn start(api: Arc<Api>) {
             tokio::time::sleep(SYNC_EVERY).await;
             if !configured(&api).is_empty() {
                 for line in sync_all(&api).await {
-                    if line["ok"].as_bool() == Some(true) {
-                        tracing::info!(name: "replica.sync.completed", sent = line["sent"].as_u64(),
-                            bytes = line["bytes"].as_u64(), deleted = line["deleted"].as_u64(),
+                    if line.ok {
+                        tracing::info!(name: "replica.sync.completed", sent = line.sent,
+                            bytes = line.bytes, deleted = line.deleted,
                             "Replica synchronized with {{sent}} files sent");
                     } else {
                         tracing::warn!(name: "replica.sync.failed", "Could not synchronize a replica");

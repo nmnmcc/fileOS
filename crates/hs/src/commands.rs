@@ -9,14 +9,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::{Args, Subcommand};
-use hs_api::Api;
+use clap_complete::engine::ArgValueCandidates;
+use hs_api::client::{Reply, resource_path};
 use hs_api::replica;
+use hs_api::types as t;
+use hs_api::{Api, types::Role};
 use hs_node::Node;
 use http::{Method, StatusCode, header};
 use serde_json::{Value as Json, json};
 
-use crate::output::{print_json, short, size, table, text, time};
-use crate::remote::{self, Server, json_body, query, seg};
+use crate::output::{print_json, short, size, table, time};
+use crate::remote::{self, Server};
 use crate::{Res, RoleArg};
 
 /// The options every command takes.
@@ -65,7 +68,7 @@ impl Global {
 }
 
 impl Target {
-    async fn close(self) {
+    pub(crate) async fn close(self) {
         if let Target::Local(node) = self {
             node.index.close().await;
         }
@@ -80,7 +83,10 @@ pub enum SpaceCommand {
     #[command(visible_alias = "ls")]
     List,
     /// Show a space and its members
-    Show { space: String },
+    Show {
+        #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
+        space: String,
+    },
     /// Create a space
     Create { name: String },
     /// Join a space kept on another node (its owner adds this node first)
@@ -95,15 +101,23 @@ pub enum SpaceCommand {
     #[command(subcommand)]
     Member(MemberCommand),
     /// Make another member node the one that keeps the space
-    Handover { space: String, node: String },
+    Handover {
+        #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
+        space: String,
+        node: String,
+    },
     /// Pull changes from the node that keeps the space, now
-    Sync { space: String },
+    Sync {
+        #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
+        space: String,
+    },
 }
 
 #[derive(Subcommand)]
 pub enum MemberCommand {
     /// Add a node, by its URL (it is asked who it is) or by its keys
     Add {
+        #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
         space: String,
         /// The node's URL
         #[arg(long, required_unless_present = "node")]
@@ -118,11 +132,15 @@ pub enum MemberCommand {
         role: RoleArg,
     },
     /// Remove a member node
-    Remove { space: String, node: String },
+    Remove {
+        #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
+        space: String,
+        node: String,
+    },
 }
 
 /// Space IDs (hex) to names.
-async fn space_names(t: &Target) -> BTreeMap<String, String> {
+pub(crate) async fn space_names(t: &Target) -> BTreeMap<String, String> {
     let mut names = BTreeMap::new();
     match t {
         Target::Local(node) => {
@@ -138,13 +156,12 @@ async fn space_names(t: &Target) -> BTreeMap<String, String> {
 }
 
 async fn remote_names(s: &Server) -> BTreeMap<String, String> {
-    let mut names = BTreeMap::new();
-    if let Ok(Json::Array(list)) = s.get("/api/spaces").await {
-        for sp in list {
-            names.insert(text(&sp, "id"), text(&sp, "name"));
-        }
-    }
-    names
+    s.spaces()
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|sp| (sp.id, sp.name))
+        .collect()
 }
 
 fn name_of(names: &BTreeMap<String, String>, id: &str) -> String {
@@ -162,9 +179,9 @@ pub async fn space(g: &Global, cmd: SpaceCommand) -> Res {
                     for id in node.space_ids() {
                         out.push(api.space_json(&id).await?);
                     }
-                    Json::Array(out)
+                    out
                 }
-                Target::Remote(s) => s.get("/api/spaces").await?,
+                Target::Remote(s) => s.spaces().await?,
             };
             t.close().await;
             if g.json {
@@ -172,18 +189,16 @@ pub async fn space(g: &Global, cmd: SpaceCommand) -> Res {
                 return Ok(());
             }
             let rows: Vec<Vec<String>> = list
-                .as_array()
-                .into_iter()
-                .flatten()
+                .iter()
                 .map(|sp| {
                     vec![
-                        short(&text(sp, "id"), 12),
-                        text(sp, "name"),
-                        sp["members"].as_array().map_or(0, Vec::len).to_string(),
-                        if sp["is_primary"] == true {
+                        short(&sp.id, 12),
+                        sp.name.clone(),
+                        sp.members.len().to_string(),
+                        if sp.is_primary {
                             "this node".into()
                         } else {
-                            text(sp, "home")
+                            sp.home.clone().unwrap_or_default()
                         },
                     ]
                 })
@@ -199,31 +214,26 @@ pub async fn space(g: &Global, cmd: SpaceCommand) -> Res {
                     let id = api.create_space(&name, json!({})).await?;
                     api.space_json(&id).await?
                 }
-                Target::Remote(s) => {
-                    s.post("/api/spaces", &json!({ "name": name, "info": {} }))
-                        .await?
-                }
+                Target::Remote(s) => s.create_space(&t::NewSpace { name, info: None }).await?,
             };
             t.close().await;
             if g.json {
                 print_json(&made);
             } else {
-                println!("{}", text(&made, "id"));
+                println!("{}", made.id);
             }
             Ok(())
         }
         SpaceCommand::Show { space } => {
             let s = g.server()?;
-            let sp = s.get(&format!("/api/spaces/{}", seg(&space))).await?;
+            let sp = s.space(&space).await?;
             show_space(g, &sp);
             Ok(())
         }
         SpaceCommand::Join { home, space } => {
             let s = g.server()?;
             let home = remote::normalize_url(&home)?;
-            let sp = s
-                .post("/api/spaces/join", &json!({ "home": home, "space": space }))
-                .await?;
+            let sp = s.join(&t::Join { home, space }).await?;
             show_space(g, &sp);
             Ok(())
         }
@@ -235,54 +245,36 @@ pub async fn space(g: &Global, cmd: SpaceCommand) -> Res {
             role,
         }) => {
             let s = g.server()?;
-            let mut body = json!({ "role": hs_space::Role::from(role).as_str() });
-            if let Some(url) = url {
-                body["url"] = remote::normalize_url(&url)?.into();
-            }
-            if let Some(node) = node {
-                body["node"] = node.into();
-            }
-            if let Some(identity) = identity {
-                body["identity"] = identity.into();
-            }
-            let r = s
-                .post(&format!("/api/spaces/{}/members", seg(&space)), &body)
-                .await?;
+            let new = t::NewMember {
+                node,
+                identity,
+                role: Some(role.into()),
+                url: url.as_deref().map(remote::normalize_url).transpose()?,
+                home: None,
+            };
+            let r = s.add_member(&space, &new).await?;
             done(g, &r, "added");
             Ok(())
         }
         SpaceCommand::Member(MemberCommand::Remove { space, node }) => {
             let s = g.server()?;
-            let r = s
-                .delete(&format!(
-                    "/api/spaces/{}/members/{}",
-                    seg(&space),
-                    seg(&node)
-                ))
-                .await?;
-            done(g, &r.json()?, "removed");
+            s.remove_member(&space, &node).await?;
+            done(g, &Json::Null, "removed");
             Ok(())
         }
         SpaceCommand::Handover { space, node } => {
             let s = g.server()?;
-            let r = s
-                .post(
-                    &format!("/api/spaces/{}/handover", seg(&space)),
-                    &json!({ "node": node }),
-                )
-                .await?;
+            let r = s.handover(&space, &node).await?;
             done(g, &r, "handed over");
             Ok(())
         }
         SpaceCommand::Sync { space } => {
             let s = g.server()?;
-            let r = s
-                .post(&format!("/api/spaces/{}/sync", seg(&space)), &json!({}))
-                .await?;
+            let r = s.pull(&space).await?;
             if g.json {
                 print_json(&r);
             } else {
-                println!("pulled {} changes", r["pulled"].as_u64().unwrap_or(0));
+                println!("pulled {} changes", r.pulled);
             }
             Ok(())
         }
@@ -290,7 +282,7 @@ pub async fn space(g: &Global, cmd: SpaceCommand) -> Res {
 }
 
 /// Say it worked, or print the reply with `--json`.
-fn done(g: &Global, reply: &Json, what: &str) {
+fn done(g: &Global, reply: &impl serde::Serialize, what: &str) {
     if g.json {
         print_json(reply);
     } else {
@@ -298,30 +290,33 @@ fn done(g: &Global, reply: &Json, what: &str) {
     }
 }
 
-fn show_space(g: &Global, sp: &Json) {
+fn show_space(g: &Global, sp: &t::Space) {
     if g.json {
         print_json(sp);
         return;
     }
-    println!("ID       {}", text(sp, "id"));
-    println!("Name     {}", text(sp, "name"));
-    println!("Changes  {}", sp["seq"].as_u64().unwrap_or(0));
-    if sp["is_primary"] == true {
+    println!("ID       {}", sp.id);
+    println!("Name     {}", sp.name);
+    println!("Changes  {}", sp.seq);
+    if sp.is_primary {
         println!("Kept by  this node");
     } else {
-        println!("Kept by  {} ({})", text(sp, "primary"), text(sp, "home"));
+        println!(
+            "Kept by  {} ({})",
+            sp.primary,
+            sp.home.as_deref().unwrap_or("")
+        );
     }
     println!();
-    let rows: Vec<Vec<String>> = sp["members"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let rows: Vec<Vec<String>> = sp
+        .members
+        .iter()
         .map(|m| {
             vec![
-                text(m, "role"),
-                text(m, "node"),
-                text(m, "identity"),
-                text(m, "home"),
+                m.role.as_str().to_string(),
+                m.node.clone(),
+                m.identity.clone(),
+                m.home.clone().unwrap_or_default(),
             ]
         })
         .collect();
@@ -337,10 +332,10 @@ pub enum TokenCommand {
         #[arg(long, value_enum, default_value_t = RoleArg::Writer)]
         role: RoleArg,
         /// What the token is for
-        #[arg(long, default_value = "created by hs token create")]
+        #[arg(long, default_value = "created by hs ctl token create")]
         label: String,
         /// Limit the token to these spaces (name or ID) [default: all]
-        #[arg(long = "space", value_name = "SPACE")]
+        #[arg(long = "space", value_name = "SPACE", add = ArgValueCandidates::new(crate::complete::spaces))]
         spaces: Vec<String>,
         /// Limit the token to these resource types [default: all]
         #[arg(long = "type", value_name = "TYPE")]
@@ -354,9 +349,23 @@ pub enum TokenCommand {
     List,
     /// Revoke a grant
     Revoke {
-        /// The grant ID, from `hs token list`
+        /// The grant ID, from `hs ctl token list`
+        #[arg(add = ArgValueCandidates::new(crate::complete::grants))]
         id: String,
     },
+}
+
+/// The grants of a node.
+pub(crate) async fn grants(t: &Target) -> Res<Vec<t::Grant>> {
+    Ok(match t {
+        Target::Local(node) => node
+            .grants()
+            .await
+            .into_iter()
+            .filter_map(|g| serde_json::from_value(g).ok())
+            .collect(),
+        Target::Remote(s) => s.grants().await?,
+    })
 }
 
 /// `90m`, `12h`, `30d` and the like, in milliseconds.
@@ -391,73 +400,45 @@ async fn token_on(g: &Global, t: &Target, cmd: TokenCommand) -> Res {
             types,
             expires_in,
         } => {
-            let mut body = json!({
-                "role": hs_space::Role::from(role).as_str(),
-                "label": label,
-            });
-            if !spaces.is_empty() {
-                body["spaces"] = json!(spaces);
-            }
-            if !types.is_empty() {
-                body["types"] = json!(types);
-            }
-            if let Some(ms) = expires_in {
-                body["expires"] = json!(hs_node::now_ms().saturating_add(ms));
-            }
+            let new = t::NewGrant {
+                spaces: (!spaces.is_empty()).then_some(spaces),
+                types: (!types.is_empty()).then_some(types),
+                expires: expires_in.map(|ms| hs_node::now_ms().saturating_add(ms)),
+                ..t::NewGrant::new(role.into(), &label)
+            };
             let made = match t {
-                Target::Local(node) => Api::new(Arc::clone(node)).create_grant(&body).await?,
-                Target::Remote(s) => s.post("/api/grants", &body).await?,
+                Target::Local(node) => Api::new(Arc::clone(node)).create_grant(&new).await?,
+                Target::Remote(s) => s.create_grant(&new).await?,
             };
             if g.json {
                 print_json(&made);
             } else {
-                eprintln!("grant {}", text(&made, "id"));
-                println!("{}", text(&made, "token"));
+                eprintln!("grant {}", made.id);
+                println!("{}", made.token);
             }
         }
         TokenCommand::List => {
-            let list = match t {
-                Target::Local(node) => Json::Array(
-                    node.grants()
-                        .await
-                        .into_iter()
-                        .map(|mut g| {
-                            if let Some(o) = g.as_object_mut() {
-                                o.remove("token");
-                            }
-                            g
-                        })
-                        .collect(),
-                ),
-                Target::Remote(s) => s.get("/api/grants").await?,
-            };
+            let list = grants(t).await?;
             if g.json {
                 print_json(&list);
                 return Ok(());
             }
             let names = space_names(t).await;
-            let all = |v: &Json, f: &dyn Fn(&str) -> String| match v.as_array() {
-                Some(a) => a
-                    .iter()
-                    .filter_map(Json::as_str)
-                    .map(f)
-                    .collect::<Vec<_>>()
-                    .join(","),
+            let all = |v: &Option<Vec<String>>, f: &dyn Fn(&str) -> String| match v {
+                Some(a) => a.iter().map(|s| f(s)).collect::<Vec<_>>().join(","),
                 None => "all".into(),
             };
             let rows: Vec<Vec<String>> = list
-                .as_array()
-                .into_iter()
-                .flatten()
+                .iter()
                 .map(|gr| {
                     vec![
-                        text(gr, "id"),
-                        text(gr, "role"),
-                        all(&gr["spaces"], &|s| name_of(&names, s)),
-                        all(&gr["types"], &str::to_string),
-                        time(gr["created"].as_u64().unwrap_or(0)),
-                        time(gr["expires"].as_u64().unwrap_or(0)),
-                        text(gr, "label"),
+                        gr.id.clone(),
+                        gr.role.as_str().to_string(),
+                        all(&gr.spaces, &|s| name_of(&names, s)),
+                        all(&gr.types, &str::to_string),
+                        time(gr.created),
+                        time(gr.expires.unwrap_or(0)),
+                        gr.label.clone(),
                     ]
                 })
                 .collect();
@@ -471,9 +452,7 @@ async fn token_on(g: &Global, t: &Target, cmd: TokenCommand) -> Res {
         TokenCommand::Revoke { id } => {
             match t {
                 Target::Local(node) => node.revoke(&id).await.map_err(|e| e.to_string())?,
-                Target::Remote(s) => {
-                    s.delete(&format!("/api/grants/{}", seg(&id))).await?;
-                }
+                Target::Remote(s) => s.revoke_grant(&id).await?,
             }
             eprintln!("revoked {id}");
         }
@@ -487,7 +466,7 @@ pub async fn identity(g: &Global) -> Res {
     let t = g.target().await?;
     let doc = match &t {
         Target::Local(node) => hs_identity::did::document(&node.identity()),
-        Target::Remote(s) => s.get("/api/identity").await?,
+        Target::Remote(s) => s.identity().await?,
     };
     t.close().await;
     print_json(&doc);
@@ -497,7 +476,7 @@ pub async fn identity(g: &Global) -> Res {
 pub async fn export(g: &Global) -> Res {
     let out = std::io::stdout();
     if out.is_terminal() {
-        return Err("redirect the archive to a file: hs export > backup.tar".into());
+        return Err("redirect the archive to a file: hs ctl export > backup.tar".into());
     }
     match g.target().await? {
         Target::Local(node) => {
@@ -513,7 +492,8 @@ pub async fn export(g: &Global) -> Res {
         }
         Target::Remote(s) => {
             let mut out = std::io::BufWriter::new(out.lock());
-            s.download("/api/export", &mut out).await.map(|_| ())
+            s.download("/api/export", &mut out).await?;
+            Ok(())
         }
     }
 }
@@ -530,26 +510,25 @@ pub enum ReplicaCommand {
 pub async fn replica(g: &Global, cmd: ReplicaCommand) -> Res {
     let t = g.target().await?;
     let list = match (&t, &cmd) {
-        (Target::Local(node), ReplicaCommand::List) => Json::Array(
+        (Target::Local(node), ReplicaCommand::List) => serde_json::to_value(
             replica::configured(&Api::new(Arc::clone(node)))
                 .iter()
-                .map(|s| Json::String(replica::redact(s)))
-                .collect(),
+                .map(|s| replica::redact(s))
+                .collect::<Vec<_>>(),
         ),
         (Target::Local(node), ReplicaCommand::Sync) => {
-            Json::Array(replica::sync_all(&Api::new(Arc::clone(node))).await)
+            serde_json::to_value(replica::sync_all(&Api::new(Arc::clone(node))).await)
         }
-        (Target::Remote(s), ReplicaCommand::List) => s.get("/api/replicas").await?,
-        (Target::Remote(s), ReplicaCommand::Sync) => {
-            s.post("/api/replicas/sync", &json!({})).await?
-        }
-    };
+        (Target::Remote(s), ReplicaCommand::List) => serde_json::to_value(s.replicas().await?),
+        (Target::Remote(s), ReplicaCommand::Sync) => serde_json::to_value(s.sync_replicas().await?),
+    }
+    .map_err(|e| e.to_string())?;
     t.close().await;
     let items = list.as_array().cloned().unwrap_or_default();
     if g.json {
         print_json(&list);
     } else if items.is_empty() {
-        eprintln!("no replicas; add one with hs config set replicas '[\"s3://…\"]'");
+        eprintln!("no replicas; add one with hs ctl config set replicas '[\"s3://…\"]'");
     } else {
         for item in items {
             match item {
@@ -570,17 +549,13 @@ pub async fn login(url: Option<String>, insecure: bool) -> Res {
         _ => remote::read_token()?,
     };
     let s = Server::new(url.clone(), token.clone(), insecure);
-    let session = s.get("/api/session").await?;
-    if session["role"].is_null() {
+    let session = s.session().await?;
+    let Some(role) = session.role else {
         return Err(format!("{url} did not accept that token"));
-    }
-    let node = s.get("/api/node").await?;
+    };
+    let node = s.node().await?;
     remote::save_login(&url, &token, insecure)?;
-    println!(
-        "Signed in to {} ({url}) as {}",
-        text(&node, "name"),
-        text(&session, "role")
-    );
+    println!("Signed in to {} ({url}) as {}", node.name, role.as_str());
     Ok(())
 }
 
@@ -596,42 +571,35 @@ pub fn logout(url: Option<String>) -> Res {
 
 pub async fn status(g: &Global) -> Res {
     let s = g.server()?;
-    let node = s.get("/api/node").await?;
-    let session = s.get("/api/session").await?;
-    let health = s.get("/api/health").await?;
+    let node = s.node().await?;
+    let session = s.session().await?;
+    let health = s.health().await?;
     if g.json {
         print_json(&json!({ "node": node, "session": session, "health": health }));
         return Ok(());
     }
-    let resources: u64 = health["counts"]
-        .as_object()
-        .map(|c| c.values().filter_map(Json::as_u64).sum())
-        .unwrap_or(0);
+    let resources: u64 = health.counts.values().sum();
     println!("Server     {}", s.url);
-    println!("Node       {}", text(&node, "name"));
-    println!("Identity   {}", text(&node, "did"));
-    println!("Version    {}", text(&node, "version"));
+    println!("Node       {}", node.name);
+    println!("Identity   {}", node.did);
+    println!("Version    {}", node.version);
     println!(
         "Signed in  {}{}",
-        text(&session, "role"),
-        if session["grant"].is_string() {
-            format!(" (grant {})", text(&session, "grant"))
-        } else {
-            String::new()
+        session.role.map_or("", Role::as_str),
+        match &session.grant {
+            Some(id) => format!(" (grant {id})"),
+            None => String::new(),
         }
     );
     println!(
         "Index      {}",
-        if health["index"] == true {
+        if health.index {
             "healthy"
         } else {
-            "needs a rebuild (hs rebuild-index)"
+            "needs a rebuild (hs ctl rebuild-index)"
         }
     );
-    println!(
-        "Content    {} spaces, {resources} resources",
-        health["spaces"].as_u64().unwrap_or(0)
-    );
+    println!("Content    {} spaces, {resources} resources", health.spaces);
     let others: Vec<String> = remote::logins()?
         .into_iter()
         .filter(|(u, _)| *u != s.url)
@@ -645,29 +613,10 @@ pub async fn status(g: &Global) -> Res {
 
 // Resources
 
-/// `/api/spaces/S/resources/TYPE/ID`.
-fn resource_path(space: &str, target: &str) -> Res<String> {
-    let (kind, id) = split_target(target)?;
-    Ok(format!(
-        "/api/spaces/{}/resources/{}/{}",
-        seg(space),
-        seg(kind),
-        seg(id)
-    ))
-}
-
-fn split_target(target: &str) -> Res<(&str, &str)> {
-    if !hs_core::valid_target(target) {
-        return Err(format!(
-            "not a resource: {target} (write TYPE/ID, such as note/shopping)"
-        ));
-    }
-    Ok(target.split_once('/').expect("valid targets have a slash"))
-}
-
 #[derive(Args)]
 pub struct LsArgs {
     /// The space (name or ID)
+    #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
     space: String,
     /// Only this type
     #[arg(value_name = "TYPE")]
@@ -685,41 +634,28 @@ pub struct LsArgs {
 
 pub async fn ls(g: &Global, a: LsArgs) -> Res {
     let s = g.server()?;
-    let base = format!("/api/spaces/{}/resources", seg(&a.space));
-    let limit = if a.all { 1000 } else { a.limit };
-    let mut offset = a.offset;
+    let mut q = t::ListQuery {
+        kind: a.kind,
+        limit: Some(if a.all { 1000 } else { a.limit }),
+        offset: Some(a.offset),
+        page: None,
+    };
     let mut items = Vec::new();
     let more = loop {
-        let page = s
-            .get(&format!(
-                "{base}{}",
-                query(&[
-                    ("type", a.kind.clone()),
-                    ("limit", Some(limit.to_string())),
-                    ("offset", Some(offset.to_string())),
-                    ("page", Some("1".into())),
-                ])
-            ))
-            .await?;
-        items.extend(page["items"].as_array().cloned().unwrap_or_default());
-        match page["next_offset"].as_u64() {
-            Some(next) if a.all => offset = next as u32,
+        let page = s.resources(&a.space, &q).await?;
+        items.extend(page.items);
+        match page.next_offset {
+            Some(next) if a.all => q.offset = Some(next),
             next => break next,
         }
     };
     if g.json {
-        print_json(&Json::Array(items));
+        print_json(&items);
         return Ok(());
     }
     let rows: Vec<Vec<String>> = items
         .iter()
-        .map(|r| {
-            vec![
-                text(r, "target"),
-                time(r["updated"].as_u64().unwrap_or(0)),
-                text(r, "title"),
-            ]
-        })
+        .map(|r| vec![r.target.clone(), time(r.updated), r.title.clone()])
         .collect();
     table(&["RESOURCE", "UPDATED", "TITLE"], &rows);
     if let Some(next) = more {
@@ -731,6 +667,7 @@ pub async fn ls(g: &Global, a: LsArgs) -> Res {
 #[derive(Args)]
 pub struct GetArgs {
     /// The space (name or ID)
+    #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
     space: String,
     /// TYPE/ID, such as note/shopping
     target: String,
@@ -817,6 +754,7 @@ fn read_input(file: Option<&Path>) -> Res<Vec<u8>> {
 #[derive(Args)]
 pub struct PutArgs {
     /// The space (name or ID)
+    #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
     space: String,
     /// TYPE/ID, such as note/shopping
     target: String,
@@ -864,20 +802,17 @@ fn quoted(tag: &str) -> String {
     }
 }
 
-fn written(g: &Global, target: &str, r: &remote::Reply) -> Res {
-    let v = r.json()?;
+fn written(g: &Global, target: &str, r: &Reply) -> Res {
+    let w: t::Written = r.typed()?;
     if g.json {
-        print_json(&v);
+        print_json(&w);
     } else {
         let what = if r.status == StatusCode::CREATED {
             "created"
         } else {
             "updated"
         };
-        println!(
-            "{what} {target} (change {})",
-            v["seq"].as_u64().unwrap_or(0)
-        );
+        println!("{what} {target} (change {})", w.seq);
     }
     Ok(())
 }
@@ -885,6 +820,7 @@ fn written(g: &Global, target: &str, r: &remote::Reply) -> Res {
 #[derive(Args)]
 pub struct EditArgs {
     /// The space (name or ID)
+    #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
     space: String,
     /// TYPE/ID; a new one starts empty
     target: String,
@@ -952,7 +888,7 @@ pub async fn edit(g: &Global, a: EditArgs) -> Res {
         .await
     {
         Ok(r) => written(g, &a.target, &r),
-        Err(e) => Err(keep(file, e)),
+        Err(e) => Err(keep(file, e.into())),
     }
 }
 
@@ -983,6 +919,7 @@ fn run_editor(path: &Path) -> Res {
 #[derive(Args)]
 pub struct PatchArgs {
     /// The space (name or ID)
+    #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
     space: String,
     /// TYPE/ID of a JSON resource
     target: String,
@@ -1013,6 +950,7 @@ pub async fn patch(g: &Global, a: PatchArgs) -> Res {
 #[derive(Args)]
 pub struct RmArgs {
     /// The space (name or ID)
+    #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
     space: String,
     /// TYPE/ID
     target: String,
@@ -1024,22 +962,10 @@ pub struct RmArgs {
 pub async fn rm(g: &Global, a: RmArgs) -> Res {
     let s = g.server()?;
     if a.erase {
-        let (kind, id) = split_target(&a.target)?;
-        s.send(
-            Method::POST,
-            &format!(
-                "/api/spaces/{}/erase/{}/{}",
-                seg(&a.space),
-                seg(kind),
-                seg(id)
-            ),
-            &[],
-            None,
-        )
-        .await?;
+        s.erase(&a.space, &a.target).await?;
         eprintln!("erased {}", a.target);
     } else {
-        s.delete(&resource_path(&a.space, &a.target)?).await?;
+        s.delete_resource(&a.space, &a.target).await?;
         eprintln!("deleted {}", a.target);
     }
     Ok(())
@@ -1048,6 +974,7 @@ pub async fn rm(g: &Global, a: RmArgs) -> Res {
 #[derive(Args)]
 pub struct UploadArgs {
     /// The space (name or ID)
+    #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
     space: String,
     /// Files to upload
     #[arg(required = true)]
@@ -1068,27 +995,28 @@ pub async fn upload(g: &Global, a: UploadArgs) -> Res {
             .unwrap_or_default();
         let media_type = guess_media_type(Some(path), &[]).unwrap_or("application/octet-stream");
         let len = bytes.len();
-        let blob = s
-            .send(Method::POST, "/api/blobs", &[], Some((media_type, bytes)))
-            .await?
-            .json()?;
-        let hash = text(&blob, "hash");
+        let hash = s.put_blob(media_type, bytes).await?.hash;
         let target = format!("file/{}", short(&hash, 16));
+        let file = json!({
+            "name": name,
+            "hash": hash,
+            "size": len,
+            "media_type": media_type,
+        });
         let r = s
             .send(
                 Method::PUT,
                 &resource_path(&a.space, &target)?,
                 &[],
-                Some(json_body(&json!({
-                    "name": name,
-                    "hash": hash,
-                    "size": len,
-                    "media_type": media_type,
-                }))),
+                Some((
+                    "application/json",
+                    serde_json::to_vec(&file).unwrap_or_default(),
+                )),
             )
             .await?;
         if g.json {
-            made.push(json!({ "target": target, "hash": hash, "reply": r.json()? }));
+            let w: t::Written = r.typed()?;
+            made.push(json!({ "target": target, "hash": hash, "reply": w }));
         } else {
             println!("{target}  {}  {name}", size(len as u64));
         }
@@ -1102,22 +1030,20 @@ pub async fn upload(g: &Global, a: UploadArgs) -> Res {
 // Finding things
 
 /// Rows from search, the timeline and the like.
-async fn print_rows(g: &Global, s: &Server, rows: &Json) -> Res {
+async fn print_rows(g: &Global, s: &Server, rows: &[t::Row]) -> Res {
     if g.json {
         print_json(rows);
         return Ok(());
     }
     let names = remote_names(s).await;
     let out: Vec<Vec<String>> = rows
-        .as_array()
-        .into_iter()
-        .flatten()
+        .iter()
         .map(|r| {
             vec![
-                name_of(&names, &text(r, "space")),
-                text(r, "target"),
-                time(r["time"].as_u64().unwrap_or(0)),
-                text(r, "title"),
+                name_of(&names, &r.space),
+                r.target.clone(),
+                time(r.time),
+                r.title.clone(),
             ]
         })
         .collect();
@@ -1137,13 +1063,10 @@ pub struct SearchArgs {
 pub async fn search(g: &Global, a: SearchArgs) -> Res {
     let s = g.server()?;
     let rows = s
-        .get(&format!(
-            "/api/search{}",
-            query(&[
-                ("q", Some(a.words.join(" "))),
-                ("limit", Some(a.limit.to_string())),
-            ])
-        ))
+        .search(&t::SearchQuery {
+            q: a.words.join(" "),
+            limit: Some(a.limit),
+        })
         .await?;
     print_rows(g, &s, &rows).await
 }
@@ -1168,13 +1091,11 @@ fn parse_date(s: &str) -> Result<u64, String> {
 pub async fn timeline(g: &Global, a: TimelineArgs) -> Res {
     let s = g.server()?;
     let rows = s
-        .get(&format!(
-            "/api/timeline{}",
-            query(&[
-                ("before", a.before.map(|b| b.to_string())),
-                ("limit", Some(a.limit.to_string())),
-            ])
-        ))
+        .timeline(&t::TimelineQuery {
+            before: a.before,
+            limit: Some(a.limit),
+            ..t::TimelineQuery::default()
+        })
         .await?;
     print_rows(g, &s, &rows).await
 }
@@ -1197,15 +1118,12 @@ pub struct NearArgs {
 pub async fn near(g: &Global, a: NearArgs) -> Res {
     let s = g.server()?;
     let rows = s
-        .get(&format!(
-            "/api/near{}",
-            query(&[
-                ("lat", Some(a.lat.to_string())),
-                ("lon", Some(a.lon.to_string())),
-                ("km", Some(a.km.to_string())),
-                ("limit", Some(a.limit.to_string())),
-            ])
-        ))
+        .near(&t::NearQuery {
+            lat: a.lat,
+            lon: a.lon,
+            km: Some(a.km),
+            limit: Some(a.limit),
+        })
         .await?;
     print_rows(g, &s, &rows).await
 }
@@ -1213,6 +1131,7 @@ pub async fn near(g: &Global, a: NearArgs) -> Res {
 #[derive(Args)]
 pub struct RelatedArgs {
     /// The space (name or ID)
+    #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
     space: String,
     /// TYPE/ID
     target: String,
@@ -1220,30 +1139,14 @@ pub struct RelatedArgs {
 
 pub async fn related(g: &Global, a: RelatedArgs) -> Res {
     let s = g.server()?;
-    let (kind, id) = split_target(&a.target)?;
-    let list = s
-        .get(&format!(
-            "/api/related/{}/{}/{}",
-            seg(&a.space),
-            seg(kind),
-            seg(id)
-        ))
-        .await?;
+    let list = s.related(&a.space, &a.target, &t::Limit::default()).await?;
     if g.json {
         print_json(&list);
         return Ok(());
     }
     let rows: Vec<Vec<String>> = list
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|x| {
-            vec![
-                text(x, "rel"),
-                text(&x["row"], "target"),
-                text(&x["row"], "title"),
-            ]
-        })
+        .iter()
+        .map(|x| vec![x.rel.clone(), x.row.target.clone(), x.row.title.clone()])
         .collect();
     table(&["RELATION", "RESOURCE", "TITLE"], &rows);
     Ok(())
@@ -1277,29 +1180,28 @@ pub async fn blob(g: &Global, cmd: BlobCommand) -> Res {
                 .as_deref()
                 .or_else(|| guess_media_type(Some(&file), &[]))
                 .unwrap_or("application/octet-stream");
-            let r = s
-                .send(Method::POST, "/api/blobs", &[], Some((media_type, bytes)))
-                .await?
-                .json()?;
+            let r = s.put_blob(media_type, bytes).await?;
             if g.json {
                 print_json(&r);
             } else {
-                println!("{}", text(&r, "hash"));
+                println!("{}", r.hash);
             }
             Ok(())
         }
         BlobCommand::Get { hash, output } => {
-            let path = format!("/api/blobs/{}", seg(&hash));
+            let path = format!("/api/blobs/{}", hs_api::client::seg(&hash));
             if let Some(p) = output {
                 let f = std::fs::File::create(&p).map_err(|e| format!("{}: {e}", p.display()))?;
                 let mut w = std::io::BufWriter::new(f);
-                return s.download(&path, &mut w).await.map(|_| ());
+                s.download(&path, &mut w).await?;
+                return Ok(());
             }
             let out = std::io::stdout();
             if out.is_terminal() {
                 return Err("redirect it to a file, or give -o FILE".into());
             }
-            s.download(&path, &mut out.lock()).await.map(|_| ())
+            s.download(&path, &mut out.lock()).await?;
+            Ok(())
         }
     }
 }
@@ -1309,26 +1211,22 @@ pub async fn watch(g: &Global) -> Res {
     let s = g.server()?;
     let names = remote_names(&s).await;
     let json = g.json;
-    let events = s.events("/api/events", |line| {
-        let Some(data) = line.strip_prefix("data:") else {
-            return true;
-        };
-        let data = data.trim();
+    let events = s.events(|ev| {
         if json {
-            println!("{data}");
-        } else if let Ok(v) = serde_json::from_str::<Json>(data) {
+            println!("{}", serde_json::to_string(&ev).unwrap_or_default());
+        } else {
             println!(
                 "{}  {:<8}  {}  {}",
                 time(hs_node::now_ms()),
-                text(&v, "kind"),
-                name_of(&names, &text(&v, "space")),
-                text(&v, "target")
+                ev.kind,
+                name_of(&names, &ev.space),
+                ev.target
             );
         }
         std::io::stdout().flush().is_ok()
     });
     tokio::select! {
-        r = events => r,
+        r = events => Ok(r?),
         _ = tokio::signal::ctrl_c() => Ok(()),
     }
 }
@@ -1362,13 +1260,7 @@ mod tests {
     }
 
     #[test]
-    fn targets_are_checked() {
-        assert_eq!(
-            resource_path("家", "note/x").unwrap(),
-            "/api/spaces/%E5%AE%B6/resources/note/x"
-        );
-        assert!(resource_path("s", "note").is_err());
-        assert!(resource_path("s", "note/../x").is_err());
+    fn etags_are_quoted() {
         assert_eq!(quoted("abc"), "\"abc\"");
         assert_eq!(quoted("\"abc\""), "\"abc\"");
     }

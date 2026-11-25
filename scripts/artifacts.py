@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Build the release artifacts with Nix and copy them into one directory.
 
-Packages the browser app, builds both Nix outputs, then runs
-`hs --version` as a smoke test.
+Builds both Nix outputs, links `hsctl` to `hs`, then runs both with
+`--version` as a smoke test.
 """
 
 import json
@@ -46,8 +46,12 @@ def main(
     # Everything in the Nix store is read-only; make the copies ours.
     for path in [target, *target.rglob("*")]:
         path.chmod(0o755 if path.is_dir() or path == hs else 0o644)
+    # Started under this name, hs is `hs ctl`.
+    hsctl = target / "hsctl"
+    hsctl.symlink_to("hs")
 
     subprocess.run([hs, "--version"], check=True)
+    subprocess.run([hsctl, "--version"], check=True)
     console.print(f"[green]Artifacts in {target}[/green]")
 
 

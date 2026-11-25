@@ -297,13 +297,15 @@ async fn passkey(api: &Api, req: &Request, peer: Peer, access: &Access, step: &[
             let expires = now_ms() + SESSION_MS;
             let grant = rest::create_grant(
                 api,
-                &json!({ "role": "owner", "label": "passkey session", "expires": expires, "session": true }),
+                &crate::types::NewGrant {
+                    expires: Some(expires),
+                    session: Some(true),
+                    ..crate::types::NewGrant::new(crate::types::Role::Owner, "passkey session")
+                },
             )
             .await?;
-            let token = grant.get("token").and_then(Json::as_str).unwrap_or("");
-            let mut r =
-                json_ok(&json!({ "role": "owner", "owner": true, "grant": grant.get("id") }));
-            set_session_cookie(&mut r, token, peer.tls, Some(SESSION_MS / 1000));
+            let mut r = json_ok(&json!({ "role": "owner", "owner": true, "grant": grant.id }));
+            set_session_cookie(&mut r, &grant.token, peer.tls, Some(SESSION_MS / 1000));
             Ok(r)
         }
         _ => Err(ApiError::not_found()),

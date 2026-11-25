@@ -86,7 +86,7 @@ async fn call(
             for id in rest::readable(api, access) {
                 out.push(rest::space_json(api, &id).await.map_err(e)?);
             }
-            Json::Array(out)
+            serde_json::to_value(out).unwrap_or_default()
         }
         "search" => rows(
             access,

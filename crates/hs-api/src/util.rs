@@ -130,6 +130,34 @@ pub fn json_status(status: StatusCode, value: &Json) -> Response {
     )
 }
 
+/// A typed JSON response with a status.
+pub fn typed<T: serde::Serialize>(status: StatusCode, value: &T) -> Response {
+    respond(
+        status,
+        "application/json",
+        serde_json::to_vec(value).unwrap_or_default(),
+    )
+}
+
+/// A typed request body.
+///
+/// # Errors
+///
+/// Answers 400 if the body is not that type.
+pub fn body<T: serde::de::DeserializeOwned>(req: &Request) -> Result<T> {
+    serde_json::from_slice(req.body()).map_err(|e| ApiError::bad(format!("bad request: {e}")))
+}
+
+/// A typed query.
+///
+/// # Errors
+///
+/// Answers 400 if the query is not that type.
+pub fn params<T: serde::de::DeserializeOwned>(req: &Request) -> Result<T> {
+    serde_urlencoded::from_str(req.uri().query().unwrap_or(""))
+        .map_err(|e| ApiError::bad(format!("bad query: {e}")))
+}
+
 /// A 200 JSON response.
 pub fn json_ok(value: &Json) -> Response {
     json_status(StatusCode::OK, value)

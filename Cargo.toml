@@ -127,6 +127,10 @@ clap = { version = "4.6.10", default-features = false, features = [
   "derive",
   "env",
 ] }
+# Its dynamic completion is unstable, so the version is exact.
+clap_complete = { version = "=4.6.11", default-features = false, features = [
+  "unstable-dynamic",
+] }
 data-encoding = { version = "2.11.1", default-features = false, features = [
   "alloc",
 ] }
@@ -162,6 +166,11 @@ rustix = { version = "1.1.6", default-features = false, features = [
   "termios",
 ] }
 unicode-width = { version = "0.2.2", default-features = false }
+# The REST API's types and its OpenAPI document come from the same Rust
+# code. utoipa derives the schemas (serde, indexmap and syn, all already
+# built); serde_urlencoded reads and writes the typed queries.
+utoipa = { version = "6.0.0", default-features = false, features = ["macros"] }
+serde_urlencoded = { version = "0.7.1", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

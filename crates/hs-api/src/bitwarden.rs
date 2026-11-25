@@ -200,17 +200,16 @@ async fn token_response(api: &Api, acct: &Json) -> Result {
     let private = api.node.config().private;
     let grant = rest::create_grant(
         api,
-        &json!({
-            "role": "writer",
-            "label": "Bitwarden app",
-            "spaces": [private.to_hex()],
-            "types": ["cipher", "vault-folder", MARK],
-            "expires": now_ms() + SESSION_MS,
-            "session": true,
-        }),
+        &crate::types::NewGrant {
+            spaces: Some(vec![private.to_hex()]),
+            types: Some(vec!["cipher".into(), "vault-folder".into(), MARK.into()]),
+            expires: Some(now_ms() + SESSION_MS),
+            session: Some(true),
+            ..crate::types::NewGrant::new(crate::types::Role::Writer, "Bitwarden app")
+        },
     )
     .await?;
-    let token = grant.get("token").and_then(Json::as_str).unwrap_or("");
+    let token = grant.token.as_str();
     let mut r = json_ok(&json!({
         "access_token": token,
         "refresh_token": token,

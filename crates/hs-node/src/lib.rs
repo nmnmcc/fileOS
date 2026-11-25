@@ -374,7 +374,7 @@ impl Node {
         let node = Node::open(dir).await?;
         node.start_space(&signed, &payload, None).await?;
         let (owner_token, _) = node
-            .create_token(Role::Owner, None, "owner (created by hs init)", None)
+            .create_token(Role::Owner, None, "owner (created by hs ctl init)", None)
             .await?;
         Ok(Initialized {
             node,

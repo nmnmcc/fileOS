@@ -15,27 +15,29 @@ use hs_net::client::Client;
 use hs_net::server::{Handler, Peer, Request, Response};
 use hs_node::{Access, Node, now_ms};
 use http::{Method, StatusCode, header};
-use serde_json::json;
 
 mod access_log;
 mod auth;
 mod bitwarden;
+pub mod client;
 mod condition;
 mod dav;
 pub mod export;
 mod fed;
 pub mod formats;
 mod mcp;
+pub mod openapi;
 mod preview;
 mod push;
 pub mod replica;
 mod rest;
 mod s3;
 pub mod sync;
+pub mod types;
 pub mod util;
 mod web;
 
-use util::{ApiError, Result, json_ok};
+use util::{ApiError, Result};
 
 /// The name of this component.
 pub const NAME: &str = env!("CARGO_PKG_NAME");
@@ -68,7 +70,7 @@ impl Api {
         Self::build(node, None)
     }
 
-    /// Wrap a node and configure an executable that supports `thumbnail-worker`.
+    /// Wrap a node and configure an executable that supports `internal thumbnail-worker`.
     pub fn with_thumbnail_worker(node: Arc<Node>, executable: std::path::PathBuf) -> Arc<Api> {
         Self::build(
             node,
@@ -125,21 +127,21 @@ impl Api {
     pub async fn space_json(
         &self,
         id: &hs_core::Hash,
-    ) -> std::result::Result<serde_json::Value, String> {
+    ) -> std::result::Result<types::Space, String> {
         rest::space_json(self, id).await.map_err(|e| e.message)
     }
 
-    /// Create a grant as `POST /api/grants` does, from `{role, label,
-    /// spaces, types, expires}`. Returns `{token, id}`.
+    /// Create a grant as `POST /api/grants` does. The token is shown only
+    /// this once.
     ///
     /// # Errors
     ///
     /// Returns an error if the request is invalid or the grant cannot be written.
     pub async fn create_grant(
         &self,
-        body: &serde_json::Value,
-    ) -> std::result::Result<serde_json::Value, String> {
-        rest::create_grant(self, body).await.map_err(|e| e.message)
+        new: &types::NewGrant,
+    ) -> std::result::Result<types::NewToken, String> {
+        rest::create_grant(self, new).await.map_err(|e| e.message)
     }
 
     /// Who is asking.
@@ -193,7 +195,7 @@ impl Api {
             }
             ["s3", ..] => s3::handle(self, req),
             ["bitwarden", rest @ ..] => bitwarden::handle(self, req, rest).await,
-            [".well-known", "homeserver"] => Ok(json_ok(&self.info())),
+            [".well-known", "homeserver"] => Ok(util::typed(StatusCode::OK, &self.info())),
             [".well-known", "acme-challenge", token] => match self.acme.get(token) {
                 Some(answer) => Ok(util::respond(StatusCode::OK, "text/plain", answer)),
                 None => Err(ApiError::not_found()),
@@ -213,17 +215,17 @@ impl Api {
     }
 
     /// What this node says about itself, publicly.
-    pub fn info(&self) -> serde_json::Value {
+    pub fn info(&self) -> types::NodeInfo {
         let c = self.node.config();
         let id = self.node.identity();
-        json!({
-            "name": c.name,
-            "identity": c.identity.to_id(),
-            "did": hs_identity::did::did(&id),
-            "node": self.node.key.public().to_id(),
-            "url": c.url,
-            "version": env!("CARGO_PKG_VERSION"),
-        })
+        types::NodeInfo {
+            name: c.name,
+            identity: c.identity.to_id(),
+            did: hs_identity::did::did(&id),
+            node: self.node.key.public().to_id(),
+            url: c.url,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        }
     }
 }
 

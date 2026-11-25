@@ -62,6 +62,7 @@ in
     pkgs.cargo-machete
     pkgs.cargo-llvm-lines
     pkgs.git
+    pkgs.gh
   ];
 
   # One command formats every file in the repository: `treefmt`.
@@ -74,6 +75,8 @@ in
         "crates/*/LICENSE-*"
         ".envrc"
         ".python-version"
+        # Generated, and checked against the code by a test in hs-api.
+        "docs/openapi.json"
       ];
       programs = {
         rustfmt = {
@@ -125,6 +128,10 @@ in
         "hs"
       ];
       cargoTestFlags = [ "--workspace" ];
+      # Started under this name, hs is `hs ctl`.
+      postInstall = ''
+        ln -s hs "$out/bin/hsctl"
+      '';
       meta = {
         description = "homeserver";
         license = lib.licenses.agpl3Only;

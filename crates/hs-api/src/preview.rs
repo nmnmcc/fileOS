@@ -42,7 +42,7 @@ impl Preview {
 
     async fn decode(&self, bytes: &[u8], side: u32) -> io::Result<Option<(Vec<u8>, &'static str)>> {
         let mut child = Command::new(self.executable.as_os_str())
-            .args(["thumbnail-worker", &side.to_string()])
+            .args(["internal", "thumbnail-worker", &side.to_string()])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

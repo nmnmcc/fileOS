@@ -665,41 +665,44 @@ earlier, with rusqlite.
 
 Candidates we measured:
 
-| Candidate                                   | Crates over base | Decision                                                           |
-| ------------------------------------------- | ---------------: | ------------------------------------------------------------------ |
-| SQLx (bundled)                              |               62 | Adopt, for the derived index: async, works with tokio directly     |
-| rusqlite (bundled)                          |                9 | Not adopted: lighter, but blocking; needs a thread pool            |
-| DuckDB, prebuilt                            |      71 in total | Not adopted: see Storage                                           |
-| tantivy + jieba-rs                          |     133 in total | Not adopted for now: a second index; FTS5 is enough for now        |
-| Turso                                       |    268 with base | Not adopted for now: 50 s against 13 s; look again at 1.0          |
-| h3 + h3-quinn                               |                9 | Adopt, for HTTP/3 between nodes                                    |
-| wasmtime, Cranelift                         |               64 | Adopt, for release builds                                          |
-| wasmtime, Pulley only                       |               42 | Build option for slow machines                                     |
-| wasmi                                       |      16 in total | Not adopted: no Component Model                                    |
-| mls-rs                                      |               63 | Adopt, with our own `ring` provider                                |
-| OpenMLS                                     |               95 | Not adopted: we need one MLS library; build times not compared     |
-| webauthn-rs                                 |              134 | Not adopted: a second crypto library (RustCrypto)                  |
-| openidconnect                               |              102 | Not adopted: a client library, and RustCrypto                      |
-| instant-acme                                |               28 | Not adopted: pulls in `async-trait`; we write ACME                 |
-| igd-next                                    |               33 | Not adopted: a second HTTP client; UPnP-IGD only                   |
-| s3s                                         |              115 | Not adopted: `async-trait` and RustCrypto; we write the subset     |
-| axum                                        |               14 | Not decided; a small router of our own on hyper may be enough      |
-| rmcp                                        |               23 | Not decided                                                        |
-| Automerge / Loro / Yrs                      |     13 / 80 / 17 | Decide when collaborative documents start                          |
-| clap (derive)                               |                7 | Adopt, for the command line: help, errors, suggestions             |
-| time                                        |                1 | Adopt: already built for SQLx and rcgen; only `time-macros` is new |
-| percent-encoding, form_urlencoded, httpdate |                0 | Adopt: already built for hyper and url                             |
-| data-encoding                               |                1 | Adopt, for hex and lowercase base32                                |
-| sfv                                         |                3 | Adopt, for the structured fields of HTTP Message Signatures        |
-| tar                                         |                2 | Adopt, for `hs export`                                             |
-| unicode-width                               |                1 | Adopt, to align CLI tables that hold CJK text                      |
-| rustix (`termios`)                          |                0 | Adopt: already built for tempfile; hides a typed token             |
-| kamadak-exif + imagesize                    |                3 | Adopt: EXIF and image sizes from JPEG, PNG, WebP and HEIF          |
-| crab_nat                                    |      30 in total | Not adopted: `rand` and `toml_edit` for NAT-PMP; we write it       |
-| coset                                       |      15 in total | Not adopted: a second CBOR library; our COSE subset is small       |
-| blahaj                                      |      11 in total | Not adopted: `rand` for Shamir sharing; we use `ring`              |
-| calcard                                     |      25 in total | Not adopted: chrono, chrono-tz and a mail parser                   |
-| ical                                        |       7 in total | Not adopted: second major versions of `thiserror` and `syn`        |
+| Candidate                                   | Crates over base | Decision                                                                                                           |
+| ------------------------------------------- | ---------------: | ------------------------------------------------------------------------------------------------------------------ |
+| SQLx (bundled)                              |               62 | Adopt, for the derived index: async, works with tokio directly                                                     |
+| rusqlite (bundled)                          |                9 | Not adopted: lighter, but blocking; needs a thread pool                                                            |
+| DuckDB, prebuilt                            |      71 in total | Not adopted: see Storage                                                                                           |
+| tantivy + jieba-rs                          |     133 in total | Not adopted for now: a second index; FTS5 is enough for now                                                        |
+| Turso                                       |    268 with base | Not adopted for now: 50 s against 13 s; look again at 1.0                                                          |
+| h3 + h3-quinn                               |                9 | Adopt, for HTTP/3 between nodes                                                                                    |
+| wasmtime, Cranelift                         |               64 | Adopt, for release builds                                                                                          |
+| wasmtime, Pulley only                       |               42 | Build option for slow machines                                                                                     |
+| wasmi                                       |      16 in total | Not adopted: no Component Model                                                                                    |
+| mls-rs                                      |               63 | Adopt, with our own `ring` provider                                                                                |
+| OpenMLS                                     |               95 | Not adopted: we need one MLS library; build times not compared                                                     |
+| webauthn-rs                                 |              134 | Not adopted: a second crypto library (RustCrypto)                                                                  |
+| openidconnect                               |              102 | Not adopted: a client library, and RustCrypto                                                                      |
+| instant-acme                                |               28 | Not adopted: pulls in `async-trait`; we write ACME                                                                 |
+| igd-next                                    |               33 | Not adopted: a second HTTP client; UPnP-IGD only                                                                   |
+| s3s                                         |              115 | Not adopted: `async-trait` and RustCrypto; we write the subset                                                     |
+| axum                                        |               14 | Not decided; a small router of our own on hyper may be enough                                                      |
+| rmcp                                        |               23 | Not decided                                                                                                        |
+| Automerge / Loro / Yrs                      |     13 / 80 / 17 | Decide when collaborative documents start                                                                          |
+| clap (derive)                               |                7 | Adopt, for the command line: help, errors, suggestions                                                             |
+| clap_complete                               |                2 | Adopt: shell completions from the same clap definitions, asking `hs` for spaces and grants; brings `is_executable` |
+| time                                        |                1 | Adopt: already built for SQLx and rcgen; only `time-macros` is new                                                 |
+| percent-encoding, form_urlencoded, httpdate |                0 | Adopt: already built for hyper and url                                                                             |
+| data-encoding                               |                1 | Adopt, for hex and lowercase base32                                                                                |
+| sfv                                         |                3 | Adopt, for the structured fields of HTTP Message Signatures                                                        |
+| tar                                         |                2 | Adopt, for `hs ctl export`                                                                                         |
+| unicode-width                               |                1 | Adopt, to align CLI tables that hold CJK text                                                                      |
+| utoipa                                      |                2 | Adopt: derives the OpenAPI document from the API's types; serde, indexmap and syn are already built                |
+| serde_urlencoded                            |                2 | Adopt: typed queries shared by the server and the client                                                           |
+| rustix (`termios`)                          |                0 | Adopt: already built for tempfile; hides a typed token                                                             |
+| kamadak-exif + imagesize                    |                3 | Adopt: EXIF and image sizes from JPEG, PNG, WebP and HEIF                                                          |
+| crab_nat                                    |      30 in total | Not adopted: `rand` and `toml_edit` for NAT-PMP; we write it                                                       |
+| coset                                       |      15 in total | Not adopted: a second CBOR library; our COSE subset is small                                                       |
+| blahaj                                      |      11 in total | Not adopted: `rand` for Shamir sharing; we use `ring`                                                              |
+| calcard                                     |      25 in total | Not adopted: chrono, chrono-tz and a mail parser                                                                   |
+| ical                                        |       7 in total | Not adopted: second major versions of `thiserror` and `syn`                                                        |
 
 The "Crates over base" column is context. Decisions rest on the reason in
 the last column. The CI build-time budget grows only when a measured

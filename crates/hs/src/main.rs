@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap_complete::engine::ArgValueCandidates;
 use hs_api::Api;
 use hs_api::replica::{self, Store};
 use hs_node::Node;
@@ -22,6 +23,7 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 
 mod commands;
+mod complete;
 mod output;
 mod remote;
 
@@ -56,13 +58,38 @@ type Res<T = ()> = Result<T, String>;
 
 /// homeserver: your own server for the things you keep and share.
 ///
-/// `hs` looks after a node on this machine (init, serve, config, …) and
-/// works with a running one over its API, here or elsewhere, once signed in
-/// with `hs login URL`. Commands that can do both use the data directory
-/// while the node is stopped, and its API while it runs.
+/// The commands at the top work with a running node over its API, here or
+/// elsewhere, once signed in with `hs login URL`. `hs ctl` (or `hsctl`)
+/// looks after a node: sets it up, runs it, configures and backs it up, and
+/// hands out tokens. Commands that can do either use the data directory while the
+/// node is stopped, and its API while it runs.
 #[derive(Parser)]
 #[command(name = "hs", version, long_version = LONG_VERSION, arg_required_else_help = true)]
 struct Cli {
+    #[command(flatten)]
+    options: Options,
+
+    #[command(subcommand)]
+    command: Command,
+}
+
+/// hsctl: look after a homeserver node.
+///
+/// The same as `hs ctl`: set a node up, run it, configure and back it up,
+/// and hand out tokens.
+#[derive(Parser)]
+#[command(name = "hsctl", version, long_version = LONG_VERSION, arg_required_else_help = true)]
+struct CtlCli {
+    #[command(flatten)]
+    options: Options,
+
+    #[command(subcommand)]
+    command: Ctl,
+}
+
+// The options every command takes.
+#[derive(Args)]
+struct Options {
     /// The data directory [default: $`XDG_DATA_HOME/homeserver`]
     #[arg(long, env = "HS_DIR", global = true, value_name = "DIR")]
     dir: Option<PathBuf>,
@@ -74,29 +101,25 @@ struct Cli {
     /// Print what the API returns, as JSON
     #[arg(long, global = true)]
     json: bool,
-
-    #[command(subcommand)]
-    command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Create a node; prints the recovery code once
-    Init {
-        /// Your name, shown to the people you share with
-        #[arg(long)]
-        name: String,
-        /// The URL other nodes reach this one at
-        #[arg(long)]
-        url: Option<String>,
-    },
-    /// Run the node
-    Serve(ServeArgs),
+    #[command(flatten)]
+    Public(Public),
+    /// Commands for the program itself and its developers, not for people
+    #[command(subcommand, hide = true)]
+    Internal(Internal),
+}
+
+/// Using a node.
+#[derive(Subcommand)]
+enum Public {
     /// Sign in to a running node with a token (read from the terminal or stdin)
     Login {
         /// Its address, such as hs.example.org [default: 127.0.0.1:8080]
         url: Option<String>,
-        /// Accept a certificate nobody vouches for (from `hs serve --tls self-signed`)
+        /// Accept a certificate nobody vouches for (from `hs ctl serve --tls self-signed`)
         #[arg(long)]
         insecure: bool,
     },
@@ -131,20 +154,58 @@ enum Command {
     Blob(commands::BlobCommand),
     /// Print changes as they happen
     Watch,
-    /// Tokens for apps and people
-    #[command(subcommand)]
-    Token(commands::TokenCommand),
     /// Spaces and their members
     #[command(subcommand)]
     Space(commands::SpaceCommand),
     /// Print the DID document of your identity
     Identity,
-    /// Split the recovery code among friends, or put it back together
+    /// Print the `OpenAPI` document of the REST API
+    Openapi,
+    /// Print a script that completes `hs` commands in a shell
+    ///
+    /// The script asks `hs` what may come next, so spaces, grants and
+    /// configuration keys are completed too; it covers `hsctl` as well.
+    /// Load it from the shell's startup file: in bash or zsh,
+    /// `source <(hs completion bash)` (or `zsh`); in fish,
+    /// `hs completion fish | source`.
+    Completion {
+        /// The shell
+        shell: clap_complete::Shell,
+    },
+    /// Look after a node: set it up, run it, configure, back up, hand out tokens
     #[command(subcommand)]
-    Recovery(RecoveryCommand),
+    Ctl(Ctl),
+}
+
+/// Commands for the program itself and its developers.
+#[derive(Subcommand)]
+enum Internal {
+    /// List the components built into this executable
+    Components,
+    /// Make a thumbnail of the image on stdin, for the node's previews
+    ThumbnailWorker { side: u32 },
+}
+
+/// Looking after a node.
+#[derive(Subcommand)]
+enum Ctl {
+    /// Create a node; prints the recovery code once
+    Init {
+        /// Your name, shown to the people you share with
+        #[arg(long)]
+        name: String,
+        /// The URL other nodes reach this one at
+        #[arg(long)]
+        url: Option<String>,
+    },
+    /// Run the node
+    Serve(ServeArgs),
     /// Read or change the configuration
     #[command(subcommand)]
     Config(ConfigCommand),
+    /// Tokens for apps and people
+    #[command(subcommand)]
+    Token(commands::TokenCommand),
     /// Write a plain tar archive of everything to stdout
     Export,
     /// Encrypted copies of the data directory elsewhere
@@ -158,13 +219,11 @@ enum Command {
         #[arg(long, value_name = "REPLICA")]
         from: String,
     },
+    /// Split the recovery code among friends, or put it back together
+    #[command(subcommand)]
+    Recovery(RecoveryCommand),
     /// Rebuild the derived index from the logs and blobs
     RebuildIndex,
-    /// List the components built into this executable
-    #[command(hide = true)]
-    Components,
-    #[command(hide = true)]
-    ThumbnailWorker { side: u32 },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -218,6 +277,12 @@ impl From<RoleArg> for Role {
     }
 }
 
+impl From<RoleArg> for hs_api::types::Role {
+    fn from(r: RoleArg) -> hs_api::types::Role {
+        Role::from(r).into()
+    }
+}
+
 #[derive(Subcommand)]
 enum RecoveryCommand {
     /// Split the recovery code (read from stdin) into shares
@@ -236,9 +301,16 @@ enum RecoveryCommand {
 #[derive(Subcommand)]
 enum ConfigCommand {
     /// Print the configuration, or one key of it
-    Get { key: Option<String> },
+    Get {
+        #[arg(add = ArgValueCandidates::new(complete::config_keys))]
+        key: Option<String>,
+    },
     /// Set a key; the value is JSON, or else a string
-    Set { key: String, value: String },
+    Set {
+        #[arg(add = ArgValueCandidates::new(complete::config_keys))]
+        key: String,
+        value: String,
+    },
 }
 
 pub(crate) fn data_dir(dir: Option<PathBuf>) -> PathBuf {
@@ -257,7 +329,7 @@ pub(crate) fn data_dir(dir: Option<PathBuf>) -> PathBuf {
 pub(crate) async fn open(dir: &Path) -> Res<Node> {
     if !dir.join("config.json").exists() {
         return Err(format!(
-            "{} holds no node; run `hs init --name NAME` first, or sign in to a running one with `hs login URL`",
+            "{} holds no node; run `hs ctl init --name NAME` first, or sign in to a running one with `hs login URL`",
             dir.display()
         ));
     }
@@ -315,7 +387,7 @@ async fn init(dir: &Path, name: &str, url: Option<&str>) -> Res {
         remote::save_login(&url, &done.owner_token, false)?;
         println!("hs is signed in to {url} with that token (change it with hs login).");
     }
-    println!("Next: hs serve");
+    println!("Next: hs ctl serve");
     Ok(())
 }
 
@@ -626,50 +698,56 @@ async fn restore(dir: &Path, from: &str) -> Res {
         dir.display()
     );
     Node::rebuild_index(dir).await.map_err(|e| e.to_string())?;
-    eprintln!("done; start it with hs serve");
+    eprintln!("done; start it with hs ctl serve");
     Ok(())
 }
 
-async fn run(g: Global, command: Command) -> Res {
+async fn run(g: Global, command: Public) -> Res {
     let dir = &data_dir(g.dir.clone());
     let g = &g;
     match command {
-        Command::Login { url, insecure } => commands::login(url, insecure).await,
-        Command::Logout { url } => commands::logout(url),
-        Command::Status => commands::status(g).await,
-        Command::Ls(a) => commands::ls(g, a).await,
-        Command::Get(a) => commands::get(g, a).await,
-        Command::Put(a) => commands::put(g, a).await,
-        Command::Edit(a) => commands::edit(g, a).await,
-        Command::Patch(a) => commands::patch(g, a).await,
-        Command::Rm(a) => commands::rm(g, a).await,
-        Command::Upload(a) => commands::upload(g, a).await,
-        Command::Search(a) => commands::search(g, a).await,
-        Command::Timeline(a) => commands::timeline(g, a).await,
-        Command::Near(a) => commands::near(g, a).await,
-        Command::Related(a) => commands::related(g, a).await,
-        Command::Blob(cmd) => commands::blob(g, cmd).await,
-        Command::Watch => commands::watch(g).await,
-        Command::Init { name, url } => init(dir, &name, url.as_deref()).await,
-        Command::Serve(args) => serve(dir, &args).await,
-        Command::Token(cmd) => commands::token(g, cmd).await,
-        Command::Space(cmd) => commands::space(g, cmd).await,
-        Command::Identity => commands::identity(g).await,
-        Command::Recovery(cmd) => recovery(cmd),
-        Command::Config(cmd) => config(dir, cmd).await,
-        Command::Export => commands::export(g).await,
-        Command::Replica(cmd) => commands::replica(g, cmd).await,
-        Command::Restore { from } => restore(dir, &from).await,
-        Command::RebuildIndex => Node::rebuild_index(dir).await.map_err(|e| e.to_string()),
-        Command::ThumbnailWorker { .. } => {
-            unreachable!("thumbnail worker runs before starting Tokio")
+        Public::Login { url, insecure } => commands::login(url, insecure).await,
+        Public::Logout { url } => commands::logout(url),
+        Public::Status => commands::status(g).await,
+        Public::Ls(a) => commands::ls(g, a).await,
+        Public::Get(a) => commands::get(g, a).await,
+        Public::Put(a) => commands::put(g, a).await,
+        Public::Edit(a) => commands::edit(g, a).await,
+        Public::Patch(a) => commands::patch(g, a).await,
+        Public::Rm(a) => commands::rm(g, a).await,
+        Public::Upload(a) => commands::upload(g, a).await,
+        Public::Search(a) => commands::search(g, a).await,
+        Public::Timeline(a) => commands::timeline(g, a).await,
+        Public::Near(a) => commands::near(g, a).await,
+        Public::Related(a) => commands::related(g, a).await,
+        Public::Blob(cmd) => commands::blob(g, cmd).await,
+        Public::Watch => commands::watch(g).await,
+        Public::Space(cmd) => commands::space(g, cmd).await,
+        Public::Identity => commands::identity(g).await,
+        Public::Openapi => std::io::stdout()
+            .write_all(&hs_api::openapi::json())
+            .map_err(|e| e.to_string()),
+        Public::Completion { shell } => {
+            let script = complete::script(shell)?;
+            std::io::stdout()
+                .write_all(&script)
+                .map_err(|e| e.to_string())
         }
-        Command::Components => {
-            for name in COMPONENTS {
-                println!("{name}");
-            }
-            Ok(())
-        }
+        Public::Ctl(cmd) => ctl(g, dir, cmd).await,
+    }
+}
+
+async fn ctl(g: &Global, dir: &Path, command: Ctl) -> Res {
+    match command {
+        Ctl::Init { name, url } => init(dir, &name, url.as_deref()).await,
+        Ctl::Serve(args) => serve(dir, &args).await,
+        Ctl::Config(cmd) => config(dir, cmd).await,
+        Ctl::Token(cmd) => commands::token(g, cmd).await,
+        Ctl::Export => commands::export(g).await,
+        Ctl::Replica(cmd) => commands::replica(g, cmd).await,
+        Ctl::Restore { from } => restore(dir, &from).await,
+        Ctl::Recovery(cmd) => recovery(cmd),
+        Ctl::RebuildIndex => Node::rebuild_index(dir).await.map_err(|e| e.to_string()),
     }
 }
 
@@ -698,23 +776,48 @@ fn thumbnail_worker(side: u32) -> std::io::Result<bool> {
     Ok(true)
 }
 
+/// Whether this program was started as `hsctl`, as by a link of that name.
+fn started_as_ctl() -> bool {
+    std::env::args_os()
+        .next()
+        .is_some_and(|a| Path::new(&a).file_stem() == Some("hsctl".as_ref()))
+}
+
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    if let Command::ThumbnailWorker { side } = cli.command {
-        return match thumbnail_worker(side) {
-            Ok(true) => ExitCode::SUCCESS,
-            Ok(false) => ExitCode::from(2),
-            Err(_) => ExitCode::FAILURE,
-        };
-    }
+    let as_ctl = started_as_ctl();
+    let name = if as_ctl { "hsctl" } else { "hs" };
+    complete::answer(as_ctl);
+    let (options, command) = if as_ctl {
+        let cli = CtlCli::parse();
+        (cli.options, Command::Public(Public::Ctl(cli.command)))
+    } else {
+        let cli = Cli::parse();
+        (cli.options, cli.command)
+    };
+    let command = match command {
+        Command::Public(command) => command,
+        Command::Internal(Internal::Components) => {
+            for name in COMPONENTS {
+                println!("{name}");
+            }
+            return ExitCode::SUCCESS;
+        }
+        Command::Internal(Internal::ThumbnailWorker { side }) => {
+            return match thumbnail_worker(side) {
+                Ok(true) => ExitCode::SUCCESS,
+                Ok(false) => ExitCode::from(2),
+                Err(_) => ExitCode::FAILURE,
+            };
+        }
+    };
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_ansi(false)
         .init();
     let global = Global {
-        dir: cli.dir,
-        server: cli.server,
-        json: cli.json,
+        dir: options.dir,
+        server: options.server,
+        json: options.json,
     };
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -722,15 +825,28 @@ fn main() -> ExitCode {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("hs: {e}");
+            eprintln!("{name}: {e}");
             return ExitCode::FAILURE;
         }
     };
-    match rt.block_on(run(global, cli.command)) {
+    match rt.block_on(run(global, command)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("hs: {e}");
+            eprintln!("{name}: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory as _;
+
+    use super::*;
+
+    #[test]
+    fn the_parsers_are_sound() {
+        Cli::command().debug_assert();
+        CtlCli::command().debug_assert();
     }
 }

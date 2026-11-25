@@ -3,10 +3,9 @@
 //! What commands print: aligned tables for people, JSON for programs
 //! (`--json`).
 
-use serde_json::Value as Json;
 use unicode_width::UnicodeWidthStr;
 
-pub fn print_json(v: &Json) {
+pub fn print_json<T: serde::Serialize + ?Sized>(v: &T) {
     println!("{}", serde_json::to_string_pretty(v).unwrap_or_default());
 }
 
@@ -75,15 +74,6 @@ pub fn size(bytes: u64) -> String {
         format!("{bytes} B")
     } else {
         format!("{n:.1} {}", UNITS[unit])
-    }
-}
-
-/// A string field, or nothing.
-pub fn text(v: &Json, key: &str) -> String {
-    match &v[key] {
-        Json::String(s) => s.clone(),
-        Json::Null => String::new(),
-        other => other.to_string(),
     }
 }
 

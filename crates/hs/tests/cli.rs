@@ -188,6 +188,7 @@ async fn works_with_a_running_node() {
     let token = ok(
         home,
         &[
+            "ctl",
             "token",
             "create",
             "--role",
@@ -201,7 +202,7 @@ async fn works_with_a_running_node() {
     )
     .await;
     assert_ne!(token.trim(), "");
-    let tokens = ok(home, &["token", "list"], "").await;
+    let tokens = ok(home, &["ctl", "token", "list"], "").await;
     assert!(
         tokens.contains("reader") && tokens.contains("笔记"),
         "{tokens}"
@@ -224,7 +225,7 @@ fn looks_after_a_stopped_node() {
     let home = tempfile::tempdir().unwrap();
     let home = home.path();
     let dir = home.join("data/homeserver");
-    let (made, out, err) = hs(home, &["init", "--name", "Test"], "", &[]);
+    let (made, out, err) = hs(home, &["ctl", "init", "--name", "Test"], "", &[]);
     assert!(made, "{err}");
     assert!(out.contains("signed in to http://127.0.0.1:8080"), "{out}");
 
@@ -234,14 +235,57 @@ fn looks_after_a_stopped_node() {
     assert_eq!(out.trim().len(), 64);
     let (ok, out, _) = hs(home, &["space", "list"], "", &[]);
     assert!(ok && out.contains("Photos"), "{out}");
-    let (ok, out, _) = hs(home, &["token", "list"], "", &[]);
+    let (ok, out, _) = hs(home, &["ctl", "token", "list"], "", &[]);
     assert!(ok && out.contains("owner"), "{out}");
     let (ok, out, _) = hs(home, &["--json", "identity"], "", &[]);
     assert!(ok && out.contains("did:hs:"), "{out}");
     assert!(dir.join("config.json").exists());
 
+    // The API's description needs no node at all.
+    let (ok, out, _) = hs(home, &["openapi"], "", &[]);
+    let doc: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert!(ok && doc["paths"]["/api/spaces"].is_object(), "{out}");
+
+    // Completion: the script calls `hs` back, which answers from its own
+    // commands and from the node.
+    let (ok, out, _) = hs(home, &["completion", "fish"], "", &[]);
+    assert!(
+        ok && out.contains("COMPLETE") && out.contains("hsctl"),
+        "{out}"
+    );
+    let complete = |line: &[&str]| {
+        let args: Vec<&str> = ["--", "hs"].iter().chain(line).copied().collect();
+        let (ok, out, err) = hs(home, &args, "", &[("COMPLETE", "fish")]);
+        assert!(ok, "{err}");
+        out
+    };
+    let commands = complete(&[""]);
+    assert!(
+        commands.contains("ctl") && !commands.contains("internal"),
+        "{commands}"
+    );
+    assert!(complete(&["ctl", ""]).contains("rebuild-index"));
+    assert!(complete(&["ls", ""]).contains("Photos"));
+    assert!(complete(&["ctl", "config", "get", ""]).contains("name"));
+
     // Commands only a running node answers say so.
     let (ok, _, err) = hs(home, &["ls", "Photos"], "", &[]);
     assert!(!ok);
     assert!(err.contains("cannot reach"), "{err}");
+}
+
+/// Started as `hsctl`, the program is `hs ctl`.
+#[cfg(unix)]
+#[test]
+fn hsctl_is_hs_ctl() {
+    let home = tempfile::tempdir().unwrap();
+    let link = home.path().join("hsctl");
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_hs"), &link).unwrap();
+    let out = Command::new(&link).arg("--help").output().unwrap();
+    let help = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        help.contains("Usage: hsctl") && help.contains("rebuild-index"),
+        "{help}"
+    );
+    assert!(!help.contains("timeline"), "{help}");
 }
