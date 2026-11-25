@@ -2,8 +2,8 @@
 
 //! `OpenID` Connect provider, passkeys (WebAuthn) and forward auth.
 //!
-//! Everything here is pure logic: no HTTP server and no I/O. Callers pass the
-//! current time in as unix seconds.
+//! Everything here is pure logic: no HTTP server and no I/O. Callers give the
+//! current time as unix seconds.
 
 pub mod forward;
 pub mod jose;
@@ -15,7 +15,7 @@ use std::fmt;
 /// The name of this component.
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
-/// An error with a human-readable reason.
+/// An error with a reason that people can read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error(pub String);
 
@@ -38,7 +38,7 @@ pub(crate) fn err<T>(msg: impl Into<String>) -> Result<T> {
 ///
 /// # Panics
 ///
-/// Panics if the operating system cannot supply random bytes.
+/// Panics if the operating system cannot give random bytes.
 pub fn random<const N: usize>() -> [u8; N] {
     ring::rand::generate(&ring::rand::SystemRandom::new())
         .map(ring::rand::Random::expose)
@@ -70,13 +70,13 @@ pub fn percent_encode(s: &str) -> String {
     percent_encoding::utf8_percent_encode(s, COMPONENT).to_string()
 }
 
-/// Decode a form-encoded query component: `+` becomes a space and `%XX` a
-/// byte. A `%` not followed by two hex digits is an error, as is a result
-/// that is not UTF-8.
+/// Decode a form-encoded query component: `+` becomes a space and `%XX`
+/// becomes a byte. It is an error if a `%` does not have two hex digits after
+/// it, or if the result is not UTF-8.
 ///
 /// # Errors
 ///
-/// Returns an error if an escape is malformed or the decoded bytes are not UTF-8.
+/// Returns an error if an escape is badly formed or the decoded bytes are not UTF-8.
 pub fn percent_decode(s: &str) -> Result<String> {
     let b = s.as_bytes();
     let malformed = b.iter().enumerate().any(|(i, &c)| {
@@ -86,7 +86,7 @@ pub fn percent_decode(s: &str) -> Result<String> {
                 .is_some_and(|h| h.iter().all(u8::is_ascii_hexdigit))
     });
     if malformed {
-        return Err(Error("malformed percent escape".into()));
+        return Err(Error("badly formed percent escape".into()));
     }
     let s = s.replace('+', " ");
     percent_encoding::percent_decode_str(&s)

@@ -11,10 +11,10 @@ yanked = "deny"
 [licenses]
 version = 2
 confidence-threshold = 0.93
-# The allow list is policy, not a description of current dependencies.
+# The allow list is a rule. It does not describe the dependencies we have now.
 unused-allowed-license = "allow"
-# Only licenses compatible with AGPL-3.0-only.
-# GPL-2.0-only is incompatible and must never be added.
+# Only licenses that work with AGPL-3.0-only.
+# GPL-2.0-only does not work with it and must never be added.
 allow = [
   "AGPL-3.0-only",
   "0BSD",
@@ -30,8 +30,8 @@ allow = [
   "MPL-2.0",
   "Unicode-3.0",
   "Zlib",
-  # jpeg-encoder (thumbnails). FSF-free and GPL-compatible; binary
-  # distributions acknowledge the Independent JPEG Group (see README).
+  # jpeg-encoder (thumbnails). FSF-free and GPL-compatible. Binary
+  # distributions give credit to the Independent JPEG Group (see README).
   "IJG",
 ]
 
@@ -45,7 +45,7 @@ deny = [
   { crate = "aws-lc-sys", reason = "needs cmake/clang and is slow to build; use rustls with the ring backend" },
   { crate = "async-trait", reason = "native async fn in traits is stable" },
 ]
-# Duplicates we cannot remove: each comes from an upstream default.
+# Duplicates we cannot take out: each comes from an upstream default.
 skip = [
   { crate = "base64@0.22.1", reason = "sqlx-core; rcgen's pem is on the newer one" },
   { crate = "hashbrown@0.16.1", reason = "sqlx-core's hashlink; indexmap is on the newer one" },

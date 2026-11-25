@@ -5,9 +5,9 @@
 //! The signed space logs and content-addressed blobs are the truth. This crate
 //! builds an SQLite index from them with `SQLx`: the current version of each
 //! resource, the links between resources, full-text search, places and the
-//! timeline. The index never leaves the node and can be deleted and rebuilt
-//! from the logs at any time; a new schema means a rebuild, never a
-//! migration.
+//! timeline. The index never goes out of the node. It can be deleted and
+//! built again from the logs at any time. A new schema means a rebuild, never
+//! a migration.
 
 pub mod text;
 
@@ -29,7 +29,8 @@ use sqlx_sqlite::{
 /// The name of this component.
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
-/// Bump whenever the schema or the extraction changes: the index is rebuilt.
+/// Make this one higher every time the schema or the extraction changes. Then
+/// the index is built again.
 pub const SCHEMA_VERSION: i64 = 1;
 
 /// An index error.
@@ -40,7 +41,7 @@ pub struct Error {
 }
 
 impl Error {
-    /// Read the backtrace captured at the index boundary.
+    /// Read the backtrace that was taken at the edge of the index.
     pub fn backtrace(&self) -> &std::backtrace::Backtrace {
         &self.backtrace
     }
@@ -86,7 +87,7 @@ CREATE VIRTUAL TABLE fts USING fts5(text, content='', contentless_delete=1, toke
 CREATE VIRTUAL TABLE places USING rtree(id, min_lat, max_lat, min_lon, max_lon);
 ";
 
-/// One indexed resource.
+/// One resource in the index.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Row {
     /// The space (hex).
@@ -96,7 +97,7 @@ pub struct Row {
     /// The type.
     #[serde(rename = "type")]
     pub kind: String,
-    /// Payload hash (hex); `None` if erased.
+    /// Payload hash (hex). `None` if erased.
     pub payload: Option<String>,
     /// Media type.
     pub media_type: String,
@@ -118,9 +119,9 @@ pub struct Change<'a> {
     pub space: &'a str,
     /// Sequence number of the entry.
     pub seq: u64,
-    /// Primary's time (ms).
+    /// The primary's time (ms).
     pub time: u64,
-    /// `put`, `delete` or `erase`; other kinds only advance the space's seq.
+    /// `put`, `delete` or `erase`. Other kinds only move the space's seq forward.
     pub kind: &'a str,
     /// `type/id`.
     pub target: &'a str,
@@ -128,7 +129,7 @@ pub struct Change<'a> {
     pub payload: Option<String>,
     /// Media type.
     pub media_type: &'a str,
-    /// The payload bytes, if available.
+    /// The payload bytes, if they are there.
     pub bytes: Option<&'a [u8]>,
 }
 
@@ -144,10 +145,10 @@ impl std::fmt::Debug for Change<'_> {
 /// What [`Index::open`] found.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Opened {
-    /// The index was usable.
+    /// The index could be used.
     Ready,
     /// The index was missing, damaged or from another schema, and is now
-    /// empty: replay every log into it.
+    /// empty. Replay every log into it.
     Rebuild,
 }
 
@@ -158,7 +159,7 @@ pub struct Index {
     readers: SqlitePool,
 }
 
-// The columns of a [`Row`]; a macro so every query stays a static string.
+// The columns of a [`Row`]. It is a macro so that every query stays a static string.
 macro_rules! cols {
     () => {
         "r.space, r.target, r.type, r.payload, r.media_type, r.seq, r.updated, r.time, r.title, r.body"
@@ -212,11 +213,11 @@ async fn schema_version(path: &Path) -> Option<String> {
 
 impl Index {
     /// Open the index at `path`. If it is missing, damaged or has another
-    /// schema version, it is deleted and recreated empty.
+    /// schema version, it is deleted and made again, empty.
     ///
     /// # Errors
     ///
-    /// Returns an error if the database cannot be opened or its schema cannot be initialized.
+    /// Returns an error if the database cannot be opened or its schema cannot be set up.
     pub async fn open(path: &Path) -> Result<(Index, Opened), Error> {
         let usable = path.exists()
             && schema_version(path)
@@ -256,11 +257,11 @@ impl Index {
         self.readers.close().await;
     }
 
-    /// The last indexed sequence number of a space.
+    /// The last sequence number of a space that is in the index.
     ///
     /// # Errors
     ///
-    /// Returns an error if the index cannot execute the query or decode its result.
+    /// Returns an error if the index cannot run the query or decode its result.
     pub async fn space_seq(&self, space: &str) -> Result<Option<u64>, Error> {
         let n: Option<i64> = query_scalar("SELECT seq FROM spaces WHERE space = ?1")
             .bind(space)
@@ -273,7 +274,7 @@ impl Index {
     ///
     /// # Errors
     ///
-    /// Returns an error if the index cannot record the space metadata.
+    /// Returns an error if the index cannot store the space metadata.
     pub async fn set_space(&self, space: &str, name: &str, seq: u64) -> Result<(), Error> {
         query("INSERT INTO spaces VALUES (?1, ?2, ?3) ON CONFLICT(space) DO UPDATE SET name = ?2, seq = ?3")
             .bind(space)
@@ -353,7 +354,7 @@ impl Index {
         self.list_page(space, kind, limit, offset, None).await
     }
 
-    /// List a page of resources within the permitted kinds.
+    /// List a page of resources of the kinds that are allowed.
     ///
     /// # Errors
     ///
@@ -377,11 +378,11 @@ impl Index {
         .await?)
     }
 
-    /// Full-text search across the given spaces, best first.
+    /// Full-text search in the given spaces, best first.
     ///
     /// # Errors
     ///
-    /// Returns an error if the index cannot execute the full-text search or decode the results.
+    /// Returns an error if the index cannot run the full-text search or decode the results.
     pub async fn search(
         &self,
         input: &str,
@@ -407,11 +408,11 @@ impl Index {
         )
     }
 
-    /// Resources with a place within `km` of a point, nearest first.
+    /// Resources with a place no more than `km` from a point, nearest first.
     ///
     /// # Errors
     ///
-    /// Returns an error if the index cannot execute the location query or decode the results.
+    /// Returns an error if the index cannot run the location query or decode the results.
     pub async fn near(
         &self,
         lat: f64,
@@ -452,7 +453,7 @@ impl Index {
         self.timeline_page(spaces, before, limit, 0, None).await
     }
 
-    /// Read a page of the timeline in stable order.
+    /// Read a page of the timeline, in an order that does not change.
     ///
     /// # Errors
     ///
@@ -535,8 +536,8 @@ impl Index {
             .is_ok_and(|s| s == "ok")
     }
 
-    /// A canonical dump of everything derived, for testing that an index
-    /// built incrementally equals one rebuilt from scratch.
+    /// A canonical dump of everything derived. Tests use it to see that an
+    /// index built step by step is the same as one built again from nothing.
     ///
     /// # Errors
     ///
@@ -759,7 +760,7 @@ mod tests {
         assert_eq!(ix.timeline(&spaces, None, 10).await.unwrap().len(), 3);
         assert!(ix.healthy().await);
 
-        // Incremental == rebuilt.
+        // Built step by step == built again.
         let incremental = ix.dump().await.unwrap();
         let (ix2, _) = Index::open(&temp("b")).await.unwrap();
         ix2.set_space("s", "home", 0).await.unwrap();
@@ -768,7 +769,7 @@ mod tests {
         }
         assert_eq!(ix2.dump().await.unwrap(), incremental);
 
-        // Reopening keeps it; a schema change rebuilds it.
+        // Opening it again keeps it. A schema change builds it again.
         ix.close().await;
         let (ix, opened) = Index::open(&path).await.unwrap();
         assert_eq!(opened, Opened::Ready);

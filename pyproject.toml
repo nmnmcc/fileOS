@@ -18,6 +18,6 @@ package = false
 
 [tool.basedpyright]
 include = ["scripts"]
-# pyright's "standard" mode: the type-safety bar every script must pass.
+# pyright's "standard" mode: the level of type safety every script must reach.
 typeCheckingMode = "standard"
 pythonVersion = "3.14"

@@ -2,8 +2,8 @@
 
 //! Forward-auth sessions for reverse proxies (Caddy, Traefik, nginx).
 //!
-//! The proxy asks for every request whether the session cookie is valid. A
-//! cookie value is `sub.exp.sig`: the base64url subject, the expiry in unix
+//! For every request, the proxy asks if the session cookie is valid. A cookie
+//! value is `sub.exp.sig`: the base64url subject, the expiry time in unix
 //! seconds, and a base64url HMAC-SHA256 over the first two parts.
 
 use ring::hmac;
@@ -11,7 +11,7 @@ use ring::hmac;
 use crate::jose::{b64d, b64e};
 use crate::percent_encode;
 
-/// The outcome of a forward-auth check.
+/// The result of a forward-auth check.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
     /// The session is valid for this subject.
@@ -23,7 +23,7 @@ pub enum Decision {
     Redirect(String),
 }
 
-/// Issues and checks session cookies with a server secret.
+/// Makes and checks session cookies with a server secret.
 pub struct Sessions {
     key: hmac::Key,
 }
@@ -49,7 +49,7 @@ impl Sessions {
         format!("{body}.{}", b64e(tag.as_ref()))
     }
 
-    /// The subject of a valid, unexpired cookie value.
+    /// The subject of a cookie value that is valid and has not expired.
     pub fn verify(&self, value: &str, now: u64) -> Option<String> {
         let (body, sig) = value.rsplit_once('.')?;
         let (sub, exp) = body.split_once('.')?;
@@ -60,7 +60,7 @@ impl Sessions {
         String::from_utf8(b64d(sub).ok()?).ok()
     }
 
-    /// Decide what the proxy should do with a request: allow it, or redirect
+    /// Decide what the proxy does with a request: let it through, or redirect
     /// to `login_url?rd=<original_url>`.
     pub fn decide(
         &self,

@@ -3,11 +3,11 @@
 //! Signed node-to-node requests.
 //!
 //! Requests between nodes carry an RFC 9421 HTTP Message Signature made with
-//! the node's Ed25519 key, plus an RFC 9530 `Content-Digest` of the body. The
-//! signature covers the method, authority, path, query and digest, so a
-//! request cannot be replayed against another resource or with another body.
-//! The `keyid` is the node's key ID, so the verifier learns who signed
-//! without a lookup; whether to trust that key is the caller's decision.
+//! the node's Ed25519 key, and an RFC 9530 `Content-Digest` of the body. The
+//! signature covers the method, authority, path, query and digest. So no one
+//! can send the request again for another resource or with another body.
+//! The `keyid` is the node's key ID, so the verifier sees who signed without
+//! looking anything up. The caller decides whether to trust that key.
 
 use std::fmt;
 
@@ -26,7 +26,7 @@ const LABEL: &str = "sig1";
 /// Components every signature must cover.
 const REQUIRED: [&str; 4] = ["@method", "@authority", "@path", "@query"];
 
-/// Why a request signature was rejected.
+/// Why a request signature was not accepted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error(pub String);
 
@@ -55,7 +55,8 @@ pub fn content_digest(body: &[u8]) -> String {
 ///
 /// # Errors
 ///
-/// Returns an error if required signature components cannot be extracted or encoded as headers.
+/// Returns an error if a needed signature component cannot be read from the
+/// request or written as a header.
 pub fn sign(parts: &mut Parts, body: &[u8], key: &Keypair, created: u64) -> Result<(), Error> {
     let mut components: Vec<String> = REQUIRED
         .iter()
@@ -100,15 +101,17 @@ pub fn sign(parts: &mut Parts, body: &[u8], key: &Keypair, created: u64) -> Resu
 
 /// Verify a signed request and return the signer's key.
 ///
-/// Checks that the `sig1` signature covers the method, authority, path,
-/// query and (for a non-empty body) the content digest, that `created` is
-/// within `max_skew` seconds of `now`, that the digest matches `body`, and
-/// that the signature is valid for the key named by `keyid`.
+/// It checks that:
+/// - the `sig1` signature covers the method, authority, path, query and (for
+///   a non-empty body) the content digest;
+/// - `created` is within `max_skew` seconds of `now`;
+/// - the digest matches `body`;
+/// - the signature is valid for the key named by `keyid`.
 ///
 /// # Errors
 ///
-/// Returns an error if required components are missing, the signature is outside its validity
-/// window, or verification fails.
+/// Returns an error if needed components are missing, the signature is not
+/// in its valid time window, or the check fails.
 pub fn verify(parts: &Parts, body: &[u8], now: u64, max_skew: u64) -> Result<PublicKey, Error> {
     let input =
         joined_header(parts, "signature-input").ok_or(Error("no Signature-Input".into()))?;
@@ -199,7 +202,7 @@ fn check_digest(header: Option<&str>, body: &[u8]) -> Result<(), Error> {
     }
 }
 
-/// An RFC 9651 dictionary; later duplicate keys override earlier ones.
+/// An RFC 9651 dictionary. If a key comes more than once, the last one wins.
 fn parse_dictionary(s: &str) -> Result<Dictionary, Error> {
     sfv::Parser::new(s)
         .parse::<Dictionary>()
@@ -220,7 +223,7 @@ fn key_of(name: &'static str) -> Key {
     sfv::KeyRef::constant(name).to_owned()
 }
 
-/// All values of a header joined by `, `, as RFC 9421 §2.1 prescribes.
+/// All values of a header joined by `, `, as RFC 9421 §2.1 says.
 fn joined_header(parts: &Parts, name: &str) -> Option<String> {
     let mut values = parts.headers.get_all(name).iter().peekable();
     values.peek()?;
@@ -354,7 +357,7 @@ mod tests {
         p.method = http::Method::PUT;
         verify(&p, body, 1_000_000, 60).unwrap_err();
 
-        // Recomputed digest for a new body: signature no longer matches.
+        // A new digest for a new body: the signature no longer matches.
         let mut p = parts.clone();
         p.headers.insert(
             "content-digest",
@@ -362,7 +365,7 @@ mod tests {
         );
         verify(&p, b"evil", 1_000_000, 60).unwrap_err();
 
-        // Another key claiming the same keyid.
+        // Another key that says it has the same keyid.
         let other = Keypair::from_seed([5; 32]);
         let forged = request("https://node.example/inbox?a=1", body, &other);
         let mut p = parts.clone();
@@ -370,7 +373,7 @@ mod tests {
             .insert("signature", forged.headers["signature"].clone());
         verify(&p, body, 1_000_000, 60).unwrap_err();
 
-        // Garbage headers do not panic.
+        // Headers full of junk do not cause a panic.
         let mut p = parts.clone();
         p.headers.insert(
             "signature-input",
@@ -458,7 +461,7 @@ mod tests {
                 "wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==",
             )
             .unwrap();
-        // Ed25519 is deterministic: we produce the RFC's exact signature.
+        // Ed25519 is deterministic: we make the exact signature in the RFC.
         assert_eq!(key.sign(base.as_bytes()), expected);
         assert!(hs_identity::verify(
             &key.public(),
@@ -466,7 +469,8 @@ mod tests {
             &expected
         ));
 
-        // The RFC's header round-trips through the parser and serializer.
+        // The header from the RFC comes back unchanged through the parser and
+        // serializer.
         let header = format!("sig-b26={input}");
         let dict = parse_dictionary(&header).unwrap();
         let Some(ListEntry::InnerList(parsed)) = dict.get("sig-b26") else {

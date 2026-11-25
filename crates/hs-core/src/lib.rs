@@ -2,14 +2,14 @@
 
 //! Core formats of homeserver.
 //!
-//! Everything a person keeps is a resource, and every change to a resource is
-//! an event in the signed, append-only log of a space. This crate defines the
+//! Everything a person keeps is a resource. Every change to a resource is an
+//! event in the signed, append-only log of a space. This crate gives the
 //! bytes: deterministic CBOR, `COSE_Sign1`, content hashes, and the proposal,
 //! entry and head formats of a log. It knows nothing about keys or storage;
-//! signing and verification live in `hs-identity`.
+//! signing and checking signatures are in `hs-identity`.
 //!
-//! The formats are meant to stay readable for twenty years with nothing but
-//! this description and a CBOR library.
+//! The formats are made to stay readable for twenty years, with nothing more
+//! than this description and a CBOR library.
 
 pub mod base32;
 pub mod cbor;
@@ -26,7 +26,7 @@ pub const NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Hash(pub [u8; 32]);
 
 impl Hash {
-    /// The all-zero hash, used where there is no previous value.
+    /// The all-zero hash, used where there is no value before this one.
     pub const ZERO: Hash = Hash([0; 32]);
 
     /// Hash some bytes.
@@ -47,7 +47,7 @@ impl Hash {
         Hash::from_slice(&b)
     }
 
-    /// Take a hash from a 32-byte slice.
+    /// Make a hash from a 32-byte slice.
     pub fn from_slice(b: &[u8]) -> Option<Hash> {
         Some(Hash(b.try_into().ok()?))
     }
@@ -80,7 +80,7 @@ impl PublicKey {
         Some(PublicKey(base32::decode(s)?.try_into().ok()?))
     }
 
-    /// Take a key from a 32-byte slice.
+    /// Make a key from a 32-byte slice.
     pub fn from_slice(b: &[u8]) -> Option<PublicKey> {
         Some(PublicKey(b.try_into().ok()?))
     }
@@ -116,7 +116,7 @@ impl From<cbor::Error> for FormatError {
     }
 }
 
-/// Compare two byte strings in time that depends only on their lengths.
+/// Compare two byte strings. The time it takes depends only on their lengths.
 pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }

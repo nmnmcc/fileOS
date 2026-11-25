@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Talking to a running node over its HTTP API, as the web app and other
-//! clients do, and remembering the nodes one has signed in to.
+//! clients do. Also keeps the list of nodes the user has signed in to.
 //!
 //! Sign-ins are kept in `$XDG_CONFIG_HOME/homeserver/cli.json` (only the
-//! owner can read it): for each server URL a token, and which one is the
-//! default. `--server` (or `$HS_SERVER`) picks another, and `$HS_TOKEN`
-//! supplies a token without saving it.
+//! owner can read it). The file has a token for each server URL, and says
+//! which server is the default. `--server` (or `$HS_SERVER`) chooses
+//! another. `$HS_TOKEN` gives a token without saving it.
 
 use std::collections::BTreeMap;
 use std::io::{IsTerminal, Write};
@@ -16,7 +16,7 @@ use serde_json::{Value as Json, json};
 
 use crate::Res;
 
-/// The address `hs ctl serve` listens on unless told otherwise.
+/// The address `hs ctl serve` listens on by default.
 pub const LOCAL_URL: &str = "http://127.0.0.1:8080";
 
 // Saved sign-ins
@@ -93,7 +93,8 @@ impl Saved {
             "servers": servers,
         }))
         .unwrap_or_default();
-        // Written beside, then moved over, so a crash leaves the old file.
+        // Write a new file next to it, then move it over the old one. A crash
+        // leaves the old file.
         let tmp = path.with_extension("json.tmp");
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create(true).truncate(true);
@@ -109,8 +110,8 @@ impl Saved {
     }
 }
 
-/// `http://host:port` without a trailing slash; `host:port` means `http`
-/// for loopback addresses and `https` for anything else.
+/// `http://host:port` without a slash at the end. `host:port` means `http`
+/// for loopback addresses and `https` for all others.
 pub fn normalize_url(url: &str) -> Res<String> {
     let url = url.trim().trim_end_matches('/');
     let url = if url.contains("://") {
@@ -132,8 +133,8 @@ pub fn normalize_url(url: &str) -> Res<String> {
     Ok(url)
 }
 
-/// The server picked by `--server`, `$HS_SERVER` or the saved default, if
-/// any.
+/// The server chosen by `--server`, `$HS_SERVER` or the saved default, if
+/// there is one.
 pub fn configured(server: Option<&str>) -> Res<Option<Server>> {
     let saved = Saved::load()?;
     let env_token = std::env::var("HS_TOKEN").ok().filter(|t| !t.is_empty());
@@ -161,14 +162,14 @@ pub fn configured(server: Option<&str>) -> Res<Option<Server>> {
     )))
 }
 
-/// The server, or a message saying how to pick one.
+/// The server, or a message that says how to choose one.
 pub fn required(server: Option<&str>) -> Res<Server> {
     configured(server)?.ok_or_else(|| {
         "this needs a running node: sign in to one with `hs login URL` (or pass --server)".into()
     })
 }
 
-/// Remember a sign-in and make it the default.
+/// Save a sign-in and make it the default.
 pub fn save_login(url: &str, token: &str, insecure: bool) -> Res {
     let mut saved = Saved::load()?;
     saved.servers.insert(
@@ -207,7 +208,7 @@ pub fn forget_login(url: Option<&str>) -> Res<Option<String>> {
     Ok(Some(url))
 }
 
-/// The saved sign-ins: URL and whether it is the default.
+/// The saved sign-ins: each URL, and whether it is the default.
 pub fn logins() -> Res<Vec<(String, bool)>> {
     let saved = Saved::load()?;
     Ok(saved
@@ -217,8 +218,8 @@ pub fn logins() -> Res<Vec<(String, bool)>> {
         .collect())
 }
 
-/// Read a token: from a prompt without echo on a terminal, else one line
-/// of stdin.
+/// Read a token. On a terminal, ask for it without showing what is typed;
+/// else read one line of stdin.
 pub fn read_token() -> Res<String> {
     let stdin = std::io::stdin();
     let line = if stdin.is_terminal() {

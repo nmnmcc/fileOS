@@ -4,15 +4,17 @@
 //! getting it back.
 //!
 //! A replica holds every file of the data directory except the index, the
-//! access log and the storage key, each sealed with the storage key under an
-//! opaque name. A sealed manifest lists the files and their hashes; it is
-//! published only after all of its objects are available. Each changed file
-//! gets a fresh object name. Unchanged files keep their names across snapshots.
-//! The current format reads version-one backups. Restoring updated backups
-//! requires a version-two reader. Older homeserver stores can hold these
-//! objects, but keep retired versions because they cannot compare manifests.
+//! access log and the storage key. Each file is sealed with the storage key
+//! and stored under a name that says nothing about it. A sealed manifest
+//! lists the files and their hashes; it is published only after all of its
+//! objects are there. Each changed file gets a new object name. Files that
+//! did not change keep their names from one snapshot to the next.
+//! The current format reads version-one backups. To restore the backups it
+//! makes, you need a version-two reader. Older homeserver stores can hold
+//! these objects, but they keep retired versions, because they can not
+//! compare manifests.
 //!
-//! The storage key is derived from the recovery code, so the recovery code
+//! The storage key is made from the recovery code, so the recovery code
 //! alone is enough to restore.
 //!
 //! Where a replica can live:
@@ -273,7 +275,7 @@ impl Store {
                                 .headers()
                                 .get(header::ETAG)
                                 .and_then(|tag| tag.to_str().ok())
-                                .ok_or("replica store omitted its manifest ETag")?;
+                                .ok_or("replica store did not give its manifest ETag")?;
                             Revision::Remote(Some(tag.to_owned()))
                         } else {
                             Revision::Legacy
@@ -317,15 +319,16 @@ impl Store {
                     status => return Err(format!("publish replica manifest: {status}")),
                 }
             }
-            // Older homeserver stores accept unconditional PUTs. Immutable objects
-            // keep their snapshots restorable even when those writers overlap.
+            // Older homeserver stores take PUTs without conditions. Objects never
+            // change, so their snapshots can still be restored when those writers
+            // run at the same time.
             (_, Revision::Legacy) => return self.put(name, bytes).await,
             _ => unreachable!("the replica revision comes from this store"),
         };
         if written {
             Ok(())
         } else {
-            Err("another sync published a replica snapshot first; retry the sync".into())
+            Err("another sync published a replica snapshot first; run the sync again".into())
         }
     }
 }
@@ -532,8 +535,8 @@ async fn sync_generation(
         report.bytes += size;
         files.insert(rel.clone(), file);
     }
-    // A live node can rotate logs or replace config while a sync is uploading.
-    // Check the same source tree before publishing any references to the new objects.
+    // A running node can rotate logs or replace the config while a sync uploads.
+    // Check the source tree again before publishing anything that points to the new objects.
     if walk(dir).await? != source {
         return Err(source_changed());
     }
@@ -551,8 +554,8 @@ async fn sync_generation(
         )
         .await?;
 
-    // A conditional publication retires only names from its actual predecessor.
-    // Unconditional stores cannot safely retire objects while another sync may use them.
+    // A conditional publish retires only names from the manifest it really replaced.
+    // Stores without conditions can not safely retire objects, as another sync may still use them.
     if revision != Revision::Legacy {
         retired.extend(old_files.into_iter().map(|(rel, file)| file.object(&rel)));
         for object in retired {
@@ -568,7 +571,7 @@ async fn sync_generation(
 }
 
 fn source_changed() -> String {
-    "source files changed during replica sync; retry the sync".into()
+    "source files changed during replica sync; run the sync again".into()
 }
 
 async fn restore_files(
@@ -626,8 +629,8 @@ async fn stage_restore(
 ///
 /// # Errors
 ///
-/// Returns an error if the destination is occupied, the manifest cannot be opened, or a file cannot
-/// be restored.
+/// Returns an error if the destination is not empty, the manifest cannot be opened, or a file
+/// cannot be restored.
 pub async fn restore(store: &Store, storage_key: [u8; 32], dir: &Path) -> Result<usize, String> {
     match tokio::fs::read_dir(dir).await {
         Ok(mut entries) => {
@@ -645,8 +648,8 @@ pub async fn restore(store: &Store, storage_key: [u8; 32], dir: &Path) -> Result
     tokio::fs::create_dir_all(parent).await.map_err(err)?;
     let key = StorageKey::new(storage_key);
 
-    // A concurrent sync may retire objects while this reader is staging an old manifest.
-    // Retry once from a fresh manifest without mixing the two snapshots.
+    // Another sync may retire objects at the same time as this reader stages an old
+    // manifest. Try once more from a new manifest, and do not mix the two snapshots.
     let (manifest, revision) = read_manifest(store, &key).await?;
     let (stage, count) = match stage_restore(store, &key, manifest, parent).await {
         Ok(staged) => staged,
@@ -755,9 +758,9 @@ pub fn start(api: Arc<Api>) {
                     if line.ok {
                         tracing::info!(name: "replica.sync.completed", sent = line.sent,
                             bytes = line.bytes, deleted = line.deleted,
-                            "Replica synchronized with {{sent}} files sent");
+                            "Replica synced; {{sent}} files sent");
                     } else {
-                        tracing::warn!(name: "replica.sync.failed", "Could not synchronize a replica");
+                        tracing::warn!(name: "replica.sync.failed", "Could not sync a replica");
                     }
                 }
             }

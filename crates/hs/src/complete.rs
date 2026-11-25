@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Shell completion. `hs completion SHELL` prints a script that asks `hs`
-//! itself what may come next (with `COMPLETE=SHELL` set), so commands and
-//! options always match this executable, and spaces, grants and
-//! configuration keys come from the node.
+//! itself what may come next (with `COMPLETE=SHELL` set). So commands and
+//! options always match this executable. Spaces, grants and configuration
+//! keys come from the node.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -35,7 +35,7 @@ pub fn answer(as_ctl: bool) {
         .complete();
 }
 
-/// The script that hooks `hs` and `hsctl` into a shell.
+/// The script that adds completion of `hs` and `hsctl` to a shell.
 pub fn script(shell: clap_complete::Shell) -> Res<Vec<u8>> {
     let name = shell.to_string();
     let shells = Shells::builtins();
@@ -48,7 +48,7 @@ pub fn script(shell: clap_complete::Shell) -> Res<Vec<u8>> {
             .write_registration(VAR, bin, bin, bin, &mut script)
             .map_err(|e| e.to_string())?;
     }
-    // A zsh script names the commands it completes on its first line.
+    // The first line of a zsh script names the commands it completes.
     let script = String::from_utf8_lossy(&script)
         .replacen("#compdef hs\n", "#compdef hs hsctl\n", 1)
         .replace("#compdef hsctl\n", "");
@@ -93,7 +93,8 @@ pub fn config_keys() -> Vec<CompletionCandidate> {
     config.keys().map(CompletionCandidate::new).collect()
 }
 
-/// Ask the node the command line would use, giving up quietly.
+/// Ask the node that the command line would use. On any error, return
+/// nothing and print nothing.
 fn ask(f: impl AsyncFnOnce(&Target) -> Vec<CompletionCandidate>) -> Vec<CompletionCandidate> {
     let Ok(rt) = tokio::runtime::Builder::new_current_thread()
         .enable_all()

@@ -2,9 +2,9 @@
 
 //! Passkeys (WebAuthn) without attestation.
 //!
-//! Registration takes the public key from the browser's
+//! Registration gets the public key from the browser's
 //! `AuthenticatorAttestationResponse.getPublicKey()` (SPKI DER) and
-//! `getPublicKeyAlgorithm()`, so no CBOR parsing is needed. Supported
+//! `getPublicKeyAlgorithm()`, so there is no need to parse CBOR. The supported
 //! algorithms are ES256 (-7) and `EdDSA` with Ed25519 (-8).
 
 use ring::signature;
@@ -25,7 +25,7 @@ const OID_EC_PUBLIC_KEY: &[u8] = &[0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01];
 const OID_P256: &[u8] = &[0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
 const OID_ED25519: &[u8] = &[0x2b, 0x65, 0x70];
 
-/// A fresh random 32-byte challenge.
+/// A new random 32-byte challenge.
 pub fn challenge() -> [u8; 32] {
     crate::random()
 }
@@ -33,7 +33,7 @@ pub fn challenge() -> [u8; 32] {
 /// A registered passkey.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Credential {
-    /// The credential ID chosen by the authenticator.
+    /// The credential ID the authenticator picked.
     pub id: Vec<u8>,
     /// COSE algorithm: [`ALG_ES256`] or [`ALG_EDDSA`].
     pub alg: i64,
@@ -44,7 +44,7 @@ pub struct Credential {
 }
 
 impl Credential {
-    /// Serialize as JSON with base64url byte fields.
+    /// Write as JSON, with byte fields in base64url.
     pub fn to_json(&self) -> Value {
         json!({
             "id": b64e(&self.id),
@@ -58,7 +58,7 @@ impl Credential {
     ///
     /// # Errors
     ///
-    /// Returns an error if a required credential field is missing or invalid.
+    /// Returns an error if a needed credential field is missing or not valid.
     pub fn from_json(v: &Value) -> Result<Credential> {
         let s = |k: &str| {
             v.get(k)
@@ -136,7 +136,7 @@ fn check_auth_data(data: &[u8], rp_id: &str) -> Result<(u8, u32)> {
     Ok((flags, count))
 }
 
-/// Read one DER element; returns (tag, contents, rest).
+/// Read one DER element. Returns (tag, contents, rest).
 fn der(input: &[u8]) -> Result<(u8, &[u8], &[u8])> {
     let bad = || Error("bad DER".into());
     let (&tag, rest) = input.split_first().ok_or_else(bad)?;
@@ -159,11 +159,11 @@ fn der(input: &[u8]) -> Result<(u8, &[u8], &[u8])> {
     Ok((tag, &rest[..len], &rest[len..]))
 }
 
-/// Extract the raw public key from a `SubjectPublicKeyInfo` for `alg`.
+/// Get the raw public key out of a `SubjectPublicKeyInfo` for `alg`.
 ///
 /// # Errors
 ///
-/// Returns an error if the key algorithm is unsupported or the input key encoding is malformed.
+/// Returns an error if the key algorithm is not supported or the key encoding is badly formed.
 pub fn spki_public_key(spki: &[u8], alg: i64) -> Result<Vec<u8>> {
     let (tag, body, rest) = der(spki)?;
     if tag != 0x30 || !rest.is_empty() {
@@ -202,12 +202,12 @@ pub fn spki_public_key(spki: &[u8], alg: i64) -> Result<Vec<u8>> {
     Ok(key.to_vec())
 }
 
-/// Verify a registration (`navigator.credentials.create`) response.
+/// Check a registration (`navigator.credentials.create`) response.
 ///
 /// # Errors
 ///
-/// Returns an error when client or authenticator data is malformed or disagrees with the expected
-/// origin, relying party or challenge.
+/// Returns an error when client or authenticator data is badly formed or does not agree with the
+/// expected origin, relying party or challenge.
 #[expect(
     clippy::too_many_arguments,
     reason = "the verifier takes the expected ceremony values explicitly"
@@ -249,13 +249,13 @@ pub fn verify_registration(
     })
 }
 
-/// Verify an authentication (`navigator.credentials.get`) response and return
+/// Check an authentication (`navigator.credentials.get`) response and return
 /// the new sign count to store.
 ///
 /// # Errors
 ///
-/// Returns an error for invalid client data, an invalid signature, or a sign counter that violates
-/// the credential's counter policy.
+/// Returns an error for client data or a signature that is not valid, or for a sign counter that
+/// goes against the credential's counter rules.
 #[expect(
     clippy::map_err_ignore,
     reason = "ring reports authentication failure as Unspecified"
@@ -282,7 +282,7 @@ pub fn verify_assertion(
         .verify(&msg, signature)
         .map_err(|_| Error("bad signature".into()))?;
     if (count != 0 || credential.sign_count != 0) && count <= credential.sign_count {
-        return err("sign count did not increase; possible cloned authenticator");
+        return err("sign count did not go up; the authenticator may be a copy");
     }
     Ok(count)
 }
@@ -412,7 +412,7 @@ mod tests {
             assert_eq!(assert_with(&key, &cred, 0, ORIGIN, &[9; 32]).unwrap(), 0);
             cred.sign_count = assert_with(&key, &cred, 5, ORIGIN, &[9; 32]).unwrap();
             assert_eq!(cred.sign_count, 5);
-            // Replayed or stale counter.
+            // A counter that is used again, or is old.
             assert_with(&key, &cred, 5, ORIGIN, &[9; 32]).unwrap_err();
             assert_with(&key, &cred, 0, ORIGIN, &[9; 32]).unwrap_err();
             assert_eq!(assert_with(&key, &cred, 6, ORIGIN, &[9; 32]).unwrap(), 6);
@@ -427,7 +427,7 @@ mod tests {
         // Signed by another key.
         let other = Key::new(ALG_ES256);
         assert_with(&other, &cred, 1, ORIGIN, &[9; 32]).unwrap_err();
-        // Garbage signature and wrong type.
+        // A signature that is not a signature, and the wrong type.
         let ch = [9u8; 32];
         let ad = auth_data(RP, FLAG_UP, 1, None);
         let cd = client_data("webauthn.get", &ch, ORIGIN);

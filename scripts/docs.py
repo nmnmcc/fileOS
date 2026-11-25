@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Preview the documentation site with live reload, in every language."""
+"""Preview the documentation site in every language. It reloads when files change."""
 
 import subprocess
 from pathlib import Path

@@ -3,7 +3,7 @@
 //! Sign S3 requests and parse S3 listings.
 //!
 //! AWS Signature Version 4: signing requests (client) and checking them
-//! (server), plus the `ListObjectsV2` response. Sans-IO: callers send the
+//! (server), and also the `ListObjectsV2` response. Sans-IO: callers send the
 //! requests.
 
 use ring::{digest, hmac};
@@ -52,7 +52,7 @@ const UNRESERVED: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUME
     .remove(b'~');
 const PATH: &percent_encoding::AsciiSet = &UNRESERVED.remove(b'/');
 
-/// Percent-encode as `SigV4` requires (`/` kept in paths).
+/// Percent-encode as `SigV4` needs (`/` is kept in paths).
 pub fn uri_encode(s: &str, keep_slash: bool) -> String {
     let set = if keep_slash { PATH } else { UNRESERVED };
     percent_encoding::utf8_percent_encode(s, set).to_string()
@@ -89,7 +89,7 @@ pub struct Request<'a> {
     pub query: &'a [(String, String)],
     /// Lowercase hex SHA-256 of the body, or `UNSIGNED-PAYLOAD`.
     pub payload_hash: &'a str,
-    /// Extra headers to sign (lowercase names), besides host and x-amz-*.
+    /// Other headers to sign (lowercase names), in addition to host and x-amz-*.
     pub headers: &'a [(String, String)],
 }
 
@@ -171,7 +171,7 @@ pub fn sign(creds: &Credentials, req: &Request<'_>, unix_time: u64) -> Vec<(Stri
 }
 
 /// Check a signed request on the server side. `authorization` and `date` are
-/// the received header values; `headers` must include every header the
+/// the header values that came in. `headers` must have every header that the
 /// client listed as signed (other than host and x-amz-*).
 pub fn verify(creds: &Credentials, req: &Request<'_>, authorization: &str, date: &str) -> bool {
     let Some(rest) = authorization.strip_prefix("AWS4-HMAC-SHA256 ") else {

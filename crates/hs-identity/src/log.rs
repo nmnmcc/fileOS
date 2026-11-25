@@ -8,7 +8,7 @@ use hs_core::{FormatError, Hash, PublicKey};
 
 use crate::{Keypair, verify1};
 
-/// What an identity log entry declares.
+/// What an identity log entry says.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LogKind {
     /// The first entry: the identity exists, with this personal key.
@@ -23,7 +23,7 @@ pub enum LogKind {
         /// The node's key.
         key: PublicKey,
     },
-    /// An address (URL) where the identity's nodes can be reached.
+    /// An address (URL) where the nodes of the identity can be reached.
     Address {
         /// The URL, such as `https://home.example.org`.
         url: String,
@@ -110,14 +110,14 @@ impl LogEntry {
     }
 }
 
-/// The current state declared by an identity log.
+/// The current state, as an identity log says it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IdentityState {
     /// The identity ID: the first personal key. Never changes.
     pub id: PublicKey,
     /// The current personal key.
     pub personal: PublicKey,
-    /// Nodes serving this identity.
+    /// Nodes that serve this identity.
     pub nodes: Vec<PublicKey>,
     /// Addresses.
     pub addresses: Vec<String>,
@@ -129,7 +129,7 @@ pub struct IdentityState {
     pub head: Hash,
 }
 
-/// A verified identity log.
+/// An identity log whose signatures have been checked.
 #[derive(Clone, Debug, Default)]
 pub struct IdentityLog {
     /// The signed entries (`COSE_Sign1` bytes), in order.
@@ -150,11 +150,12 @@ impl IdentityLog {
         }
     }
 
-    /// Verify every entry and compute the current state.
+    /// Check every entry and work out the current state.
     ///
     /// # Errors
     ///
-    /// Returns an error if the log is empty or its signatures, sequence or transitions are invalid.
+    /// Returns an error if the log is empty, or its signatures, sequence or changes of state are
+    /// not valid.
     pub fn state(&self) -> Result<IdentityState, FormatError> {
         let mut state: Option<IdentityState> = None;
         for (i, raw) in self.entries.iter().enumerate() {
@@ -205,11 +206,11 @@ impl IdentityLog {
         state.ok_or_else(|| FormatError("identity log: empty".into()))
     }
 
-    /// Append a declaration, signed by the current personal key.
+    /// Add a declaration to the end, signed by the current personal key.
     ///
     /// # Errors
     ///
-    /// Returns an error if the existing log, signing key or new declaration is invalid.
+    /// Returns an error if the log so far, the signing key or the new declaration is not valid.
     pub fn append(
         &mut self,
         personal: &Keypair,
@@ -237,11 +238,11 @@ impl IdentityLog {
         Value::Array(self.entries.iter().cloned().map(Value::Bytes).collect()).encode()
     }
 
-    /// Decode and verify.
+    /// Decode and check the signatures.
     ///
     /// # Errors
     ///
-    /// Returns an error if the encoded log is malformed or fails verification.
+    /// Returns an error if the encoded log is badly formed or a check fails.
     pub fn decode(bytes: &[u8]) -> Result<IdentityLog, FormatError> {
         let v = Value::decode(bytes)?;
         let entries = v

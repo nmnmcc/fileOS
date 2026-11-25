@@ -15,7 +15,7 @@ fn faulty(nodes: usize) -> Config {
     }
 }
 
-/// Run every seed, check it, and return the summed stats.
+/// Run every seed, check it, and return the stats added together.
 fn seeds(range: std::ops::Range<u64>, cfg: &Config, steps: u64) -> Stats {
     let mut t = Stats::default();
     for seed in range {
@@ -36,7 +36,7 @@ fn seeds(range: std::ops::Range<u64>, cfg: &Config, steps: u64) -> Stats {
         t.handovers += s.handovers;
     }
     println!("{t:?}");
-    // The faults were actually exercised.
+    // The faults really took place.
     assert!(t.duplicates > 0 && t.dropped > 0 && t.doubled > 0 && t.gaps > 0);
     t
 }
@@ -92,8 +92,8 @@ fn single_node() {
     assert_eq!(sim.head().map(|h| h.0), Some(0));
 }
 
-/// A refused member change (one that would leave no owner) must not take
-/// effect in memory.
+/// A member change that was refused (one that would leave no owner) must not
+/// change anything in memory.
 #[test]
 fn refused_member_change_leaves_state_unchanged() {
     let owner = Keypair::from_seed([1; 32]);

@@ -3,10 +3,11 @@
 //! Networking for homeserver: the HTTP server and client, signed
 //! node-to-node requests, Web Push and router port mapping.
 //!
-//! Federation and mutual aid (relaying traffic, holding mail for offline
-//! peers, keeping encrypted backups for them) are planned here. The protocol
-//! defines how help is requested and given; whom to help, and how much, is
-//! local policy set by each person, and this crate does not hard-code one.
+//! Federation and mutual aid will come here later: relaying traffic, holding
+//! mail for peers that are offline, and keeping encrypted backups for them.
+//! The protocol says how nodes ask for help and give it. Each person sets
+//! their own local policy for whom to help, and how much. This crate does
+//! not fix one policy in the code.
 
 pub mod client;
 pub mod natpmp;

@@ -2,7 +2,7 @@
 
 [package]
 name = "hs-identity"
-description = "Key-based identity, devices and account migration"
+description = "Identity based on keys, devices, and moving an account"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

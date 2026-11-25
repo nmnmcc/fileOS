@@ -12,6 +12,8 @@
 
 我们建议你在 issue、PR 和评论中也使用 Basic English，但不作要求，用中文写同样可以。如果你的 PR 修改了项目发布的文字，维护者可能在合并前调整措辞。
 
+所有文档均以英文版为准，其他语言版本仅供参考。
+
 部分旧文字还没有改成 Basic English，欢迎提交改写。
 
 ## 开发环境
@@ -117,7 +119,7 @@ crates/
 
 ## 许可证
 
-homeserver 采用 [AGPL-3.0-only](LICENSE) 授权，并为只使用插件接口的插件提供 [homeserver 插件例外](PLUGIN-EXCEPTION.md)。提交贡献即表示你同意你的贡献采用以下许可证：
+homeserver 采用 [AGPL-3.0-only](LICENSE) 授权，并为只使用插件接口的插件提供 [homeserver 插件例外](PLUGIN-EXCEPTION.zh-CN.md)。提交贡献即表示你同意你的贡献采用以下许可证：
 
 - **AGPL-3.0-only**：除 `crates/hs-plugin-api` 以外的所有内容
 - **MIT OR Apache-2.0**：`crates/hs-plugin-api`，以便插件可以使用任何许可证

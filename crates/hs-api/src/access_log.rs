@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Batch access events on a dedicated writer thread.
+//! Write access events in batches, on a thread of their own.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
@@ -82,7 +82,7 @@ fn write_events(path: PathBuf, mut rx: mpsc::Receiver<Message>) {
             }
             unavailable = true;
         } else if unavailable {
-            tracing::info!(name: "http.access_log.recovered", "Access log writer recovered");
+            tracing::info!(name: "http.access_log.recovered", "Access log writer is working again");
             unavailable = false;
         }
         for message in batch.drain(..) {

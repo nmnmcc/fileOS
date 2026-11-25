@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Isolate image decoding in a short-lived, bounded worker process.
+//! Decode images in a separate worker process, with limits on its time,
+//! its output and how many run at once.
 
 use std::io;
 use std::path::Path;
@@ -67,7 +68,7 @@ impl Preview {
             stdout.take(MAX_OUTPUT + 1).read_to_end(&mut output).await?;
             if output.len() as u64 > MAX_OUTPUT {
                 return Err(io::Error::other(
-                    "thumbnail worker exceeded the output limit",
+                    "thumbnail worker output is over the limit",
                 ));
             }
             Ok(output)
@@ -85,7 +86,7 @@ impl Preview {
         let media = match output.first() {
             Some(b'j') => "image/jpeg",
             Some(b'p') => "image/png",
-            _ => return Err(io::Error::other("invalid thumbnail worker output")),
+            _ => return Err(io::Error::other("thumbnail worker output is not valid")),
         };
         output.remove(0);
         Ok(Some((output, media)))

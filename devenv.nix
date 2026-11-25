@@ -28,11 +28,11 @@ in
     toolchainFile = ./rust-toolchain.toml;
   };
 
-  # Python for the scripts in scripts/. uv manages the virtualenv and
-  # installs the locked dev tools from uv.lock on shell entry.
+  # Python for the scripts in scripts/. uv looks after the virtualenv. When
+  # the shell starts, it installs the locked dev tools from uv.lock.
   languages.python = {
     enable = true;
-    # Pinned in .python-version, the single source of truth (also read by uv).
+    # Pinned in .python-version, the one source of truth (uv reads it too).
     package = pkgs."python${lib.replaceStrings [ "." ] [ "" ] (lib.fileContents ./.python-version)}";
     venv.enable = true;
     uv = {
@@ -49,11 +49,11 @@ in
 
   # Portable crates are also built for the browser (wasm32-unknown-unknown).
   # C code in dependencies such as `ring` needs a clang without the Nix
-  # wrapper, whose hardening flags do not exist for WebAssembly.
+  # wrapper, because the wrapper's hardening flags do not exist for WebAssembly.
   env.CC_wasm32_unknown_unknown = "${pkgs.llvmPackages.clang-unwrapped}/bin/clang";
   env.AR_wasm32_unknown_unknown = "${pkgs.llvmPackages.llvm}/bin/llvm-ar";
 
-  # Astro collects anonymous telemetry by default; turn it off.
+  # By default, Astro collects anonymous telemetry. Turn it off.
   env.ASTRO_TELEMETRY_DISABLED = "1";
   env.HS_MSRV_CARGO = "${msrv}/bin/cargo";
 
@@ -71,7 +71,7 @@ in
   treefmt = {
     enable = true;
     config = {
-      # Lock files, LICENSE and .gitignore are excluded by default.
+      # By default, lock files, LICENSE and .gitignore are left out.
       settings.global.excludes = [
         "crates/*/LICENSE-*"
         ".envrc"
@@ -101,9 +101,9 @@ in
     };
   };
 
-  # devenv formats the whole tree on every shell entry by default. That rewrites
-  # files unasked and hides unformatted code from `treefmt --ci` in CI, so it is
-  # off; run `treefmt` yourself.
+  # By default, devenv formats the whole tree every time the shell starts. That
+  # changes files when no one asked, and keeps unformatted code hidden from
+  # `treefmt --ci` in CI. So it is off; run `treefmt` yourself.
   tasks."devenv:treefmt:run".before = lib.mkForce [ ];
 
   # Build artifacts: `devenv build outputs.hs` or `devenv build outputs.docs`.
@@ -122,15 +122,15 @@ in
       };
       cargoLock.lockFile = ./Cargo.lock;
       # One executable: SQLite is compiled in (sqlx-sqlite's `bundled`).
-      # Without this, nixpkgs' cargo hook asks libsqlite3-sys (and others)
-      # to link system libraries instead.
+      # Without this, the nixpkgs cargo hook asks libsqlite3-sys (and others)
+      # to link system libraries in its place.
       dontCargoUseSystemLibs = true;
       cargoBuildFlags = [
         "--package"
         "hs"
       ];
       cargoTestFlags = [ "--workspace" ];
-      # Run as `hsctl`, hs behaves as `hs ctl`.
+      # When it is run as `hsctl`, hs works as `hs ctl`.
       postInstall = ''
         ln -s hs "$out/bin/hsctl"
       '';
@@ -154,7 +154,8 @@ in
           ]
         );
       };
-      # Dependencies come straight from docs/package-lock.json; no hash to maintain.
+      # Dependencies come straight from docs/package-lock.json, so there is no
+      # hash to keep up to date.
       npmDeps = pkgs.importNpmLock {
         package = lib.importJSON ./docs/package.json;
         packageLock = lib.importJSON ./docs/package-lock.json;
@@ -183,6 +184,6 @@ in
         )
       );
 
-  # `devenv test` runs the same checks, but only reports pass or fail.
+  # `devenv test` runs the same checks, but only says pass or fail.
   enterTest = "check";
 }

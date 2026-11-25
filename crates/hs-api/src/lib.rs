@@ -2,12 +2,12 @@
 
 //! Everything a node answers over HTTP: the REST API, federation between
 //! nodes, `WebDAV` with `CardDAV` and `CalDAV`, a Model Context Protocol endpoint,
-//! a minimal Bitwarden-compatible vault, passkeys, `OpenID` Connect, forward
+//! a small vault that Bitwarden apps can use, passkeys, `OpenID` Connect, forward
 //! auth and the web app.
 //!
 //! Every request runs with an [`Access`]: a bearer token (header, cookie or
 //! HTTP Basic password), another node (an HTTP Message Signature), or
-//! nobody. What each can do is decided by grants in the private space.
+//! nobody. Grants in the private space say what each one can do.
 
 use std::sync::Arc;
 
@@ -49,7 +49,7 @@ pub const NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Api {
     /// The node.
     pub node: Arc<Node>,
-    /// For requests to other nodes. Nodes are authenticated by signatures,
+    /// For requests to other nodes. Nodes prove who they are with signatures,
     /// so self-signed certificates are accepted.
     pub nodes: Client,
     /// For requests to the rest of the Web (push services).
@@ -71,7 +71,7 @@ impl Api {
         Self::build(node, None)
     }
 
-    /// Wrap a node and configure an executable that supports `internal thumbnail-worker`.
+    /// Wrap a node, and set the executable that runs `internal thumbnail-worker`.
     pub fn with_thumbnail_worker(node: Arc<Node>, executable: std::path::PathBuf) -> Arc<Api> {
         Self::build(
             node,
@@ -99,7 +99,7 @@ impl Api {
         replica::start(Arc::clone(self));
     }
 
-    /// Flush queued access events before shutting down the server.
+    /// Write out queued access events before the server stops.
     pub async fn flush_access_log(&self) {
         self.access_log.flush().await;
     }
@@ -108,7 +108,7 @@ impl Api {
     ///
     /// # Errors
     ///
-    /// Returns an error if the space metadata is invalid or its log or index cannot be written.
+    /// Returns an error if the space metadata is not valid, or its log or index cannot be written.
     pub async fn create_space(
         &self,
         name: &str,
@@ -136,7 +136,7 @@ impl Api {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request is invalid or the grant cannot be written.
+    /// Returns an error if the request is not valid or the grant cannot be written.
     pub async fn create_grant(
         &self,
         new: &types::NewGrant,

@@ -40,7 +40,7 @@ fn hs(home: &Path, args: &[&str], stdin: &str, env: &[(&str, &str)]) -> (bool, S
     )
 }
 
-/// Like `hs`, but off the runtime that serves the node.
+/// Like `hs`, but outside the runtime that serves the node.
 async fn run(
     home: &Path,
     args: &[&str],
@@ -63,7 +63,7 @@ async fn run(
     .unwrap()
 }
 
-/// Expect success; returns stdout.
+/// Check that the command works; returns stdout.
 async fn ok(home: &Path, args: &[&str], stdin: &str) -> String {
     let (ok, out, err) = run(home, args, stdin, &[]).await;
     assert!(ok, "hs {args:?} failed: {err}");
@@ -87,7 +87,7 @@ async fn works_with_a_running_node() {
         std::future::pending(),
     ));
 
-    // Nothing to talk to yet.
+    // There is no node to talk to yet.
     let (signed_in, _, err) = run(home, &["status"], "", &[]).await;
     assert!(!signed_in);
     assert!(err.contains("hs login"), "{err}");
@@ -209,7 +209,7 @@ async fn works_with_a_running_node() {
         "{tokens}"
     );
 
-    // A reader may look but not write.
+    // A reader may read but not write.
     let reader = [("HS_TOKEN", token.trim())];
     let (read, _, err) = run(home, &["ls", "笔记"], "", &reader).await;
     assert!(read, "{err}");
@@ -269,7 +269,7 @@ fn looks_after_a_stopped_node() {
     assert!(complete(&["ls", ""]).contains("Photos"));
     assert!(complete(&["ctl", "config", "get", ""]).contains("name"));
 
-    // Commands only a running node answers say so.
+    // Commands that need a running node say so.
     let (ok, _, err) = hs(home, &["ls", "Photos"], "", &[]);
     assert!(!ok);
     assert!(err.contains("cannot reach"), "{err}");

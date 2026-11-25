@@ -2,9 +2,9 @@
 
 //! The HTTP server: HTTP/1.1 and HTTP/2 over TCP, with or without TLS.
 //!
-//! Handlers see a request whose body has already been read (up to a limit)
-//! and return a response whose body is either complete or a stream of
-//! chunks (for Server-Sent Events and large files).
+//! Handlers get a request whose body is already read (up to a limit). They
+//! return a response whose body is either complete or a stream of chunks
+//! (for Server-Sent Events and large files).
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -24,19 +24,20 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-/// The largest request body accepted.
+/// The largest request body the server accepts.
 ///
-/// Accommodates file uploads while capping the bytes buffered per request.
+/// It is large enough for file uploads, and puts a limit on the bytes kept
+/// in memory for each request.
 pub const MAX_BODY: usize = 256 * 1024 * 1024;
 
-/// A response body: complete, or a stream of chunks that ends when the
-/// sender is dropped.
+/// A response body: complete, or a stream of chunks. The stream ends when
+/// the sender is dropped.
 pub enum Body {
     /// The whole body.
     Full(Bytes),
     /// Chunks as they come.
     Stream(mpsc::Receiver<Bytes>),
-    /// Chunks from a producer that can fail after the headers are sent.
+    /// Chunks from a source that can fail after the headers are sent.
     Fallible(mpsc::Receiver<std::io::Result<Bytes>>),
 }
 
@@ -163,8 +164,8 @@ where
         .await;
 }
 
-/// Accept connections until the future `stop` completes. With `tls`, every
-/// connection must complete a TLS handshake first.
+/// Accept connections until the future `stop` is done. With `tls`, every
+/// connection must first do a TLS handshake.
 pub async fn serve<H: Handler>(
     listener: TcpListener,
     handler: Arc<H>,
@@ -205,17 +206,19 @@ pub async fn serve<H: Handler>(
 ///
 /// # Errors
 ///
-/// Returns an error if the names are invalid or certificate generation fails.
+/// Returns an error if the names are not valid or the certificate cannot be
+/// made.
 pub fn self_signed(names: &[String]) -> Result<(String, String), String> {
     let c = rcgen::generate_simple_self_signed(names.to_vec()).map_err(|e| e.to_string())?;
     Ok((c.cert.pem(), c.signing_key.serialize_pem()))
 }
 
-/// A TLS server configuration from PEM text, offering HTTP/2 and HTTP/1.1.
+/// A TLS server configuration from PEM text. It offers HTTP/2 and HTTP/1.1.
 ///
 /// # Errors
 ///
-/// Returns an error if the PEM, key pair or TLS configuration is invalid.
+/// Returns an error if the PEM, the key pair or the TLS configuration is not
+/// valid.
 pub fn tls_config(
     cert_chain_pem: &str,
     key_pem: &str,

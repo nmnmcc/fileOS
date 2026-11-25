@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Embed a web app: the static files in the directory `HS_WEB_DIR` names.
-//! Without one, a page pointing to the command line stands in.
+//! Without one, a page that points to the command line takes its place.
 
 use std::{
     env,
@@ -20,7 +20,7 @@ fn main() {
         ),
     };
     let target = PathBuf::from(env::var_os("OUT_DIR").expect("set by cargo")).join("web_files.rs");
-    // A redundant write can trigger another editor check.
+    // A write that changes nothing can start another editor check.
     if !fs::read(&target).is_ok_and(|current| current == manifest.as_bytes()) {
         fs::write(target, manifest).expect("OUT_DIR is writable");
     }
@@ -68,8 +68,8 @@ fn literal(path: &Path) -> String {
 }
 
 /// Every file under `dir`, as `/`-separated paths, without the compressed
-/// copies (`.br` rides along with its file; `.gz` is left out, as every
-/// browser that takes gzip takes brotli over HTTPS).
+/// copies (`.br` goes with its file; `.gz` is left out, because every
+/// browser that takes gzip also takes brotli over HTTPS).
 fn walk(base: &Path, dir: &Path, files: &mut Vec<String>) {
     for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
         let path = entry.expect("readable").path();

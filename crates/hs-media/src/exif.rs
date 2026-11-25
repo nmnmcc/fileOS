@@ -9,9 +9,9 @@ use time::macros::format_description;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Exif {
     /// When the photo was taken, ISO 8601: in UTC (`...Z`) if the camera
-    /// recorded its offset, otherwise local time without a zone.
+    /// recorded its offset; if it did not, local time with no zone.
     pub time: Option<String>,
-    /// Latitude and longitude in degrees (south and west negative).
+    /// Latitude and longitude in degrees (south and west are negative).
     pub place: Option<(f64, f64)>,
     /// The camera maker.
     pub make: Option<String>,
@@ -23,7 +23,7 @@ pub struct Exif {
 
 impl Exif {
     /// Read a TIFF structure (the body of an EXIF block, after `Exif\0\0`).
-    /// Fields that are missing or malformed stay `None`.
+    /// Fields that are missing or badly formed stay `None`.
     pub fn parse(tiff: &[u8]) -> Exif {
         exif::Reader::new()
             .read_raw(tiff.to_vec())
@@ -42,7 +42,7 @@ impl Exif {
             _ => None,
         };
         // Three unsigned rationals (degrees, minutes, seconds) as degrees,
-        // rounded to 1e-7 degrees (about 1 cm) to drop float noise.
+        // rounded to 1e-7 degrees (about 1 cm) to take away float noise.
         let degrees = |tag| match value(tag)? {
             Value::Rational(v) if v.len() == 3 && v.iter().all(|r| r.denom != 0) => {
                 let d = v[0].to_f64() + v[1].to_f64() / 60.0 + v[2].to_f64() / 3600.0;

@@ -2,10 +2,10 @@
 
 //! Encrypt replica objects.
 //!
-//! Every object that leaves a person's nodes is encrypted with AES-256-GCM
-//! under a key derived from the storage key and the object's name, and stored
-//! under a keyed hash of its name, so the holder sees neither the contents nor
-//! which objects are the same.
+//! Every object that goes out of a person's nodes is encrypted with
+//! AES-256-GCM. The key comes from the storage key and the object's name. The
+//! object is stored under a keyed hash of its name. So the holder sees
+//! neither the contents nor which objects are the same.
 
 use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 
@@ -21,7 +21,7 @@ impl std::fmt::Debug for StorageKey {
 }
 
 impl StorageKey {
-    /// Wrap 32 secret bytes.
+    /// Make a key from 32 secret bytes.
     pub fn new(bytes: [u8; 32]) -> StorageKey {
         StorageKey(bytes)
     }
@@ -34,7 +34,7 @@ impl StorageKey {
         *h.finalize().as_bytes()
     }
 
-    /// The name an object is stored under on an untrusted replica.
+    /// The name an object is stored under on a replica we do not trust.
     pub fn opaque_name(&self, name: &str) -> String {
         let h = self.derive("hs name v1", name);
         let hex = hs_core::Hash(h).to_hex();
@@ -48,8 +48,8 @@ impl StorageKey {
         LessSafeKey::new(UnboundKey::new(&AES_256_GCM, &k).expect("32-byte key"))
     }
 
-    /// Encrypt. `nonce` must be random (12 bytes); the name is authenticated,
-    /// so an object cannot be swapped for another.
+    /// Encrypt. `nonce` must be random (12 bytes). The name is authenticated,
+    /// so no one can put another object in its place.
     pub fn seal(&self, name: &str, plaintext: &[u8], nonce: [u8; 12]) -> Vec<u8> {
         let mut buf = plaintext.to_vec();
         let tag = self.key(name).seal_in_place_separate_tag(

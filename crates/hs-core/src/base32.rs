@@ -9,8 +9,8 @@ use data_encoding::{Encoding, Specification};
 static LOWER: LazyLock<Encoding> = LazyLock::new(|| {
     let mut spec = Specification::new();
     spec.symbols.push_str("abcdefghijklmnopqrstuvwxyz234567");
-    // Accept uppercase too; leftover bits must be zero, so each value has
-    // one encoding.
+    // Accept uppercase too. Bits left over at the end must be zero, so each
+    // value has one encoding.
     spec.translate.from.push_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     spec.translate.to.push_str("abcdefghijklmnopqrstuvwxyz");
     spec.check_trailing_bits = true;

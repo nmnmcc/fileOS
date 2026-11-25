@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Check the generated REST contract and its distribution copy.
+//! Check the generated REST contract and the copy kept in the repository.
 
 use std::collections::BTreeMap;
 

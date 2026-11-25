@@ -2,7 +2,7 @@
 
 [package]
 name = "hs-node"
-description = "Assembles the homeserver components into one node"
+description = "Puts the homeserver components together into one node"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -2,12 +2,12 @@
 
 //! Identity for homeserver.
 //!
-//! A person is a key pair; the identity ID is derived from the first public
-//! key and never changes. A short signed, append-only identity log declares the
-//! current personal key, node keys, addresses and domain aliases. Anyone who
-//! holds the log can verify it without asking a third party.
+//! A person is a key pair. The identity ID comes from the first public key and
+//! never changes. A short, signed, append-only identity log says what the
+//! current personal key, node keys, addresses and domain aliases are. Anyone
+//! who has the log can check it without asking a third party.
 //!
-//! This crate is sans-IO: callers supply randomness (seeds) and time.
+//! This crate is sans-IO: callers give it randomness (seeds) and time.
 
 pub mod did;
 mod log;
@@ -39,12 +39,12 @@ impl std::fmt::Debug for Keypair {
 }
 
 impl Keypair {
-    /// Derive a key pair from a 32-byte seed. Callers get seeds from a secure
+    /// Make a key pair from a 32-byte seed. Callers get seeds from a secure
     /// random source (`hs-node` uses `ring::rand::SystemRandom`).
     ///
     /// # Panics
     ///
-    /// Panics if the signing backend rejects a correctly sized Ed25519 seed.
+    /// Panics if the signing backend says no to an Ed25519 seed of the right size.
     pub fn from_seed(seed: [u8; 32]) -> Keypair {
         // The seed is exactly 32 bytes, which is the only way this can fail.
 
@@ -72,7 +72,7 @@ impl Keypair {
         self.pair.sign(message).as_ref().to_vec()
     }
 
-    /// Wrap a payload in a `COSE_Sign1` signed by this key.
+    /// Put a payload in a `COSE_Sign1` signed by this key.
     pub fn sign1(&self, payload: Vec<u8>) -> Sign1 {
         let signature = self.sign(&Sign1::to_be_signed(&payload));
         Sign1 {
@@ -90,7 +90,7 @@ pub fn verify(key: &PublicKey, message: &[u8], sig: &[u8]) -> bool {
         .is_ok()
 }
 
-/// Verify a `COSE_Sign1` and return its signer.
+/// Check a `COSE_Sign1` and return its signer.
 pub fn verify1(msg: &Sign1) -> Option<PublicKey> {
     let key = PublicKey::from_slice(&msg.kid)?;
     verify(&key, &Sign1::to_be_signed(&msg.payload), &msg.signature).then_some(key)
@@ -106,7 +106,7 @@ pub fn recovery_code(seed: &[u8; 32]) -> String {
         .join("-")
 }
 
-/// Parse a recovery code back into the seed. Dashes and spaces are ignored.
+/// Parse a recovery code back into the seed. Dashes and spaces do not matter.
 pub fn parse_recovery_code(code: &str) -> Option<[u8; 32]> {
     let clean: String = code.chars().filter(char::is_ascii_alphanumeric).collect();
     base32::decode(&clean)?.try_into().ok()

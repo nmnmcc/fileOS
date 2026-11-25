@@ -2,11 +2,12 @@
 
 //! Media metadata and previews.
 //!
-//! [`probe`] sniffs an image's type and size from its first bytes and reads
-//! the EXIF block if there is one (time taken, place, camera, orientation).
-//! Container formats are read by `imagesize` and `kamadak-exif`.
+//! [`probe`] gets an image's type and size from its first bytes. It also
+//! reads the EXIF block if there is one (time taken, place, camera,
+//! orientation). `imagesize` and `kamadak-exif` read the container formats.
 //! [`thumbnail`] decodes JPEG and PNG and writes a small preview. The server
-//! runs decoding in a separate process so a decoder failure stays isolated.
+//! runs decoding in a separate process, so a decoder failure does not get out
+//! of that process.
 
 mod exif;
 mod thumb;
@@ -26,11 +27,11 @@ pub const NAME: &str = env!("CARGO_PKG_NAME");
 pub struct Media {
     /// The media type, such as `image/jpeg`.
     pub media_type: &'static str,
-    /// Width in pixels, as stored (before applying the orientation).
+    /// Width in pixels, as stored (before the orientation is used).
     pub width: u32,
     /// Height in pixels, as stored.
     pub height: u32,
-    /// Metadata from the EXIF block, if any.
+    /// Metadata from the EXIF block, if there is one.
     pub exif: Exif,
 }
 
@@ -64,7 +65,7 @@ impl Media {
     }
 }
 
-/// Sniff an image: its media type, size and EXIF metadata.
+/// Look at the start of an image to get its media type, size and EXIF metadata.
 ///
 /// Knows JPEG, PNG, GIF, WebP, HEIC and AVIF. The size comes from
 /// `imagesize`, the EXIF block from `kamadak-exif`. Returns `None` if the

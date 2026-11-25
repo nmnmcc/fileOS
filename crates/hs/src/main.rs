@@ -2,8 +2,8 @@
 
 //! The homeserver binary: one program, one data directory.
 //!
-//! Keep this crate thin. It wires the components together and nothing else,
-//! so that editing it rebuilds in seconds.
+//! Keep this crate small. It joins the components together and does nothing
+//! else, so a change to it builds again in seconds.
 
 use std::io::{BufRead, IsTerminal, Read, Write};
 use std::net::SocketAddr;
@@ -54,10 +54,11 @@ type Res<T = ()> = Result<T, String>;
 
 /// homeserver: a personal server for your data and what you share.
 ///
-/// The top-level commands use a running node's API, local or remote, after
-/// `hs login URL`. `hs ctl` (or `hsctl`) manages a node: setup, running,
-/// configuration, backups and tokens. Commands that work either way use the
-/// data directory while the node is stopped and its API while it runs.
+/// The top-level commands use the API of a running node, local or remote,
+/// after `hs login URL`. `hs ctl` (or `hsctl`) manages a node: setup,
+/// running, configuration, backups and tokens. Some commands work both ways:
+/// they use the data directory while the node is stopped, and its API while
+/// it runs.
 #[derive(Parser)]
 #[command(name = "hs", version, long_version = LONG_VERSION, arg_required_else_help = true)]
 struct Cli {
@@ -143,7 +144,7 @@ enum Public {
     Near(commands::NearArgs),
     /// List what links to or from a resource
     Related(commands::RelatedArgs),
-    /// Store and fetch blobs by hash
+    /// Store and get blobs by hash
     #[command(subcommand)]
     Blob(commands::BlobCommand),
     /// Print changes as they happen
@@ -157,10 +158,10 @@ enum Public {
     Openapi,
     /// Print a script that completes `hs` commands in a shell
     ///
-    /// The script asks `hs` what may come next, so spaces, grants and
-    /// configuration keys are completed too; it covers `hsctl` as well.
-    /// Load it from the shell's startup file: in bash or zsh,
-    /// `source <(hs completion bash)` (or `zsh`); in fish,
+    /// The script asks `hs` what may come next, so it completes spaces,
+    /// grants and configuration keys too. It also covers `hsctl`. Load it
+    /// from the shell's startup file. In bash or zsh:
+    /// `source <(hs completion bash)` (or `zsh`). In fish:
     /// `hs completion fish | source`.
     Completion {
         /// The shell
@@ -216,7 +217,7 @@ enum Ctl {
     /// Split the recovery code into shares, or combine them
     #[command(subcommand)]
     Recovery(RecoveryCommand),
-    /// Rebuild the derived index from the logs and blobs
+    /// Build the derived index again from the logs and blobs
     RebuildIndex,
 }
 
@@ -230,8 +231,8 @@ enum Tls {
 
 #[derive(Args)]
 struct ServeArgs {
-    /// Listen address. For HTTPS on a public domain, put a reverse proxy
-    /// such as Caddy or nginx in front.
+    /// The address to listen on. For HTTPS on a public domain, put a reverse
+    /// proxy such as Caddy or nginx in front.
     #[arg(long, value_name = "ADDR", default_value = "127.0.0.1:8080")]
     listen: SocketAddr,
     #[arg(long, value_enum, default_value_t = Tls::Off)]
@@ -502,8 +503,8 @@ async fn serve(dir: &Path, args: &ServeArgs) -> Res {
 
 // recovery
 
-/// Shares print as `hs-share-<x>-<check>-<base32 y>`, where `check` is a few
-/// bytes of the secret's hash, so combining too few shares is noticed.
+/// Shares print as `hs-share-<x>-<check>-<base32 y>`. `check` is a few bytes
+/// of the secret's hash, so we see it when someone combines too few shares.
 fn recovery(cmd: RecoveryCommand) -> Res {
     match cmd {
         RecoveryCommand::Split {
@@ -679,7 +680,8 @@ fn thumbnail_worker(side: u32) -> std::io::Result<bool> {
     Ok(true)
 }
 
-/// Whether this program was started as `hsctl`, as by a link of that name.
+/// Whether this program was started as `hsctl`, for example through a link
+/// with that name.
 fn started_as_ctl() -> bool {
     std::env::args_os()
         .next()

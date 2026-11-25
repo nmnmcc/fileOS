@@ -2,9 +2,9 @@
 
 //! The REST API under `/api/`, used by the command line and other clients.
 //!
-//! Every endpoint is a function here with its request and response types
-//! from [`crate::types`] and an `OpenAPI` description beside it, which
-//! [`crate::openapi`] collects into one document.
+//! Every endpoint is a function here. It has its request and response types
+//! from [`crate::types`] and an `OpenAPI` description next to it, and
+//! [`crate::openapi`] puts these together into one document.
 //!
 //! Resources are plain HTTP: `GET`, `PUT`, `PATCH` (JSON Merge Patch) and
 //! `DELETE` on `/api/spaces/{space}/resources/{type}/{id}`, with `ETags`
@@ -351,7 +351,7 @@ pub async fn create_grant(api: &Api, new: &t::NewGrant) -> Result<t::NewToken> {
     Ok(t::NewToken { token, id })
 }
 
-/// Create a space, recording this node's home so other members can reach it.
+/// Create a space, and record this node's home so other members can reach it.
 pub async fn create_space(api: &Api, name: &str, info: Json) -> Result<Hash> {
     let id = api.node.create_space(name, info).await?;
     let c = api.node.config();
@@ -691,7 +691,7 @@ async fn handover(api: &Api, req: &Request, access: &Access, s: &str) -> Result 
     Ok(typed(StatusCode::OK, &t::Seq { seq }))
 }
 
-/// Fetch new changes from the space's primary now.
+/// Get new changes from the space's primary now.
 #[utoipa::path(post, path = "/api/spaces/{space}/sync", tag = "spaces",
     params(("space" = String, Path, description = "A space's name, ID or unique ID prefix")),
     responses((status = 200, body = t::Pulled)))]
@@ -780,7 +780,7 @@ async fn list_resources(api: &Api, req: &Request, access: &Access, s: &str) -> R
 }
 
 /// A resource's payload, with its `ETag`. Contacts and events stored as
-/// JSON can be had as vCard or iCalendar.
+/// JSON can also be read as vCard or iCalendar.
 #[utoipa::path(get, path = "/api/spaces/{space}/resources/{type}/{id}", tag = "resources",
     params(
         ("space" = String, Path, description = "A space's name, ID or unique ID prefix"),
@@ -903,7 +903,7 @@ async fn head_resource(
         ("id" = String, Path, description = "The resource ID"),
         ("If-Match" = Option<String>, Header, description = "Only if the current ETag matches"),
         ("If-None-Match" = Option<String>, Header, description = "`*`: only if it does not exist yet"),
-        ("Idempotency-Key" = Option<String>, Header, description = "Retries with identical method, target, content and conditions are applied once"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Retries with the same method, target, content and conditions take effect once"),
     ),
     request_body(content(
         (Object = "application/json"),
@@ -958,7 +958,7 @@ async fn put_resource(
         ("type" = String, Path, description = "The resource type"),
         ("id" = String, Path, description = "The resource ID"),
         ("If-Match" = Option<String>, Header, description = "Only if the current ETag matches"),
-        ("Idempotency-Key" = Option<String>, Header, description = "Retries with identical method, target, content and conditions are applied once"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Retries with the same method, target, content and conditions take effect once"),
     ),
     request_body(content((Object = "application/merge-patch+json"), (Object = "application/json"))),
     responses(
@@ -1011,7 +1011,7 @@ async fn patch_resource(
         ("type" = String, Path, description = "The resource type"),
         ("id" = String, Path, description = "The resource ID"),
         ("If-Match" = Option<String>, Header, description = "Only if the current ETag matches"),
-        ("Idempotency-Key" = Option<String>, Header, description = "Retries with identical method, target, content and conditions are applied once"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Retries with the same method, target, content and conditions take effect once"),
     ),
     responses(
         (status = 204, description = "Deleted"),
@@ -1325,7 +1325,7 @@ async fn thumbnail(api: &Api, hash: &Hash, side: u32) -> Result<(Vec<u8>, &'stat
     thumb.ok_or_else(|| ApiError::new(StatusCode::UNSUPPORTED_MEDIA_TYPE, "no thumbnail for this"))
 }
 
-// A small read and two queued chunks bound memory per streaming response.
+// A small read and two queued chunks limit the memory of each streaming response.
 const BLOB_CHUNK: usize = 64 * 1024;
 
 fn stream_blob(file: tokio::fs::File, start: u64, len: u64, hash: Option<Hash>) -> Body {
@@ -1355,7 +1355,7 @@ async fn read_chunks(
         remaining -= chunk.len() as u64;
         if let Some(hash) = &mut hash {
             hash.update(&chunk);
-            // Withhold the last chunk so a bad digest cannot complete a fixed-length response.
+            // Keep back the last chunk, so a bad digest cannot complete a response of fixed length.
             if remaining == 0 && expected != Some(Hash(*hash.finalize().as_bytes())) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,

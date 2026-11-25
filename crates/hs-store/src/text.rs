@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Extracting what the index needs from a resource's JSON, and making
-//! Chinese, Japanese and Korean text searchable with FTS5.
+//! Getting what the index needs out of a resource's JSON, and making Chinese,
+//! Japanese and Korean text searchable with FTS5.
 //!
-//! FTS5's `unicode61` tokenizer treats a run of CJK characters as one token,
-//! and `trigram` cannot find two-character words. So before indexing and
-//! querying, runs of CJK characters are split into overlapping two-character
-//! pieces (bigrams) separated by spaces; other text is left to `unicode61`.
-//! The index is contentless, so the original text is stored once, in the
-//! resource's body.
+//! The `unicode61` tokenizer of FTS5 takes a run of CJK characters as one
+//! token, and `trigram` cannot find two-character words. So before indexing
+//! and querying, runs of CJK characters are split into overlapping
+//! two-character pieces (bigrams), with spaces between them. Other text is
+//! left to `unicode61`. The index is contentless, so the text itself is
+//! stored only once, in the resource's body.
 
 use serde_json::Value as Json;
 
@@ -23,7 +23,7 @@ fn is_cjk(c: char) -> bool {
     )
 }
 
-/// Split runs of CJK characters into space-separated bigrams.
+/// Split runs of CJK characters into bigrams with spaces between them.
 pub fn bigrams(text: &str) -> String {
     let mut out = String::with_capacity(text.len() * 2);
     let mut run: Vec<char> = Vec::new();
@@ -58,8 +58,8 @@ pub fn bigrams(text: &str) -> String {
     out
 }
 
-/// Turn what a person typed into a safe FTS5 query: every term must match.
-/// CJK terms become bigram phrases; other words match as prefixes.
+/// Turn what a person typed into a safe FTS5 query. Every term must match.
+/// CJK terms become bigram phrases. Other words match as prefixes.
 pub fn fts_query(input: &str) -> Option<String> {
     let mut terms = Vec::new();
     for word in bigrams(input).split(|c: char| !c.is_alphanumeric()) {
@@ -109,8 +109,8 @@ pub fn text_title(text: &str) -> String {
         .collect()
 }
 
-/// All text worth searching, from string fields at any depth (not links,
-/// hashes or IDs).
+/// All text that is worth searching, from string fields at any depth (not
+/// links, hashes or IDs).
 pub fn searchable(json: &Json) -> String {
     fn walk(v: &Json, key: &str, out: &mut String) {
         if out.len() > 64 * 1024 {

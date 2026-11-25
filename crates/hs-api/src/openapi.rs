@@ -110,7 +110,7 @@ fn document() -> utoipa::openapi::OpenApi {
 ///
 /// # Panics
 ///
-/// Panics if the generated document violates JSON serialization invariants.
+/// Panics if the generated document can not be made into JSON.
 pub fn json() -> Vec<u8> {
     static JSON: OnceLock<Vec<u8>> = OnceLock::new();
     JSON.get_or_init(|| {

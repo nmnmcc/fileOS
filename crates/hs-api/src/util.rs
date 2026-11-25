@@ -39,7 +39,7 @@ impl ApiError {
         self
     }
 
-    /// Read the backtrace captured at the API boundary.
+    /// The backtrace taken where the error came into the API.
     pub fn backtrace(&self) -> &std::backtrace::Backtrace {
         &self.backtrace
     }
@@ -174,7 +174,7 @@ pub fn empty(status: StatusCode) -> Response {
     r
 }
 
-/// Set a header, ignoring values that are not valid header text.
+/// Set a header. Values that are not valid header text are left out.
 pub fn set_header(r: &mut Response, name: impl header::IntoHeaderName, value: &str) {
     if let Ok(v) = HeaderValue::from_str(value) {
         r.headers_mut().insert(name, v);
@@ -190,7 +190,7 @@ pub fn header(req: &Request, name: impl header::AsHeaderName) -> Option<&str> {
 ///
 /// # Errors
 ///
-/// Returns a bad-request error when the body is invalid JSON.
+/// Returns a bad-request error when the body is not valid JSON.
 pub fn body_json(req: &Request) -> Result<Json> {
     serde_json::from_slice(req.body()).map_err(|e| ApiError::bad(format!("bad JSON: {e}")))
 }

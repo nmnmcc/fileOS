@@ -32,7 +32,7 @@ use hs_net::server::{Peer, Request, Response};
 
 /// The session cookie (holds a bearer token).
 pub const COOKIE: &str = "hs_session";
-/// The forward-auth cookie (an HMAC-signed subject and expiry).
+/// The forward-auth cookie (a subject and an end time, signed with HMAC).
 pub const FORWARD_COOKIE: &str = "hs_forward";
 /// How long a passkey session lasts (ms).
 pub const SESSION_MS: u64 = 30 * 24 * 3600 * 1000;

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Enforce the compile-time budget.
+"""Check the compile-time budget.
 
-Measures a clean debug build, a rebuild after editing a leaf crate, and a
-rebuild after editing the core crate. Fails if any of them exceeds its budget.
+Measures the time of a clean debug build, of a rebuild after a change to a leaf
+crate, and of a rebuild after a change to the core crate. Fails if any of them
+goes over its budget.
 """
 
 import subprocess
@@ -23,7 +24,7 @@ console = Console()
 
 
 def timed_build(*extra: str) -> float:
-    """Build the whole workspace in debug mode and return the wall time."""
+    """Build the whole workspace in debug mode and return the wall-clock time."""
     start = time.perf_counter()
     result = subprocess.run(
         ["cargo", "build", "--workspace", "--locked", *extra],
@@ -45,22 +46,22 @@ def main(
         float, typer.Option(envvar="BUDGET_CLEAN", help="Budget for a clean build, in seconds.")
     ] = 180,
     leaf: Annotated[
-        float, typer.Option(envvar="BUDGET_LEAF", help="Budget after editing a leaf crate.")
+        float, typer.Option(envvar="BUDGET_LEAF", help="Budget after a change to a leaf crate.")
     ] = 5,
     core: Annotated[
-        float, typer.Option(envvar="BUDGET_CORE", help="Budget after editing hs-core.")
+        float, typer.Option(envvar="BUDGET_CORE", help="Budget after a change to hs-core.")
     ] = 20,
 ) -> None:
-    """Enforce the compile-time budget."""
+    """Check the compile-time budget."""
     subprocess.run(["cargo", "clean", "--quiet"], cwd=ROOT, check=True)
 
     with console.status("Clean build..."):
         # Only the clean build writes the per-crate timing report.
         clean_seconds = timed_build("--timings")
-    with console.status("Rebuild after editing a leaf crate..."):
-        LEAF_FILE.touch()  # mark as edited without changing the contents
+    with console.status("Rebuild after a change to a leaf crate..."):
+        LEAF_FILE.touch()  # make it look changed, but keep the contents
         leaf_seconds = timed_build()
-    with console.status("Rebuild after editing hs-core..."):
+    with console.status("Rebuild after a change to hs-core..."):
         CORE_FILE.touch()
         core_seconds = timed_build()
 

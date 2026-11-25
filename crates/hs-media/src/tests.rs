@@ -150,7 +150,7 @@ fn other_formats() {
     };
     let vp8 = riff(b"VP8 ", &[0, 0, 0, 0x9D, 0x01, 0x2A, 100, 0, 50, 0]);
     assert_eq!(probe(&vp8).map(|m| (m.width, m.height)), Some((100, 50)));
-    // VP8L: width-1 = 99, height-1 = 49 packed in 14-bit fields.
+    // VP8L: width-1 = 99, height-1 = 49, put in 14-bit fields.
     let v = 99u32 | 49 << 14;
     let vp8l = riff(b"VP8L", &[[0x2F].as_slice(), &v.to_le_bytes()].concat());
     assert_eq!(probe(&vp8l).map(|m| (m.width, m.height)), Some((100, 50)));

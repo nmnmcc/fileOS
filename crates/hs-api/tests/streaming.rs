@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Exercise streaming completions and range headers over actual HTTP.
+//! Test streamed responses to the end, and range headers, over real HTTP.
 
 use std::sync::Arc;
 

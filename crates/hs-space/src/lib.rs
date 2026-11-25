@@ -3,11 +3,11 @@
 //! Spaces: the unit of sharing and sync.
 //!
 //! A space has members, a primary and a log. The primary orders signed
-//! proposals into signed entries ([`Space::order`]); everyone else verifies
-//! and applies the same entries ([`Space::apply`]). This crate is sans-IO:
-//! payload bytes, keys and time come from the caller, and nothing here
-//! touches files, sockets or clocks, so the same code runs in production and
-//! in deterministic simulation.
+//! proposals into signed entries ([`Space::order`]). Everyone else checks and
+//! applies the same entries ([`Space::apply`]). This crate is sans-IO: payload
+//! bytes, keys and time come from the caller. Nothing here uses files, sockets
+//! or clocks, so the same code runs in production and in deterministic
+//! simulation.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -70,14 +70,14 @@ impl Role {
     }
 }
 
-/// A member: a person's homeserver, identified by its node key.
+/// A member: a person's homeserver, known by its node key.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Member {
     /// The person's identity ID.
     pub identity: PublicKey,
     /// The role.
     pub role: Role,
-    /// Where the member's homeserver can be reached, if known.
+    /// Where the member's homeserver can be reached, if this is known.
     pub home: Option<String>,
 }
 
@@ -90,7 +90,7 @@ pub struct Resource {
     pub media_type: String,
     /// Sequence number of the entry that last changed it.
     pub seq: u64,
-    /// Time of that entry (primary's clock).
+    /// Time of that entry (by the primary's clock).
     pub time: u64,
     /// Every payload it has had, for erasing.
     pub history: Vec<Hash>,
@@ -105,18 +105,18 @@ pub struct Grant {
     pub revoked: bool,
 }
 
-/// What applying an entry changed, for the caller to act on.
+/// What an entry changed when it was applied, so the caller can act on it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Applied {
     /// Sequence number.
     pub seq: u64,
     /// Hash of the signed entry.
     pub hash: Hash,
-    /// The proposal it carried.
+    /// The proposal that was in it.
     pub proposal: Proposal,
     /// Who wrote it.
     pub author: PublicKey,
-    /// Primary's time.
+    /// The primary's time.
     pub time: u64,
     /// Payloads that every follower should now delete.
     pub erase: Vec<Hash>,
@@ -128,11 +128,11 @@ pub struct Applied {
 pub enum Ordered {
     /// A new entry: its signed bytes and what it changed.
     New(Vec<u8>, Applied),
-    /// The same author already sent this nonce; this is its sequence number.
+    /// The same author sent this nonce before. This is its sequence number.
     Duplicate(u64),
 }
 
-/// A space's state, built from its log.
+/// The state of a space, built from its log.
 #[derive(Clone, Debug)]
 pub struct Space {
     /// The space ID: the hash of the signed genesis proposal.
@@ -165,7 +165,7 @@ enum Update {
     None,
 }
 
-/// Fetch a payload by hash, or `None` if it is not available (or erased).
+/// Get a payload by hash, or `None` if it is not there (or was erased).
 pub trait Payloads {
     /// Get the bytes of a payload.
     fn payload(&self, hash: &Hash) -> Option<Vec<u8>>;
@@ -203,9 +203,9 @@ fn parse_member(j: &Json) -> Option<(PublicKey, Member)> {
 }
 
 /// Build the genesis of a new space. Returns the signed genesis proposal and
-/// its payload; pass both to [`Space::genesis`].
+/// its payload. Give both to [`Space::genesis`].
 ///
-/// `info` must hold `name`; the creator becomes the only owner.
+/// `info` must have `name`. The creator becomes the only owner.
 pub fn genesis_proposal(
     author: &Keypair,
     identity: PublicKey,
@@ -246,7 +246,7 @@ impl Space {
     ///
     /// # Errors
     ///
-    /// Returns a refusal if genesis, its payload or any required signature is invalid.
+    /// Returns a refusal if the genesis, its payload or any needed signature is not valid.
     pub fn genesis(
         primary: &Keypair,
         signed_genesis: &[u8],
@@ -280,11 +280,11 @@ impl Space {
         }
     }
 
-    /// Rebuild a space by applying signed entries in order.
+    /// Build a space again by applying signed entries in order.
     ///
     /// # Errors
     ///
-    /// Returns a refusal when the log is empty or an entry fails verification or application.
+    /// Returns a refusal when the log is empty, or an entry fails the check or cannot be applied.
     pub fn replay<'a>(
         id: Hash,
         entries: impl IntoIterator<Item = &'a [u8]>,
@@ -301,7 +301,7 @@ impl Space {
         Ok((space, applied))
     }
 
-    /// The space's name.
+    /// The name of the space.
     pub fn name(&self) -> &str {
         self.info.get("name").and_then(Json::as_str).unwrap_or("")
     }
@@ -311,16 +311,17 @@ impl Space {
         self.members.get(node).map(|m| m.role)
     }
 
-    /// The sequence at which this author and nonce were committed.
+    /// The sequence number at which this author and nonce were committed.
     pub fn sequence_for(&self, author: PublicKey, nonce: &[u8]) -> Option<u64> {
         self.nonces.get(&(author, nonce.to_vec())).copied()
     }
 
-    /// Check a signed proposal against the current state without applying it.
+    /// Check a signed proposal against the current state, but do not apply it.
     ///
     /// # Errors
     ///
-    /// Returns a refusal for an invalid signature, space, author, role or missing required payload.
+    /// Returns a refusal for a signature, space, author or role that is not valid, or for a needed
+    /// payload that is missing.
     pub fn check(&self, signed_proposal: &[u8]) -> Result<(PublicKey, Proposal), Refused> {
         let msg = Sign1::decode(signed_proposal).map_err(|e| Refused(e.to_string()))?;
         let author = verify1(&msg).ok_or_else(|| Refused("bad proposal signature".into()))?;
@@ -358,7 +359,7 @@ impl Space {
     ///
     /// # Errors
     ///
-    /// Returns a refusal when the primary, proposal or state transition is invalid.
+    /// Returns a refusal when the primary, the proposal or the change of state is not valid.
     pub fn order(
         &mut self,
         primary: &Keypair,
@@ -369,12 +370,12 @@ impl Space {
         self.order_with(primary, signed_proposal, payloads, time, |_| Ok(()))
     }
 
-    /// Order a proposal, calling `persist` before publishing the change.
+    /// Order a proposal, and call `persist` before the change is made public.
     ///
     /// # Errors
     ///
-    /// Returns the validation or persistence error. In either case the space
-    /// remains unchanged. Duplicate proposals skip persistence.
+    /// Returns the error from the check or from `persist`. In both cases the
+    /// space does not change. For duplicate proposals, `persist` is not called.
     pub fn order_with<E: From<Refused>>(
         &mut self,
         primary: &Keypair,
@@ -395,11 +396,11 @@ impl Space {
 
     /// Check the resource's current payload before ordering a new proposal.
     ///
-    /// Duplicate proposals reuse their original sequence without running the check.
+    /// Duplicate proposals get their first sequence number again, and the check does not run.
     ///
     /// # Errors
     ///
-    /// Returns an error if the proposal, check or persistence fails.
+    /// Returns an error if the proposal, the check or `persist` fails.
     pub fn order_checked<E: From<Refused>>(
         &mut self,
         primary: &Keypair,
@@ -435,11 +436,11 @@ impl Space {
         Ok(Ordered::New(signed, applied))
     }
 
-    /// Verify a signed entry from the primary and apply it.
+    /// Check a signed entry from the primary and apply it.
     ///
     /// # Errors
     ///
-    /// Returns a refusal if the entry or its state transition is invalid.
+    /// Returns a refusal if the entry or its change of state is not valid.
     pub fn apply(
         &mut self,
         signed_entry: &[u8],
@@ -448,11 +449,11 @@ impl Space {
         self.apply_with(signed_entry, payloads, |_| Ok(()))
     }
 
-    /// Apply a verified entry only after `persist` succeeds.
+    /// Apply a checked entry, but only after `persist` succeeds.
     ///
     /// # Errors
     ///
-    /// Returns the validation or persistence error and leaves the space unchanged.
+    /// Returns the error from the check or from `persist`, and does not change the space.
     pub fn apply_with<E: From<Refused>>(
         &mut self,
         signed_entry: &[u8],
@@ -648,8 +649,8 @@ impl Space {
         primary.sign1(head.encode()).encode()
     }
 
-    /// A signed checkpoint: the state at the current sequence number, so a
-    /// node can start from it instead of replaying the whole log.
+    /// A signed checkpoint: the state at the current sequence number. A node
+    /// can start from it, and does not need to replay the whole log.
     pub fn checkpoint(&self, primary: &Keypair) -> Vec<u8> {
         let members = self
             .members
@@ -711,8 +712,8 @@ impl Space {
     ///
     /// # Errors
     ///
-    /// Returns a refusal if the checkpoint is malformed or its signature does not match the trusted
-    /// primary.
+    /// Returns a refusal if the checkpoint is badly formed or its signature does not match the
+    /// trusted primary.
     pub fn from_checkpoint(bytes: &[u8], trusted_primary: &PublicKey) -> Result<Space, Refused> {
         let bad = || Refused("bad checkpoint".into());
         let msg = Sign1::decode(bytes)
@@ -897,7 +898,7 @@ mod tests {
         };
         assert_eq!(a.author, bob_node.public());
         log.push(e2);
-        // Retrying the same proposal is idempotent.
+        // Sending the same proposal again is idempotent.
         assert_eq!(
             space.order(&alice_node, &p, &store, 5).unwrap(),
             Ordered::Duplicate(2)
@@ -917,7 +918,7 @@ mod tests {
         );
         space.order(&alice_node, &pm2, &store, 6).unwrap_err();
 
-        // Erase drops the payload but the chain still verifies without it.
+        // Erase drops the payload, but the chain can still be checked without it.
         let pe = propose(
             &alice_node,
             space.id,
@@ -942,7 +943,7 @@ mod tests {
         assert_eq!(replayed.head, space.head);
         assert_eq!(replayed.resources, space.resources);
 
-        // Tampering breaks the chain.
+        // Changing bytes breaks the chain.
         let mut bad = log.clone();
         bad.swap(1, 2);
         Space::replay(space.id, bad.iter().map(Vec::as_slice), &store).unwrap_err();

@@ -7,8 +7,8 @@
 //! part of the Plugin Interface defined in the homeserver Plugin Exception and is
 //! licensed under MIT OR Apache-2.0, so plugins may use any license.
 //!
-//! It must stay `no_std`, dependency-free and fast to compile, because every
-//! plugin author builds it.
+//! It must stay `no_std`, with no dependencies, and quick to compile, because
+//! every plugin author builds it.
 
 #![no_std]
 

@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Check that every commit is signed off (Developer Certificate of Origin).
 
-Looks at the non-merge commits in BASE..HEAD and fails if any of them lacks a
-Signed-off-by line. Commits made by GitHub Apps such as Dependabot
+Looks at the commits in BASE..HEAD that are not merges. Fails if any of them
+has no Signed-off-by line. Commits made by GitHub Apps such as Dependabot
 (`...[bot]@users.noreply.github.com`) do not need one: a bot is not able to
-give the certificate, and the person who merges its changes checks them. Fix a missing one with `git commit -s`, or several with
+give the certificate, and the person who merges its changes checks them. To
+fix one commit, use `git commit -s`; for several, use
 `git rebase --signoff BASE`.
 """
 
@@ -41,7 +42,7 @@ def main(
         if not signed_off(sha)
     ]
     for sha in missing:
-        console.print(f"[red]Commit {sha} is missing Signed-off-by[/red] (use git commit -s)")
+        console.print(f"[red]Commit {sha} has no Signed-off-by[/red] (use git commit -s)")
     if missing:
         raise typer.Exit(1)
 
