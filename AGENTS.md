@@ -24,17 +24,18 @@ The devenv shell (`direnv allow`, or `devenv shell -- <command>`) has every tool
 
 ## Worktrees
 
-- The main folder (the repository root) always stays on `main`. Never switch its branch, and do not make commits there. Someone else may be working in it.
-- For every piece of work, make a worktree in `.worktrees/`, from an up-to-date `main`:
+The main folder (the repository root) always stays on `main`. Never switch its branch, and do not make commits there. Someone else may be working in it.
 
-  ```sh
-  git fetch origin
-  git worktree add -b <branch> .worktrees/<name> origin/main
-  ```
+For every piece of work, make a worktree in `.worktrees/` from an up-to-date `main`, and do all the work, the commits and the push there:
 
-  The `<name>` of the folder says in full what the work is, for example `.worktrees/remove-built-in-acme-certificates`, not `.worktrees/fix`. `.worktrees/` is in `.gitignore`.
-- Do all the work, the commits and the push in that worktree.
-- When the work is done (the pull request is merged or closed, or the work is dropped), take the worktree away: `git worktree remove .worktrees/<name>`, then delete the local branch.
+```sh
+git fetch origin
+git worktree add -b <branch> .worktrees/<name> origin/main
+```
+
+The `<name>` of the folder says in full what the work is, for example `.worktrees/remove-built-in-acme-certificates`, not `.worktrees/fix`. `.worktrees/` is in `.gitignore`.
+
+When the work is done (the pull request is merged or closed, or the work is dropped), take the worktree away with `git worktree remove .worktrees/<name>`, then delete the local branch.
 
 ## How changes get in
 
