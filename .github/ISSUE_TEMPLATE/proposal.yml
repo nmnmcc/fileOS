@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: Suggestion
+description: Put forward a new feature, or a change to a rule or a design decision.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Write in English or Chinese. Suggestions are judged by the rules in
+        the README. A question about one of those rules is also welcome.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What you are trying to do, and why it is hard now.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggestion
+      description: What to change. Say which parts are mechanism and which are policy.
+    validations:
+      required: true
+  - type: textarea
+    id: other-ways
+    attributes:
+      label: Other ways
+      description: Other ways to do it, and how other projects do it.

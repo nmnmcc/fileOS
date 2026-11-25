@@ -9,11 +9,22 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a pull request stops its older run. Runs on main always go to
+# the end.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Formatting, lints, tests, docs, the wasm build, dependency policy and Python
   # types: scripts/check.py.
   check:
+    name: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +32,8 @@ jobs:
       - run: devenv shell -- check
 
   # Fails if a build exceeds its compile-time budget (scripts/budget.py).
-  build-budget:
+  budget:
+    name: budget
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +46,8 @@ jobs:
           path: target/cargo-timings/cargo-timing.html
 
   # Release artifacts, built in the Nix sandbox as `devenv build` does locally.
-  build:
+  artifacts:
+    name: artifacts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +62,9 @@ jobs:
           name: docs
           path: artifacts/docs
 
+  # Every commit in a pull request has a sign-off (CONTRIBUTING.md).
   dco:
+    name: dco
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -58,3 +73,15 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/devenv
       - run: devenv shell -- dco "origin/${{ github.base_ref }}" HEAD
+
+  # The only check that the branch rules need. It is green when every job above
+  # is green or was not needed, so jobs may be added or renamed here with no
+  # change to the rules.
+  ci:
+    name: ci
+    if: always()
+    needs: [check, budget, artifacts, dco]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo '${{ toJSON(needs) }}' | jq -e 'all(.[]; .result == "success" or .result == "skipped")'

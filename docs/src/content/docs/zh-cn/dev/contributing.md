@@ -55,6 +55,23 @@ C 或 C++。
 
 crate 布局见[架构](../architecture/#crate)。
 
+## 语言
+
+项目发布的英文（文档、帮助、错误信息、注释、提交信息、发布说明）一律使用
+[Basic English](https://zh.wikipedia.org/wiki/基本英语)：句子短、用词常见，
+谁都容易读懂，机器翻译效果也好。我们建议你在 issue 和 PR 中也使用，但不作
+要求，用中文同样可以。
+
+## 提交改动
+
+任何人都不直接推送到 `main`。先建分支、发起 PR，等 `ci` 检查通过。PR 以
+“Squash and merge” 合并，每个 PR 在 `main` 上对应一个提交。
+
+如果改动是用户能感知的，用 `knope document-change` 创建一个变更文件并随 PR
+一起提交。不要手动编辑 `CHANGELOG.md`：发布时由 [Knope](https://knope.tech)
+把变更文件写进去，再由 Release 工作流创建标签和 GitHub Release。完整步骤见
+`CONTRIBUTING.md`。
+
 ## 许可证与签署
 
 homeserver 采用 AGPL-3.0-only；`hs-plugin-api` 采用 MIT OR Apache-2.0，

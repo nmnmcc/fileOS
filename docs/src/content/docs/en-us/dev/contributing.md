@@ -58,6 +58,28 @@ or C++ that needs cmake.
 
 The crate layout is in [Architecture](../architecture/#crates).
 
+## Language
+
+All English that the project puts out (documentation, help, error messages,
+comments, commit messages, release notes) is in
+[Basic English](https://en.wikipedia.org/wiki/Basic_English): short
+sentences and common words, so that it is easy to read for everyone and goes
+well through machine translation. We suggest it for your issues and pull
+requests too, but it is not a rule; Chinese is also good.
+
+## Sending a change
+
+Nobody pushes to `main` directly. Make a branch, open a pull request, and
+wait for the `ci` check to be green. Pull requests are merged with "Squash
+and merge", so `main` gets one commit for each pull request.
+
+If users will see the change, make a change file with
+`knope document-change` and commit it with the pull request. Do not make
+changes to `CHANGELOG.md` by hand: at release time,
+[Knope](https://knope.tech) puts the change files into it and the Release
+workflow makes the tag and the GitHub release. The steps are in
+`CONTRIBUTING.md`.
+
 ## Licensing and sign-off
 
 homeserver is AGPL-3.0-only; `hs-plugin-api` is MIT OR Apache-2.0 so that

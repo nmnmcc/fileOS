@@ -13,12 +13,12 @@ writing first.
 
 ## Reachable from your network or the Internet
 
-| You have                              | Run                                                     |
-| ------------------------------------- | ------------------------------------------------------- |
-| Only this machine                     | `hs ctl serve`                                          |
-| A home network, no domain             | `hs ctl serve --listen [::]:8443 --tls self-signed`     |
+| You have                              | Run                                                                |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| Only this machine                     | `hs ctl serve`                                                     |
+| A home network, no domain             | `hs ctl serve --listen [::]:8443 --tls self-signed`                |
 | A domain pointing at a public address | `hs ctl serve` behind [a reverse proxy](#https-on-a-public-domain) |
-| A home router in the way              | add `--map-port`                                        |
+| A home router in the way              | add `--map-port`                                                   |
 
 **`--tls self-signed`** makes a certificate once and keeps it in
 `keys/self-signed.pem`. Apps will warn about it; `hs login --insecure`
