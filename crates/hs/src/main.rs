@@ -17,7 +17,6 @@ use clap_complete::engine::ArgValueCandidates;
 use hs_api::Api;
 use hs_api::replica::{self, Store};
 use hs_node::Node;
-use hs_space::Role;
 use serde_json::Value as Json;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
@@ -213,7 +212,7 @@ enum Ctl {
     ///
     /// The recovery code is read from $`HS_RECOVERY_CODE`, else from stdin.
     Restore {
-        /// The replica: a directory, s3://… or https://…
+        /// The replica: a directory, s3://… or hs://…
         #[arg(long, value_name = "REPLICA")]
         from: String,
     },
@@ -265,19 +264,13 @@ pub enum RoleArg {
     Owner,
 }
 
-impl From<RoleArg> for Role {
-    fn from(r: RoleArg) -> Role {
-        match r {
-            RoleArg::Reader => Role::Reader,
-            RoleArg::Writer => Role::Writer,
-            RoleArg::Owner => Role::Owner,
+impl From<RoleArg> for hs_client::types::Role {
+    fn from(role: RoleArg) -> Self {
+        match role {
+            RoleArg::Reader => Self::Reader,
+            RoleArg::Writer => Self::Writer,
+            RoleArg::Owner => Self::Owner,
         }
-    }
-}
-
-impl From<RoleArg> for hs_api::types::Role {
-    fn from(r: RoleArg) -> hs_api::types::Role {
-        Role::from(r).into()
     }
 }
 
@@ -650,9 +643,12 @@ fn recovery(cmd: RecoveryCommand) -> Res {
             }
             let secret =
                 hs_identity::shamir::combine(&shares).ok_or("could not combine these shares")?;
-            let seed: [u8; 32] = secret
-                .try_into()
-                .map_err(|_| "shares have the wrong length")?;
+            let seed: [u8; 32] = secret.try_into().map_err(|bytes: Vec<u8>| {
+                format!(
+                    "shares have the wrong length: expected 32 bytes, got {}",
+                    bytes.len()
+                )
+            })?;
             if Some(hs_core::Hash::of(&seed).to_hex()[..8].to_string()) != check {
                 return Err("not enough shares (or a damaged one)".into());
             }

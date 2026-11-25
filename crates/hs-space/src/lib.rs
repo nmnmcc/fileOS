@@ -231,6 +231,7 @@ pub fn genesis_proposal(
         time,
         nonce,
         grant: None,
+        request: None,
     };
     (author.sign1(proposal.encode()).encode(), payload)
 }
@@ -308,6 +309,11 @@ impl Space {
     /// The role of a node, if it is a member.
     pub fn role(&self, node: &PublicKey) -> Option<Role> {
         self.members.get(node).map(|m| m.role)
+    }
+
+    /// The sequence at which this author and nonce were committed.
+    pub fn sequence_for(&self, author: PublicKey, nonce: &[u8]) -> Option<u64> {
+        self.nonces.get(&(author, nonce.to_vec())).copied()
     }
 
     /// Check a signed proposal against the current state without applying it.
@@ -709,11 +715,13 @@ impl Space {
     /// primary.
     pub fn from_checkpoint(bytes: &[u8], trusted_primary: &PublicKey) -> Result<Space, Refused> {
         let bad = || Refused("bad checkpoint".into());
-        let msg = Sign1::decode(bytes).map_err(|_| bad())?;
+        let msg = Sign1::decode(bytes)
+            .map_err(|error| Refused(format!("bad checkpoint signature: {error}")))?;
         if verify1(&msg) != Some(*trusted_primary) {
             return refused("checkpoint not signed by the primary");
         }
-        let v = Value::decode(&msg.payload).map_err(|_| bad())?;
+        let v = Value::decode(&msg.payload)
+            .map_err(|error| Refused(format!("bad checkpoint payload: {error}")))?;
         let hash = |v: Option<&Value>| v.and_then(Value::as_bytes).and_then(Hash::from_slice);
         let key = |v: Option<&Value>| v.and_then(Value::as_bytes).and_then(PublicKey::from_slice);
         let mut space = Space::empty(hash(v.get(1)).ok_or_else(bad)?);
@@ -721,7 +729,7 @@ impl Space {
         space.head = hash(v.get(3)).ok_or_else(bad)?;
         space.primary = key(v.get(4)).ok_or_else(bad)?;
         space.info = serde_json::from_str(v.get(5).and_then(Value::as_text).ok_or_else(bad)?)
-            .map_err(|_| bad())?;
+            .map_err(|error| Refused(format!("bad checkpoint JSON: {error}")))?;
         for m in v.get(6).and_then(Value::as_array).ok_or_else(bad)? {
             let a = m.as_array().ok_or_else(bad)?;
             space.members.insert(
@@ -772,7 +780,7 @@ impl Space {
                     .to_string(),
                 Grant {
                     body: serde_json::from_str(a.get(1).and_then(Value::as_text).ok_or_else(bad)?)
-                        .map_err(|_| bad())?,
+                        .map_err(|error| Refused(format!("bad checkpoint JSON: {error}")))?,
                     revoked: a.get(2) == Some(&Value::Bool(true)),
                 },
             );
@@ -806,6 +814,7 @@ pub fn propose(
         time,
         nonce,
         grant,
+        request: None,
     };
     author.sign1(p.encode()).encode()
 }
@@ -824,8 +833,8 @@ mod tests {
         }
     }
     impl Payloads for Store {
-        fn payload(&self, h: &Hash) -> Option<Vec<u8>> {
-            self.0.borrow().get(h).cloned()
+        fn payload(&self, hash: &Hash) -> Option<Vec<u8>> {
+            self.0.borrow().get(hash).cloned()
         }
     }
 
@@ -863,7 +872,7 @@ mod tests {
             vec![1],
             None,
         );
-        assert!(space.order(&alice_node, &p, &store, 2).is_err());
+        space.order(&alice_node, &p, &store, 2).unwrap_err();
 
         let m = serde_json::to_vec(&serde_json::json!({"node": bob_node.public().to_id(), "identity": bob.to_id(), "role": "writer"})).unwrap();
         store.put(&m);
@@ -906,7 +915,7 @@ mod tests {
             vec![3],
             None,
         );
-        assert!(space.order(&alice_node, &pm2, &store, 6).is_err());
+        space.order(&alice_node, &pm2, &store, 6).unwrap_err();
 
         // Erase drops the payload but the chain still verifies without it.
         let pe = propose(
@@ -936,13 +945,13 @@ mod tests {
         // Tampering breaks the chain.
         let mut bad = log.clone();
         bad.swap(1, 2);
-        assert!(Space::replay(space.id, bad.iter().map(Vec::as_slice), &store).is_err());
+        Space::replay(space.id, bad.iter().map(Vec::as_slice), &store).unwrap_err();
 
         let cp = space.checkpoint(&alice_node);
         let restored = Space::from_checkpoint(&cp, &alice_node.public()).unwrap();
         assert_eq!(restored.resources, space.resources);
         assert_eq!(restored.members, space.members);
-        assert!(Space::from_checkpoint(&cp, &bob_node.public()).is_err());
+        Space::from_checkpoint(&cp, &bob_node.public()).unwrap_err();
     }
 
     #[test]
@@ -999,7 +1008,7 @@ mod tests {
             vec![3],
             None,
         );
-        assert!(space.order(&a, &p, &store, 4).is_err());
-        assert!(space.order(&b, &p, &store, 4).is_ok());
+        space.order(&a, &p, &store, 4).unwrap_err();
+        space.order(&b, &p, &store, 4).unwrap();
     }
 }

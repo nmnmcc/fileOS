@@ -18,11 +18,11 @@ hs-node.workspace = true
 hs-plugin-api.workspace = true
 hs-plugin-host.workspace = true
 hs-api.workspace = true
+hs-client.workspace = true
 hs-media.workspace = true
 mimalloc.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-hs-space.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 http.workspace = true
@@ -30,7 +30,7 @@ serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 time.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["io-std"] }
 unicode-width.workspace = true
 
 [target.'cfg(unix)'.dependencies]

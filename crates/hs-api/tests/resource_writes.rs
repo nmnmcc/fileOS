@@ -205,3 +205,76 @@ async fn access_logging_resumes_after_an_open_failure() {
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["event.name"], json!("http.request.completed"));
 }
+
+#[tokio::test]
+async fn retries_keep_committed_etags_after_other_edits_and_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let init = Node::init(dir.path(), "Audit", None).await.unwrap();
+    let token = init.owner_token;
+    let path = format!(
+        "/api/spaces/{}/resources/note/retry",
+        init.node.config().private
+    );
+    let api = Api::new(Arc::new(init.node));
+    let put = Bytes::from_static(br#"{"title":"original","body":"old"}"#);
+    let patch = Bytes::from_static(br#"{"title":"patched"}"#);
+    let call =
+        |method, body, headers: &[(&str, &str)]| request(&path, method, &token, body, headers);
+    let put_key = [("idempotency-key", "put-original")];
+    let patch_key = [("idempotency-key", "patch-title")];
+
+    let first = api
+        .handle(call(Method::PUT, put.clone(), &put_key), peer())
+        .await;
+    assert_eq!(first.status(), StatusCode::CREATED);
+    let original_tag = first.headers()[header::ETAG].clone();
+    let patched = api
+        .handle(call(Method::PATCH, patch.clone(), &patch_key), peer())
+        .await;
+    assert_eq!(patched.status(), StatusCode::OK);
+    let patched_tag = patched.headers()[header::ETAG].clone();
+    let changed = api
+        .handle(
+            call(Method::PUT, Bytes::from_static(br#"{"body":"new"}"#), &[]),
+            peer(),
+        )
+        .await;
+    assert_eq!(changed.status(), StatusCode::OK);
+    api.flush_access_log().await;
+    api.node.index.close().await;
+    drop(api);
+
+    let api = Api::new(Arc::new(Node::open(dir.path()).await.unwrap()));
+    let retry = api.handle(call(Method::PUT, put, &put_key), peer()).await;
+    assert_eq!(retry.status(), StatusCode::OK);
+    assert_eq!(retry.headers()[header::ETAG], original_tag);
+    let conflict = api
+        .handle(
+            call(
+                Method::PUT,
+                Bytes::from_static(br#"{"title":"different"}"#),
+                &put_key,
+            ),
+            peer(),
+        )
+        .await;
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+    let retry = api
+        .handle(call(Method::PATCH, patch.clone(), &patch_key), peer())
+        .await;
+    assert_eq!(retry.status(), StatusCode::OK);
+    assert_eq!(retry.headers()[header::ETAG], patched_tag);
+    let removed = api
+        .handle(call(Method::DELETE, Bytes::new(), &[]), peer())
+        .await;
+    assert_eq!(removed.status(), StatusCode::NO_CONTENT);
+    let retry = api
+        .handle(call(Method::PATCH, patch, &patch_key), peer())
+        .await;
+    assert_eq!(retry.status(), StatusCode::OK);
+    assert_eq!(retry.headers()[header::ETAG], patched_tag);
+    let response = api
+        .handle(call(Method::GET, Bytes::new(), &[]), peer())
+        .await;
+    assert_eq!(response.status(), StatusCode::GONE);
+}

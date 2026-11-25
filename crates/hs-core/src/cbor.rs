@@ -253,6 +253,10 @@ fn read_head(bytes: &[u8], pos: &mut usize) -> Result<(u8, u8, u64), Error> {
     Ok((major, info, n))
 }
 
+#[expect(
+    clippy::map_err_ignore,
+    reason = "CBOR errors use fixed descriptions without retaining input bytes"
+)]
 fn decode_at(bytes: &[u8], pos: &mut usize, depth: usize) -> Result<Value, Error> {
     if depth > MAX_DEPTH {
         return Err(Error("nested too deeply"));
@@ -334,17 +338,17 @@ mod tests {
 
     #[test]
     fn rejects_non_shortest() {
-        assert!(Value::decode(&[0x18, 0x05]).is_err());
-        assert!(Value::decode(&[0x19, 0x00, 0xff]).is_err());
+        Value::decode(&[0x18, 0x05]).unwrap_err();
+        Value::decode(&[0x19, 0x00, 0xff]).unwrap_err();
         assert_eq!(Value::decode(&[0x18, 0x18]).unwrap(), Value::Uint(24));
     }
 
     #[test]
     fn rejects_unsorted_maps_and_garbage() {
         // {2: 0, 1: 0}
-        assert!(Value::decode(&[0xa2, 0x02, 0x00, 0x01, 0x00]).is_err());
-        assert!(Value::decode(&[0x9b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]).is_err());
-        assert!(Value::decode(&[0x01, 0x02]).is_err());
+        Value::decode(&[0xa2, 0x02, 0x00, 0x01, 0x00]).unwrap_err();
+        Value::decode(&[0x9b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]).unwrap_err();
+        Value::decode(&[0x01, 0x02]).unwrap_err();
     }
 
     #[test]

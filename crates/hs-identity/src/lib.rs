@@ -24,9 +24,10 @@ pub use log::{IdentityLog, IdentityState, LogEntry, LogKind};
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
 /// An Ed25519 key pair, kept as its 32-byte seed.
+#[derive(Clone)]
 pub struct Keypair {
     seed: [u8; 32],
-    pair: Ed25519KeyPair,
+    pair: std::sync::Arc<Ed25519KeyPair>,
 }
 
 impl std::fmt::Debug for Keypair {
@@ -48,7 +49,10 @@ impl Keypair {
         // The seed is exactly 32 bytes, which is the only way this can fail.
 
         let pair = Ed25519KeyPair::from_seed_unchecked(&seed).expect("32-byte seed");
-        Keypair { seed, pair }
+        Keypair {
+            seed,
+            pair: std::sync::Arc::new(pair),
+        }
     }
 
     /// The seed, for storing the key.

@@ -82,8 +82,13 @@ pub async fn handle(api: &Api, req: &Request, access: &Access, segs: &[&str]) ->
             let id = space(access, s)?;
             let (proposal, payload) = sync::unpair(req.body())
                 .ok_or_else(|| ApiError::bad("expected [proposal, payload]"))?;
-            let (seq, _) = api.node.submit(&id, &proposal, payload.as_deref()).await?;
-            Ok(json_ok(&json!({ "seq": seq })))
+            let committed = api
+                .node
+                .commit(&id, &proposal, payload.as_deref(), |_| Ok(()))
+                .await?;
+            Ok(json_ok(
+                &json!({ "seq": committed.seq, "created": committed.created }),
+            ))
         }
         (Method::POST, ["spaces", s, "inbox", "conditional"]) => {
             let id = space(access, s)?;
@@ -91,12 +96,14 @@ pub async fn handle(api: &Api, req: &Request, access: &Access, segs: &[&str]) ->
                 .ok_or_else(|| ApiError::bad("expected [proposal, payload, conditions]"))?;
             match api
                 .node
-                .submit_checked(&id, &proposal, payload.as_deref(), |hash| {
+                .commit(&id, &proposal, payload.as_deref(), move |hash| {
                     conditions.check(hash)
                 })
                 .await
             {
-                Ok((seq, _)) => Ok(json_ok(&json!({ "seq": seq }))),
+                Ok(committed) => Ok(json_ok(&json!({
+                    "seq": committed.seq, "created": committed.created
+                }))),
                 Err(error) if matches!(error.kind(), hs_node::ErrorKind::NotFound) => {
                     let mut response = ApiError::not_found().response();
                     crate::util::set_header(&mut response, "hs-conditional-write", "1");

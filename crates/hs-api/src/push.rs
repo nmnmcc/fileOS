@@ -21,7 +21,7 @@ use http::{Method, StatusCode};
 use serde_json::{Value as Json, json};
 
 use crate::Api;
-use crate::util::{ApiError, Result, body_json, json_ok, json_status};
+use crate::util::{ApiError, Result, body_json, typed};
 use hs_net::server::Request;
 
 const GATHER: Duration = Duration::from_secs(5);
@@ -154,55 +154,99 @@ pub fn start(api: Arc<Api>) {
     });
 }
 
-/// `/api/push/key` and `/api/push/subscribe`.
+/// Routes the owner's browser push requests.
 pub async fn handle(api: &Api, req: &Request, access: &Access, rest: &[&str]) -> Result {
     if !access.is_owner() {
         return Err(ApiError::unauthorized());
     }
     match (req.method().clone(), rest) {
-        (Method::GET, ["key"]) => {
-            let v = vapid(api)
-                .ok_or_else(|| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "no push key"))?;
-            Ok(json_ok(&json!({ "key": v.public_key() })))
-        }
-        (Method::POST, ["subscribe"]) => {
-            let sub = body_json(req)?;
-            let endpoint = sub
-                .get("endpoint")
-                .and_then(Json::as_str)
-                .ok_or_else(|| ApiError::bad("endpoint missing"))?;
-            if !endpoint.starts_with("https://")
-                || sub.pointer("/keys/p256dh").is_none()
-                || sub.pointer("/keys/auth").is_none()
-            {
-                return Err(ApiError::bad("not a push subscription"));
-            }
-            let target = format!("push/{}", &Hash::of(endpoint.as_bytes()).to_hex()[..32]);
-            let mut v = sub.clone();
-            v["title"] = "Push subscription".into();
-            let bytes = serde_json::to_vec(&v).unwrap_or_default();
-            let private = api.node.config().private;
-            api.node
-                .write(
-                    access,
-                    &private,
-                    Kind::Put,
-                    &target,
-                    Some(&bytes),
-                    "application/json",
-                    None,
-                )
-                .await?;
-            Ok(json_status(StatusCode::CREATED, &json!({ "id": target })))
-        }
-        (Method::POST, ["test"]) => {
-            notify(
-                api,
-                &json!({ "title": api.node.config().name, "body": "Notifications work." }),
-            )
-            .await;
-            Ok(json_ok(&json!({ "ok": true })))
-        }
+        (Method::GET, ["key"]) => key(api),
+        (Method::POST, ["subscribe"]) => subscribe(api, req, access).await,
+        (Method::POST, ["test"]) => test_notification(api).await,
         _ => Err(ApiError::not_found()),
     }
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct PushKey {
+    /// The VAPID public key for the browser.
+    key: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct Subscribed {
+    /// The stored push subscription's resource ID.
+    id: String,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct TestNotification {
+    /// The server attempted to send the notification.
+    ok: bool,
+}
+
+/// Read the public VAPID key.
+#[utoipa::path(get, path = "/api/push/key", tag = "push",
+    responses(
+        (status = 200, body = PushKey),
+        (status = 503, description = "The push key is unavailable"),
+    ))]
+fn key(api: &Api) -> Result {
+    let v =
+        vapid(api).ok_or_else(|| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "no push key"))?;
+    Ok(typed(
+        StatusCode::OK,
+        &PushKey {
+            key: v.public_key(),
+        },
+    ))
+}
+
+/// Register a browser push subscription.
+#[utoipa::path(post, path = "/api/push/subscribe", tag = "push",
+    request_body(content = Object, description = "A browser PushSubscription with an HTTPS endpoint and keys.p256dh and keys.auth"),
+    responses(
+        (status = 201, body = Subscribed),
+        (status = 400, description = "Invalid subscription"),
+    ))]
+async fn subscribe(api: &Api, req: &Request, access: &Access) -> Result {
+    let mut sub = body_json(req)?;
+    let endpoint = sub
+        .get("endpoint")
+        .and_then(Json::as_str)
+        .ok_or_else(|| ApiError::bad("endpoint missing"))?;
+    if !endpoint.starts_with("https://")
+        || sub.pointer("/keys/p256dh").is_none()
+        || sub.pointer("/keys/auth").is_none()
+    {
+        return Err(ApiError::bad("not a push subscription"));
+    }
+    let target = format!("push/{}", &Hash::of(endpoint.as_bytes()).to_hex()[..32]);
+    sub["title"] = "Push subscription".into();
+    let bytes = serde_json::to_vec(&sub).unwrap_or_default();
+    let private = api.node.config().private;
+    api.node
+        .write(
+            access,
+            &private,
+            Kind::Put,
+            &target,
+            Some(&bytes),
+            "application/json",
+            None,
+        )
+        .await?;
+    Ok(typed(StatusCode::CREATED, &Subscribed { id: target }))
+}
+
+/// Send a test notification to registered browsers.
+#[utoipa::path(post, path = "/api/push/test", tag = "push",
+    responses((status = 200, body = TestNotification)))]
+async fn test_notification(api: &Api) -> Result {
+    notify(
+        api,
+        &json!({ "title": api.node.config().name, "body": "Notifications work." }),
+    )
+    .await;
+    Ok(typed(StatusCode::OK, &TestNotification { ok: true }))
 }

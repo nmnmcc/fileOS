@@ -168,6 +168,18 @@ async fn share_a_space() {
     let winner = if one.0 == 200 { "A's edit" } else { "B's edit" };
     assert_eq!(eventually(&a, &path).await["title"], winner);
 
+    let key = [("idempotency-key", "forwarded-edit")];
+    let body = json!({ "title": "committed by the primary" });
+    let (status, written) = call_with(&b, "PUT", &path, Some(body.clone()), &key).await;
+    assert_eq!(status, 200, "{written}");
+    let (status, reply) = call_with(&b, "PUT", &path, Some(body.clone()), &key).await;
+    assert_eq!(status, 200, "{reply}");
+    assert_eq!(reply, written);
+    let (status, conflict) =
+        call_with(&b, "PUT", &path, Some(json!({"title":"different"})), &key).await;
+    assert_eq!(status, 409, "{conflict}");
+    assert_eq!(eventually(&a, &path).await, body);
+
     let _ = std::fs::remove_dir_all(tmp("a"));
     let _ = std::fs::remove_dir_all(tmp("b"));
 }

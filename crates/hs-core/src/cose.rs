@@ -59,7 +59,7 @@ impl Sign1 {
         let [prot, unprot, payload, signature] = items else {
             return Err(Error("COSE_Sign1 needs four items"));
         };
-        if prot.as_bytes() != Some(&protected()[..]) {
+        if prot.as_bytes() != Some(&*protected()) {
             return Err(Error("unsupported COSE protected header"));
         }
         let kid = unprot

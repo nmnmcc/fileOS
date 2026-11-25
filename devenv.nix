@@ -116,6 +116,7 @@ in
           ./Cargo.toml
           ./Cargo.lock
           ./crates
+          ./docs/openapi.json
         ];
       };
       cargoLock.lockFile = ./Cargo.lock;

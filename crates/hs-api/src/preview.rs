@@ -36,7 +36,7 @@ impl Preview {
         let _permit = self
             .permits
             .try_acquire()
-            .map_err(|_| io::Error::new(io::ErrorKind::WouldBlock, "thumbnail workers are busy"))?;
+            .map_err(|error| io::Error::new(io::ErrorKind::WouldBlock, error))?;
         tokio::time::timeout(TIMEOUT, self.decode(bytes, side)).await?
     }
 

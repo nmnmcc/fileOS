@@ -87,12 +87,14 @@ pub struct Proposal {
     pub nonce: Vec<u8>,
     /// The grant under which the author wrote this, if any.
     pub grant: Option<String>,
+    /// The original API request's fingerprint for idempotent writes.
+    pub request: Option<Hash>,
 }
 
 impl Proposal {
     /// Encode as deterministic CBOR.
     pub fn encode(&self) -> Vec<u8> {
-        map([
+        let mut value = map([
             (1, Value::Bytes(self.space.0.to_vec())),
             (2, Value::Text(self.kind.as_str().into())),
             (3, Value::Text(self.target.clone())),
@@ -105,8 +107,11 @@ impl Proposal {
             (6, Value::Uint(self.time)),
             (7, Value::Bytes(self.nonce.clone())),
             (8, self.grant.clone().map_or(Value::Null, Value::Text)),
-        ])
-        .encode()
+        ]);
+        if let (Some(request), Value::Map(fields)) = (self.request, &mut value) {
+            fields.push((Value::Uint(9), Value::Bytes(request.0.to_vec())));
+        }
+        value.encode()
     }
 
     /// Decode from CBOR.
@@ -161,6 +166,10 @@ impl Proposal {
                         .ok_or_else(|| err("grant"))?
                         .into(),
                 ),
+            },
+            request: match v.get(9) {
+                Some(request) => Some(hash(Some(request)).ok_or_else(|| err("request"))?),
+                None => None,
             },
         })
     }
@@ -337,6 +346,7 @@ mod tests {
             time: 1_700_000_000_000,
             nonce: vec![1, 2, 3],
             grant: Some("g1".into()),
+            request: Some(Hash::of(b"request")),
         };
         assert_eq!(Proposal::decode(&p.encode()).unwrap(), p);
         let e = Entry {

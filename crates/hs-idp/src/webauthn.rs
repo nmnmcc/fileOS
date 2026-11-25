@@ -96,7 +96,13 @@ fn check_key(alg: i64, key: &[u8]) -> Result<()> {
 
 /// Check the client data: type, challenge, origin.
 fn check_client_data(json: &[u8], ty: &str, challenge: &[u8], origin: &str) -> Result<()> {
-    let v: Value = serde_json::from_slice(json).map_err(|_| Error("bad clientDataJSON".into()))?;
+    let v: Value = serde_json::from_slice(json).map_err(|error| {
+        Error(format!(
+            "bad clientDataJSON at line {}, column {}",
+            error.line(),
+            error.column()
+        ))
+    })?;
     let s = |k: &str| v.get(k).and_then(Value::as_str);
     if s("type") != Some(ty) {
         return err("wrong client data type");
@@ -250,6 +256,10 @@ pub fn verify_registration(
 ///
 /// Returns an error for invalid client data, an invalid signature, or a sign counter that violates
 /// the credential's counter policy.
+#[expect(
+    clippy::map_err_ignore,
+    reason = "ring reports authentication failure as Unspecified"
+)]
 pub fn verify_assertion(
     rp_id: &str,
     origin: &str,
@@ -403,8 +413,8 @@ mod tests {
             cred.sign_count = assert_with(&key, &cred, 5, ORIGIN, &[9; 32]).unwrap();
             assert_eq!(cred.sign_count, 5);
             // Replayed or stale counter.
-            assert!(assert_with(&key, &cred, 5, ORIGIN, &[9; 32]).is_err());
-            assert!(assert_with(&key, &cred, 0, ORIGIN, &[9; 32]).is_err());
+            assert_with(&key, &cred, 5, ORIGIN, &[9; 32]).unwrap_err();
+            assert_with(&key, &cred, 0, ORIGIN, &[9; 32]).unwrap_err();
             assert_eq!(assert_with(&key, &cred, 6, ORIGIN, &[9; 32]).unwrap(), 6);
         }
     }
@@ -412,26 +422,26 @@ mod tests {
     #[test]
     fn assertion_rejections() {
         let (key, cred) = register(ALG_ES256);
-        assert!(assert_with(&key, &cred, 1, "https://evil.example", &[9; 32]).is_err());
-        assert!(assert_with(&key, &cred, 1, ORIGIN, &[8; 32]).is_err());
+        assert_with(&key, &cred, 1, "https://evil.example", &[9; 32]).unwrap_err();
+        assert_with(&key, &cred, 1, ORIGIN, &[8; 32]).unwrap_err();
         // Signed by another key.
         let other = Key::new(ALG_ES256);
-        assert!(assert_with(&other, &cred, 1, ORIGIN, &[9; 32]).is_err());
+        assert_with(&other, &cred, 1, ORIGIN, &[9; 32]).unwrap_err();
         // Garbage signature and wrong type.
         let ch = [9u8; 32];
         let ad = auth_data(RP, FLAG_UP, 1, None);
         let cd = client_data("webauthn.get", &ch, ORIGIN);
-        assert!(verify_assertion(RP, ORIGIN, &ch, &cred, &cd, &ad, b"nope").is_err());
+        verify_assertion(RP, ORIGIN, &ch, &cred, &cd, &ad, b"nope").unwrap_err();
         let cd = client_data("webauthn.create", &ch, ORIGIN);
         let mut msg = ad.clone();
         msg.extend_from_slice(&sha256(&cd));
-        assert!(verify_assertion(RP, ORIGIN, &ch, &cred, &cd, &ad, &key.sign(&msg)).is_err());
+        verify_assertion(RP, ORIGIN, &ch, &cred, &cd, &ad, &key.sign(&msg)).unwrap_err();
         // User not present.
         let ad = auth_data(RP, 0, 1, None);
         let cd = client_data("webauthn.get", &ch, ORIGIN);
         let mut msg = ad.clone();
         msg.extend_from_slice(&sha256(&cd));
-        assert!(verify_assertion(RP, ORIGIN, &ch, &cred, &cd, &ad, &key.sign(&msg)).is_err());
+        verify_assertion(RP, ORIGIN, &ch, &cred, &cd, &ad, &key.sign(&msg)).unwrap_err();
     }
 
     #[test]
@@ -444,20 +454,20 @@ mod tests {
         let reg = |cd: &[u8], ad: &[u8], spki: &[u8], alg: i64, cid: &[u8]| {
             verify_registration(RP, ORIGIN, &ch, cd, ad, spki, alg, cid)
         };
-        assert!(reg(&good_cd, &good_ad, &key.spki(), ALG_EDDSA, id).is_ok());
+        reg(&good_cd, &good_ad, &key.spki(), ALG_EDDSA, id).unwrap();
         let wrong_origin = client_data("webauthn.create", &ch, "https://evil.example");
-        assert!(reg(&wrong_origin, &good_ad, &key.spki(), ALG_EDDSA, id).is_err());
+        reg(&wrong_origin, &good_ad, &key.spki(), ALG_EDDSA, id).unwrap_err();
         let wrong_ch = client_data("webauthn.create", &[0; 32], ORIGIN);
-        assert!(reg(&wrong_ch, &good_ad, &key.spki(), ALG_EDDSA, id).is_err());
+        reg(&wrong_ch, &good_ad, &key.spki(), ALG_EDDSA, id).unwrap_err();
         let wrong_rp = auth_data("evil.example", FLAG_UP | FLAG_AT, 0, Some(id));
-        assert!(reg(&good_cd, &wrong_rp, &key.spki(), ALG_EDDSA, id).is_err());
-        assert!(reg(&good_cd, &good_ad, &key.spki(), ALG_ES256, id).is_err());
-        assert!(reg(&good_cd, &good_ad, &key.spki(), ALG_EDDSA, b"other").is_err());
-        assert!(reg(&good_cd, &good_ad[..40], &key.spki(), ALG_EDDSA, id).is_err());
-        assert!(reg(b"{", &good_ad, &key.spki(), ALG_EDDSA, id).is_err());
+        reg(&good_cd, &wrong_rp, &key.spki(), ALG_EDDSA, id).unwrap_err();
+        reg(&good_cd, &good_ad, &key.spki(), ALG_ES256, id).unwrap_err();
+        reg(&good_cd, &good_ad, &key.spki(), ALG_EDDSA, b"other").unwrap_err();
+        reg(&good_cd, &good_ad[..40], &key.spki(), ALG_EDDSA, id).unwrap_err();
+        reg(b"{", &good_ad, &key.spki(), ALG_EDDSA, id).unwrap_err();
         let spki = key.spki();
         for n in 0..spki.len() {
-            assert!(reg(&good_cd, &good_ad, &spki[..n], ALG_EDDSA, id).is_err());
+            reg(&good_cd, &good_ad, &spki[..n], ALG_EDDSA, id).unwrap_err();
         }
     }
 }

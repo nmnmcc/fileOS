@@ -49,6 +49,7 @@ CHECKS: list[list[str] | Callable[[], list[str]]] = [
     ["treefmt", "--ci"],
     ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"],
     ["cargo", "test", "--workspace", "--locked"],
+    ["cargo", "check", "-p", "hs-client", "--no-default-features", "--locked"],
     ["cargo", "doc", "--workspace", "--no-deps", "--locked"],
     portable_check,  # shared with plugins, phone shells and the web app
     ["cargo", "deny", "check"],
@@ -72,7 +73,7 @@ def main() -> None:
         env = os.environ.copy()
         if command[:2] == ["cargo", "doc"]:
             env["RUSTDOCFLAGS"] = f"{env.get('RUSTDOCFLAGS', '')} -D warnings".strip()
-        if subprocess.run(command, cwd=ROOT, env=env).returncode != 0:
+        if subprocess.run(command, check=False, cwd=ROOT, env=env).returncode != 0:
             console.print(f"\n[red]failed:[/red] {line}", highlight=False)
             raise typer.Exit(1)
     console.print("\n[green]All checks passed.[/green]")

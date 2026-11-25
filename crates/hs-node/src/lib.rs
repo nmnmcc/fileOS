@@ -28,9 +28,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 
-use hs_core::event::Kind;
+use hs_core::event::{Kind, Proposal};
 use hs_core::{Hash, PublicKey};
 use hs_identity::Keypair;
 use hs_identity::{IdentityLog, IdentityState, LogKind};
@@ -69,6 +69,8 @@ pub enum ErrorKind {
     NotFound,
     /// The resource does not match the required version.
     PreconditionFailed,
+    /// The idempotency key already names a different operation.
+    Conflict,
     /// Another node is the primary.
     NotPrimary {
         /// The affected space.
@@ -152,9 +154,10 @@ impl std::fmt::Display for Error {
             ErrorKind::Refused => write!(f, "refused: {}", self.0.message),
             ErrorKind::Forbidden => write!(f, "forbidden: {}", self.0.message),
             ErrorKind::NotFound => write!(f, "not found: {}", self.0.message),
-            ErrorKind::NotPrimary { .. } | ErrorKind::PreconditionFailed | ErrorKind::Io => {
-                f.write_str(&self.0.message)
-            }
+            ErrorKind::NotPrimary { .. }
+            | ErrorKind::PreconditionFailed
+            | ErrorKind::Conflict
+            | ErrorKind::Io => f.write_str(&self.0.message),
         }
     }
 }
@@ -188,6 +191,49 @@ impl From<Refused> for Error {
 
 /// A result.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+async fn disk<T: Send + 'static>(work: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|error| Error::io(format!("disk worker failed: {error}")).with_source(error))?
+}
+
+fn put_blob(dir: &Dir, bytes: &[u8]) -> Result<Hash> {
+    let hash = Hash::of(bytes);
+    let name = blob_name(&hash);
+    if dir.len(&name)?.is_none() {
+        dir.put(&name, bytes)?;
+    }
+    Ok(hash)
+}
+
+fn read_blob(dir: &Dir, hash: &Hash) -> Result<Option<Vec<u8>>> {
+    Ok(dir
+        .get(&blob_name(hash))?
+        .filter(|bytes| Hash::of(bytes) == *hash))
+}
+
+/// The result recorded in a space's log.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Committed {
+    /// The sequence assigned by the primary.
+    pub seq: u64,
+    /// The hash of the signed entry.
+    pub entry: Hash,
+    /// The payload hash in that entry.
+    pub payload: Option<Hash>,
+    /// Whether this write just created the resource. Absent for older peers.
+    pub created: Option<bool>,
+}
+
+/// The key and fingerprint of an idempotent API request.
+#[derive(Debug)]
+pub struct WriteId {
+    /// The stable, scoped request key.
+    pub nonce: Vec<u8>,
+    /// The request method, target, conditions and body fingerprint.
+    pub request: Hash,
+}
 
 /// Milliseconds since the Unix epoch.
 pub fn now_ms() -> u64 {
@@ -268,12 +314,12 @@ pub struct Node {
     pub blobs: Dir,
     /// The derived index.
     pub index: Index,
-    spaces: RwLock<BTreeMap<Hash, Arc<SpaceSlot>>>,
-    creating_space: AsyncMutex<()>,
+    spaces: Arc<RwLock<BTreeMap<Hash, Arc<SpaceSlot>>>>,
+    creating_space: Arc<AsyncMutex<()>>,
     events: tokio::sync::broadcast::Sender<Event>,
     // Held for the node's lifetime so two processes never append to the
     // same logs.
-    _lock: std::fs::File,
+    lock: Arc<std::fs::File>,
 }
 
 impl std::fmt::Debug for Node {
@@ -284,14 +330,14 @@ impl std::fmt::Debug for Node {
 
 #[derive(Debug)]
 struct SpaceSlot {
-    writer: AsyncMutex<()>,
+    writer: Arc<AsyncMutex<()>>,
     log: AsyncMutex<SpaceLog>,
 }
 
 impl SpaceSlot {
     fn new(log: SpaceLog) -> Self {
         Self {
-            writer: AsyncMutex::new(()),
+            writer: Arc::new(AsyncMutex::new(())),
             log: AsyncMutex::new(log),
         }
     }
@@ -422,10 +468,10 @@ impl Node {
             identity: RwLock::new(identity),
             blobs,
             index,
-            spaces: RwLock::new(BTreeMap::new()),
-            creating_space: AsyncMutex::new(()),
+            spaces: Arc::new(RwLock::new(BTreeMap::new())),
+            creating_space: Arc::new(AsyncMutex::new(())),
             events,
-            _lock: lock,
+            lock: Arc::new(lock),
         };
         std::fs::create_dir_all(dir.join("logs"))?;
         let mut names: Vec<String> = std::fs::read_dir(dir.join("logs"))?
@@ -551,12 +597,17 @@ impl Node {
     ///
     /// Returns an error if the blob directory cannot be read or the object cannot be written.
     pub fn put_blob(&self, bytes: &[u8]) -> Result<Hash> {
-        let h = Hash::of(bytes);
-        let name = blob_name(&h);
-        if self.blobs.len(&name)?.is_none() {
-            self.blobs.put(&name, bytes)?;
-        }
-        Ok(h)
+        put_blob(&self.blobs, bytes)
+    }
+
+    /// Store bytes without blocking an async worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the object cannot be written.
+    pub async fn put_blob_async(&self, bytes: impl AsRef<[u8]> + Send + 'static) -> Result<Hash> {
+        let dir = self.blobs.clone();
+        disk(move || put_blob(&dir, bytes.as_ref())).await
     }
 
     /// Read a blob, verifying its hash.
@@ -566,10 +617,32 @@ impl Node {
     /// Returns an I/O error if the object cannot be read. A missing or mismatched blob yields
     /// `None`.
     pub fn blob(&self, hash: &Hash) -> Result<Option<Vec<u8>>> {
-        Ok(self
-            .blobs
-            .get(&blob_name(hash))?
-            .filter(|b| Hash::of(b) == *hash))
+        read_blob(&self.blobs, hash)
+    }
+
+    /// Read and verify a blob on a blocking worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the blob fails.
+    pub async fn blob_async(&self, hash: &Hash) -> Result<Option<Vec<u8>>> {
+        let dir = self.blobs.clone();
+        let hash = *hash;
+        disk(move || read_blob(&dir, &hash)).await
+    }
+
+    /// Open a stored blob for metadata access, streaming or range reads.
+    ///
+    /// The file name identifies the blob. A caller requiring an integrity check
+    /// must verify the bytes against the hash.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if opening the blob fails.
+    pub async fn open_blob(&self, hash: &Hash) -> Result<Option<tokio::fs::File>> {
+        let dir = self.blobs.clone();
+        let name = blob_name(hash);
+        disk(move || Ok(dir.open_file(&name)?.map(tokio::fs::File::from_std))).await
     }
 
     fn payload(&self, hash: &Hash) -> Option<Vec<u8>> {
@@ -667,11 +740,19 @@ impl Node {
         payload: &[u8],
         home: Option<String>,
     ) -> Result<Hash> {
-        self.put_blob(payload)?;
+        self.put_blob_async(payload.to_vec()).await?;
         let (space, entry, applied) = Space::genesis(&self.key, signed, payload, now_ms())?;
         let id = space.id;
-        let _creation = self.creating_space.lock().await;
-        let slot = self.install_log(space, home, [entry.as_slice()], [applied], Some(true))?;
+        let creation = Arc::clone(&self.creating_space).lock_owned().await;
+        let (slot, _creation) = self
+            .install_log(
+                space,
+                home,
+                (vec![entry], vec![applied]),
+                Some(true),
+                creation,
+            )
+            .await?;
         let _writer = slot.writer.lock().await;
         self.finish_pending(&slot).await?;
         Ok(id)
@@ -689,10 +770,10 @@ impl Node {
         payloads: &BTreeMap<Hash, Vec<u8>>,
         home: &str,
     ) -> Result<()> {
-        for p in payloads.values() {
-            self.put_blob(p)?;
+        for payload in payloads.values() {
+            self.put_blob_async(payload.clone()).await?;
         }
-        let creation = self.creating_space.lock().await;
+        let creation = Arc::clone(&self.creating_space).lock_owned().await;
         if self.spaces.read().map_err(poisoned)?.contains_key(&id) {
             drop(creation);
             for e in entries {
@@ -700,52 +781,60 @@ impl Node {
             }
             return Ok(());
         }
-        let lookup = |h: &Hash| self.payload(h);
-        let (space, applied) = Space::replay(id, entries.iter().map(Vec::as_slice), &lookup)?;
-        let slot = self.install_log(
-            space,
-            Some(home.to_string()),
-            entries.iter().map(Vec::as_slice),
-            applied,
-            None,
-        )?;
+        let blobs = self.blobs.clone();
+        let entries = entries.to_vec();
+        let (space, history, creation) = disk(move || {
+            let lookup = |hash: &Hash| read_blob(&blobs, hash).ok().flatten();
+            let (space, applied) = Space::replay(id, entries.iter().map(Vec::as_slice), &lookup)?;
+            Ok((space, (entries, applied), creation))
+        })
+        .await?;
+        let (slot, creation) = self
+            .install_log(space, Some(home.to_string()), history, None, creation)
+            .await?;
         let _writer = slot.writer.lock().await;
         drop(creation);
         self.finish_pending(&slot).await
     }
 
-    fn install_log<'a>(
+    async fn install_log(
         &self,
         space: Space,
         home: Option<String>,
-        entries: impl IntoIterator<Item = &'a [u8]>,
-        applied: impl IntoIterator<Item = Applied>,
+        (entries, applied): (Vec<Vec<u8>>, Vec<Applied>),
         ordered_here: Option<bool>,
-    ) -> Result<Arc<SpaceSlot>> {
-        let id = space.id;
+        creation: OwnedMutexGuard<()>,
+    ) -> Result<(Arc<SpaceSlot>, OwnedMutexGuard<()>)> {
         let root = self.dir.join("logs");
-        let stage = tempfile::Builder::new()
-            .prefix(".space-")
-            .tempdir_in(&root)?;
-        let mut log = SpaceLog::create(stage.path(), space, home)?;
-        for entry in entries {
-            log.append(entry)?;
-        }
-        log.seal()?;
-        for entry in applied {
-            log.enqueue(entry, ordered_here);
-        }
-        let dir = root.join(id.to_hex());
-        logs::sync_directory(stage.path())?;
-        std::fs::rename(stage.path(), &dir)?;
-        log.relocate(dir);
-        let slot = Arc::new(SpaceSlot::new(log));
-        self.spaces
-            .write()
-            .map_err(poisoned)?
-            .insert(id, Arc::clone(&slot));
-        logs::sync_directory(&root)?;
-        Ok(slot)
+        let spaces = Arc::clone(&self.spaces);
+        let node_lock = Arc::clone(&self.lock);
+        disk(move || {
+            let _node_lock = node_lock;
+            let id = space.id;
+            let stage = tempfile::Builder::new()
+                .prefix(".space-")
+                .tempdir_in(&root)?;
+            let mut log = SpaceLog::create(stage.path(), space, home)?;
+            for entry in entries {
+                log.append(&entry)?;
+            }
+            log.seal()?;
+            for entry in applied {
+                log.enqueue(entry, ordered_here);
+            }
+            let dir = root.join(id.to_hex());
+            logs::sync_directory(stage.path())?;
+            std::fs::rename(stage.path(), &dir)?;
+            log.relocate(dir);
+            let slot = Arc::new(SpaceSlot::new(log));
+            spaces
+                .write()
+                .map_err(poisoned)?
+                .insert(id, Arc::clone(&slot));
+            logs::sync_directory(&root)?;
+            Ok((slot, creation))
+        })
+        .await
     }
 
     /// Apply a remote entry and return the last committed sequence.
@@ -762,23 +851,29 @@ impl Node {
         payload: Option<&[u8]>,
     ) -> Result<u64> {
         if let Some(p) = payload {
-            self.put_blob(p)?;
+            self.put_blob_async(p.to_vec()).await?;
         }
         let slot = self.space(id)?;
-        let _writer = slot.writer.lock().await;
+        let writer = Arc::clone(&slot.writer).lock_owned().await;
         self.finish_pending(&slot).await?;
-        let mut log = slot.log.lock().await;
         let seq = hs_core::cose::Sign1::decode(entry)
             .ok()
             .and_then(|m| hs_core::event::Entry::decode(&m.payload).ok())
             .map(|e| e.seq)
             .ok_or_else(|| Error::refused("not an entry".into()))?;
-        if seq <= log.space.seq {
-            return Ok(log.space.seq);
-        }
-        let lookup = |h: &Hash| self.payload(h);
-        log.apply(entry, &lookup)?;
-        drop(log);
+        let entry = entry.to_vec();
+        let working = Arc::clone(&slot);
+        let dir = self.blobs.clone();
+        let node_lock = Arc::clone(&self.lock);
+        let (_writer, seq) = disk(move || {
+            let _node_lock = node_lock;
+            let mut log = working.log.blocking_lock();
+            if seq > log.space.seq {
+                log.apply(&entry, &|hash: &Hash| read_blob(&dir, hash).ok().flatten())?;
+            }
+            Ok((writer, log.space.seq))
+        })
+        .await?;
         self.finish_pending(&slot).await?;
         Ok(seq)
     }
@@ -811,42 +906,109 @@ impl Node {
         id: &Hash,
         signed_proposal: &[u8],
         payload: Option<&[u8]>,
-        check: impl FnOnce(Option<Hash>) -> Result<()>,
+        check: impl FnOnce(Option<Hash>) -> Result<()> + Send + 'static,
     ) -> Result<(u64, Hash)> {
+        let committed = self.commit(id, signed_proposal, payload, check).await?;
+        Ok((committed.seq, committed.entry))
+    }
+
+    /// Order a proposal and return the authoritative payload and creation status.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the proposal conflicts with an existing commit, fails its
+    /// version check, or cannot be validated, stored or indexed.
+    pub async fn commit(
+        &self,
+        id: &Hash,
+        signed_proposal: &[u8],
+        payload: Option<&[u8]>,
+        check: impl FnOnce(Option<Hash>) -> Result<()> + Send + 'static,
+    ) -> Result<Committed> {
         if let Some(p) = payload {
-            self.put_blob(p)?;
+            self.put_blob_async(p.to_vec()).await?;
         }
         let slot = self.space(id)?;
-        let _writer = slot.writer.lock().await;
+        let writer = Arc::clone(&slot.writer).lock_owned().await;
         self.finish_pending(&slot).await?;
-        let mut log = slot.log.lock().await;
-        if log.space.primary != self.key.public() {
-            return Err(Error::new(
-                ErrorKind::NotPrimary {
-                    space: *id,
-                    home: log.home.clone(),
-                },
-                format!(
-                    "not the primary of {id}; send to {}",
-                    log.home.as_deref().unwrap_or("its primary")
-                ),
-            ));
-        }
-        let lookup = |h: &Hash| self.payload(h);
-        let out = log.order(&self.key, signed_proposal, &lookup, now_ms(), check)?;
-        drop(log);
+        let working = Arc::clone(&slot);
+        let dir = self.blobs.clone();
+        let key = self.key.clone();
+        let id = *id;
+        let signed_proposal = signed_proposal.to_vec();
+        // Keep the writer lock in the worker even if the request is cancelled.
+        let node_lock = Arc::clone(&self.lock);
+        let (_writer, out) = disk(move || {
+            let _node_lock = node_lock;
+            let mut log = working.log.blocking_lock();
+            if log.space.primary != key.public() {
+                return Err(Error::new(
+                    ErrorKind::NotPrimary {
+                        space: id,
+                        home: log.home.clone(),
+                    },
+                    format!(
+                        "not the primary of {id}; send to {}",
+                        log.home.as_deref().unwrap_or("its primary")
+                    ),
+                ));
+            }
+            let lookup = |hash: &Hash| read_blob(&dir, hash).ok().flatten();
+            let out = log.order(&key, &signed_proposal, &lookup, now_ms(), check)?;
+            Ok((writer, out))
+        })
+        .await?;
         self.finish_pending(&slot).await?;
         Ok(out)
     }
 
+    /// Read a committed result and verify that it matches the submitted proposal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the commit is missing, malformed or for a different request.
+    pub async fn committed(&self, id: &Hash, seq: u64, signed: &[u8]) -> Result<Committed> {
+        self.with_space(id, |log| log.committed(seq, signed))
+            .await?
+    }
+
+    /// Find a prior commit for an authenticated API request on this node.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the caller lacks write access or the key names a different request.
+    pub async fn replay_request(
+        &self,
+        access: &Access,
+        id: &Hash,
+        target: &str,
+        write: &WriteId,
+    ) -> Result<Option<Committed>> {
+        access.require(id, Role::Writer, target)?;
+        let slot = self.space(id)?;
+        let _writer = slot.writer.lock().await;
+        self.finish_pending(&slot).await?;
+        slot.log.lock().await.replay(self.key.public(), write)
+    }
+
     // The slot's writer lock lets us release the log while removing blobs
     // without allowing another writer to overtake the pending index update.
-    async fn finish_pending(&self, slot: &SpaceSlot) -> Result<()> {
+    async fn finish_pending(&self, slot: &Arc<SpaceSlot>) -> Result<()> {
         let mut log = slot.log.lock().await;
         if log.pending.is_empty() {
             return Ok(());
         }
-        log.seal()?;
+        if log.has_unsealed_segment() {
+            drop(log);
+            let working = Arc::clone(slot);
+            let node_lock = Arc::clone(&self.lock);
+            disk(move || {
+                let _node_lock = node_lock;
+                working.log.blocking_lock().seal()
+            })
+            .await?;
+            log = slot.log.lock().await;
+        }
         while let Some(pending) = log.pending.front() {
             if !pending.indexed {
                 self.index_applied(&log.space, &pending.applied).await?;
@@ -920,6 +1082,45 @@ impl Node {
         media_type: &str,
         nonce: Option<Vec<u8>>,
     ) -> Result<Vec<u8>> {
+        self.proposal(
+            access,
+            id,
+            kind,
+            target,
+            (payload, media_type),
+            (nonce, None),
+        )
+    }
+
+    /// Sign a write with the fingerprint of its original API request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the target is invalid or the caller lacks permission.
+    pub fn propose_request(
+        &self,
+        access: &Access,
+        id: &Hash,
+        kind: Kind,
+        target: &str,
+        content: (Option<&[u8]>, &str),
+        write: Option<WriteId>,
+    ) -> Result<Vec<u8>> {
+        let (nonce, request) = write.map_or((None, None), |write| {
+            (Some(write.nonce), Some(write.request))
+        });
+        self.proposal(access, id, kind, target, content, (nonce, request))
+    }
+
+    fn proposal(
+        &self,
+        access: &Access,
+        id: &Hash,
+        kind: Kind,
+        target: &str,
+        (payload, media_type): (Option<&[u8]>, &str),
+        (nonce, request): (Option<Vec<u8>>, Option<Hash>),
+    ) -> Result<Vec<u8>> {
         if !hs_core::valid_target(target) {
             return Err(Error::refused(format!("bad target {target:?}")));
         }
@@ -930,17 +1131,18 @@ impl Node {
         };
         access.require(id, needed, target)?;
         let nonce = nonce.unwrap_or_else(|| random::<16>().to_vec());
-        Ok(hs_space::propose(
-            &self.key,
-            *id,
+        let proposal = Proposal {
+            space: *id,
             kind,
-            target,
-            payload,
-            media_type,
-            now_ms(),
+            target: target.to_owned(),
+            payload: payload.map(Hash::of),
+            media_type: media_type.to_owned(),
+            time: now_ms(),
             nonce,
-            access.grant_id(),
-        ))
+            grant: access.grant_id(),
+            request,
+        };
+        Ok(self.key.sign1(proposal.encode()).encode())
     }
 
     /// The current version of a resource and its bytes.
@@ -958,7 +1160,7 @@ impl Node {
             .await?;
         let Some(r) = r else { return Ok(None) };
         let bytes = match r.payload {
-            Some(h) => self.blob(&h)?,
+            Some(h) => self.blob_async(&h).await?,
             None => None,
         };
         Ok(Some((r, bytes)))
@@ -1005,15 +1207,18 @@ impl Node {
             })
             .await?;
         }
-        for h in erase.iter().filter(|h| !used.contains(*h)) {
-            self.blobs.delete(&blob_name(h))?;
+        for hash in erase.iter().filter(|hash| !used.contains(*hash)) {
+            self.blobs.delete(&blob_name(hash))?;
         }
         Ok(())
     }
 
     async fn index_applied(&self, space: &Space, a: &Applied) -> Result<()> {
         let space_hex = space.id.to_hex();
-        let bytes = a.proposal.payload.and_then(|h| self.payload(&h));
+        let bytes = match a.proposal.payload {
+            Some(hash) => self.blob_async(&hash).await?,
+            None => None,
+        };
         if a.proposal.kind == Kind::Genesis {
             self.index
                 .set_space(&space_hex, space.name(), a.seq)
@@ -1094,8 +1299,8 @@ fn write_secret(path: &Path, s: &str) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
-    }
+        opts.mode(0o600)
+    };
     let mut f = opts.open(path)?;
     f.write_all(s.as_bytes())?;
     f.sync_all()?;
@@ -1177,19 +1382,17 @@ mod tests {
             .await
             .unwrap();
         let reader = node.authenticate(&tok).await.unwrap();
-        assert!(
-            node.write(
-                &reader,
-                &notes,
-                Kind::Put,
-                "note/3",
-                Some(b"{}"),
-                "application/json",
-                None
-            )
-            .await
-            .is_err()
-        );
+        node.write(
+            &reader,
+            &notes,
+            Kind::Put,
+            "note/3",
+            Some(b"{}"),
+            "application/json",
+            None,
+        )
+        .await
+        .unwrap_err();
         assert!(reader.can_read(&notes));
         assert!(!reader.can_read(&node.config().private));
 

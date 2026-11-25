@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "homeserver",
-    "description": "The REST API of a homeserver node. Every request carries a token: `Authorization: Bearer …`, the password of HTTP Basic, or the session cookie set by `POST /api/session`. Errors are `{\"error\": \"…\"}`.",
+    "description": "The REST API of a homeserver node. Protected operations accept a token: `Authorization: Bearer …`, the password of HTTP Basic, or the session cookie set by `POST /api/session`. Errors are `{\"error\": \"…\"}`.",
     "license": {
       "name": "AGPL-3.0-only",
       "identifier": "AGPL-3.0-only"
@@ -113,6 +113,108 @@
             "description": "Part of the bytes",
             "content": {
               "application/octet-stream": {}
+            }
+          },
+          "304": {
+            "description": "Not modified"
+          },
+          "416": {
+            "description": "The range is outside the blob"
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "blobs"
+        ],
+        "summary": "The same headers as GET, without the blob body.",
+        "operationId": "head_blob",
+        "parameters": [
+          {
+            "name": "hash",
+            "in": "path",
+            "description": "The blob's hash (hex)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "description": "One range of bytes",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "The media type to send it as (never one that runs script).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "thumb",
+            "in": "query",
+            "description": "A thumbnail this many pixels on its longer side instead (16 to 1024).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blob metadata",
+            "headers": {
+              "Content-Length": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Range metadata",
+            "headers": {
+              "Content-Length": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "304": {
@@ -491,6 +593,113 @@
         "security": [
           {}
         ]
+      }
+    },
+    "/api/push/key": {
+      "get": {
+        "tags": [
+          "push"
+        ],
+        "summary": "Read the public VAPID key.",
+        "operationId": "key",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushKey"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The push key is unavailable"
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/push/subscribe": {
+      "post": {
+        "tags": [
+          "push"
+        ],
+        "summary": "Register a browser push subscription.",
+        "operationId": "subscribe",
+        "requestBody": {
+          "description": "A browser PushSubscription with an HTTPS endpoint and keys.p256dh and keys.auth",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscribed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid subscription"
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/push/test": {
+      "post": {
+        "tags": [
+          "push"
+        ],
+        "summary": "Send a test notification to registered browsers.",
+        "operationId": "test_notification",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestNotification"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/related/{space}/{type}/{id}": {
@@ -1373,7 +1582,7 @@
           {
             "name": "Idempotency-Key",
             "in": "header",
-            "description": "Retries with the same key are applied once",
+            "description": "Retries with identical method, target, content and conditions are applied once",
             "required": false,
             "schema": {
               "type": [
@@ -1435,6 +1644,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Written"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The idempotency key was used for a different write",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -1510,7 +1729,7 @@
           {
             "name": "Idempotency-Key",
             "in": "header",
-            "description": "Retries with the same key are applied once",
+            "description": "Retries with identical method, target, content and conditions are applied once",
             "required": false,
             "schema": {
               "type": [
@@ -1524,6 +1743,16 @@
           "204": {
             "description": "Deleted"
           },
+          "409": {
+            "description": "The idempotency key was used for a different write",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "412": {
             "description": "The condition did not hold",
             "content": {
@@ -1533,6 +1762,102 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "The same headers as GET, without the resource body.",
+        "operationId": "head_resource",
+        "parameters": [
+          {
+            "name": "space",
+            "in": "path",
+            "description": "A space's name, ID or unique ID prefix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "path",
+            "description": "The resource type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The resource ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`vcard` or `ical`, for contacts and events stored as JSON (also by\n`Accept`).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource metadata",
+            "headers": {
+              "Content-Length": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified"
+          },
+          "410": {
+            "description": "Deleted"
           },
           "default": {
             "description": "An error",
@@ -1595,7 +1920,7 @@
           {
             "name": "Idempotency-Key",
             "in": "header",
-            "description": "Retries with the same key are applied once",
+            "description": "Retries with identical method, target, content and conditions are applied once",
             "required": false,
             "schema": {
               "type": [
@@ -1634,6 +1959,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Written"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The idempotency key was used for a different write",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -2276,6 +2611,18 @@
           }
         }
       },
+      "PushKey": {
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The VAPID public key for the browser."
+          }
+        }
+      },
       "Related": {
         "type": "object",
         "description": "A row and how it relates to the one asked about.",
@@ -2601,6 +2948,30 @@
           }
         }
       },
+      "Subscribed": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The stored push subscription's resource ID."
+          }
+        }
+      },
+      "TestNotification": {
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "The server attempted to send the notification."
+          }
+        }
+      },
       "Written": {
         "type": "object",
         "description": "A resource stored.",
@@ -2666,6 +3037,10 @@
     {
       "name": "grants",
       "description": "Tokens and what they may do"
+    },
+    {
+      "name": "push",
+      "description": "Browser push notifications"
     }
   ]
 }

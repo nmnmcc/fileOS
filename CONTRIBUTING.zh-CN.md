@@ -82,6 +82,7 @@ crates/
   hs-api          所有 HTTP 服务：REST、联邦、DAV、MCP、Bitwarden、S3
   hs-node         把各组件组装成一个节点
   hs-net          服务器之间的联邦与互助
+  hs-client       REST 客户端和协议类型，可选择启用 OpenAPI schema
   hs-plugin-host  沙箱化的 WebAssembly 插件运行时
   hs-idp          OpenID Connect 身份提供方、通行密钥、转发认证（无 I/O）
   hs-objects      blob、副本、信任边界处的加密
@@ -145,7 +146,7 @@ budget   # 编译时间预算
 
 工作区在 `Cargo.toml` 中声明最低 Rust 版本。Nix 使用该版本检查锁定依赖下的所有原生目标。
 
-运行 `cargo bench -p hs-api --bench request_path` 可测量开启访问日志后的请求处理速度，用 `HS_BENCH_REQUESTS` 调整样本量。基准包含访问日志的入队和刷盘；有界队列在高负载时施加背压。
+运行 `cargo bench -p hs-api --bench request_path` 可测量开启访问日志后的请求处理速度，用 `HS_BENCH_REQUESTS` 调整样本量。基准包含访问日志的入队和刷盘，也通过本机回环 HTTP 测量并发 blob 范围读取和资源写入的 p99 延迟。
 
 格式化工具及其配置只在 `devenv.nix` 中定义（通过 treefmt-nix）。进入 shell 不会改写文件，需要手动运行 `treefmt`。
 

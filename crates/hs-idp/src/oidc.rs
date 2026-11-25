@@ -398,7 +398,7 @@ mod tests {
             ..c
         };
         assert!(public.check_secret(None));
-        assert!(Client::from_json(&json!({"id": "x"})).is_err());
+        Client::from_json(&json!({"id": "x"})).unwrap_err();
     }
 
     fn request() -> AuthRequest {
@@ -426,20 +426,18 @@ mod tests {
         let c = codes.issue(request(), 100);
         assert!(codes.take(&c, "app", cb, VERIFIER, 160).is_err(), "expired");
         let c = codes.issue(request(), 100);
-        assert!(codes.take(&c, "other", cb, VERIFIER, 101).is_err());
+        codes.take(&c, "other", cb, VERIFIER, 101).unwrap_err();
         let c = codes.issue(request(), 100);
-        assert!(
-            codes
-                .take(&c, "app", "https://evil/cb", VERIFIER, 101)
-                .is_err()
-        );
+        codes
+            .take(&c, "app", "https://evil/cb", VERIFIER, 101)
+            .unwrap_err();
         let c = codes.issue(request(), 100);
-        assert!(codes.take(&c, "app", cb, &"a".repeat(43), 101).is_err());
+        codes.take(&c, "app", cb, &"a".repeat(43), 101).unwrap_err();
         assert!(
             codes.take(&c, "app", cb, VERIFIER, 101).is_err(),
             "consumed by failure"
         );
-        assert!(codes.take("nope", "app", cb, VERIFIER, 101).is_err());
+        codes.take("nope", "app", cb, VERIFIER, 101).unwrap_err();
     }
 
     #[test]
@@ -470,8 +468,8 @@ mod tests {
             let at = access_token(&key, ISS, "alice", "app", "openid", 100, 300).unwrap();
             let claims = verify_access_token(&key, ISS, &at, 399).unwrap();
             assert_eq!(claims["sub"], "alice");
-            assert!(verify_access_token(&key, ISS, &at, 400).is_err());
-            assert!(verify_access_token(&key, "https://other", &at, 100).is_err());
+            verify_access_token(&key, ISS, &at, 400).unwrap_err();
+            verify_access_token(&key, "https://other", &at, 100).unwrap_err();
         }
     }
 
@@ -485,15 +483,13 @@ mod tests {
         assert_eq!(p.state.as_deref(), Some("xyz"));
         assert_eq!(p.nonce, None);
 
-        assert!(parse_authorize_query(&q.replace("S256", "plain")).is_err());
-        assert!(
-            parse_authorize_query(&q.replace("response_type=code", "response_type=token")).is_err()
-        );
-        assert!(parse_authorize_query(&q.replace("openid+", "")).is_err());
-        assert!(parse_authorize_query(&q.replace("&code_challenge=abc", "")).is_err());
-        assert!(parse_authorize_query(&format!("{q}&state=again")).is_err());
-        assert!(parse_authorize_query(&format!("{q}&x=%zz")).is_err());
-        assert!(parse_authorize_query("").is_err());
+        parse_authorize_query(&q.replace("S256", "plain")).unwrap_err();
+        parse_authorize_query(&q.replace("response_type=code", "response_type=token")).unwrap_err();
+        parse_authorize_query(&q.replace("openid+", "")).unwrap_err();
+        parse_authorize_query(&q.replace("&code_challenge=abc", "")).unwrap_err();
+        parse_authorize_query(&format!("{q}&state=again")).unwrap_err();
+        parse_authorize_query(&format!("{q}&x=%zz")).unwrap_err();
+        parse_authorize_query("").unwrap_err();
     }
 
     #[test]

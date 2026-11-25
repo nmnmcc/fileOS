@@ -100,14 +100,15 @@ async fn works_with_a_running_node() {
     let saved = std::fs::read_to_string(home.join("config/homeserver/cli.json")).unwrap();
     assert!(saved.contains(&made.owner_token));
     #[cfg(unix)]
-    {
+    let mode = {
         use std::os::unix::fs::PermissionsExt as _;
-        let mode = std::fs::metadata(home.join("config/homeserver/cli.json"))
+        std::fs::metadata(home.join("config/homeserver/cli.json"))
             .unwrap()
             .permissions()
-            .mode();
-        assert_eq!(mode & 0o777, 0o600);
-    }
+            .mode()
+    };
+    #[cfg(unix)]
+    assert_eq!(mode & 0o777, 0o600);
     assert!(ok(home, &["status"], "").await.contains("Node       Test"));
 
     // Spaces.

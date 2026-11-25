@@ -495,6 +495,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "hs-api",
+ "hs-client",
  "hs-core",
  "hs-identity",
  "hs-media",
@@ -502,7 +503,6 @@ dependencies = [
  "hs-node",
  "hs-plugin-api",
  "hs-plugin-host",
- "hs-space",
  "hs-store",
  "http",
  "mimalloc",
@@ -526,6 +526,7 @@ dependencies = [
  "bytes",
  "data-encoding",
  "form_urlencoded",
+ "hs-client",
  "hs-core",
  "hs-identity",
  "hs-idp",
@@ -548,6 +549,21 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "utoipa",
+]
+
+[[package]]
+name = "hs-client"
+version = "0.1.0"
+dependencies = [
+ "hs-core",
+ "hs-net",
+ "http",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tokio",
  "utoipa",
 ]
 

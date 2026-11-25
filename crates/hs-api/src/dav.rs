@@ -384,12 +384,10 @@ async fn item(
     let (Some(hash), Some(bytes)) = (r.payload, bytes) else {
         return Ok(None);
     };
-    let data = if with_data {
+    let data = with_data.then(|| {
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
-        Some(book.render(&v, &target))
-    } else {
-        None
-    };
+        book.render(&v, &target)
+    });
     Ok(Some(Res::Item {
         book,
         id: *id,

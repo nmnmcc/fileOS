@@ -308,14 +308,14 @@ mod tests {
         assert!(input.ends_with("\";alg=\"ed25519\""));
         assert_eq!(verify(&parts, body, 1_000_010, 60), Ok(key.public()));
         // Too old, or from the future.
-        assert!(verify(&parts, body, 1_000_100, 60).is_err());
-        assert!(verify(&parts, body, 999_000, 60).is_err());
+        verify(&parts, body, 1_000_100, 60).unwrap_err();
+        verify(&parts, body, 999_000, 60).unwrap_err();
 
         // Empty body: no digest, still verifies.
         let parts = request("https://node.example/x", b"", &key);
         assert!(!parts.headers.contains_key("content-digest"));
         assert_eq!(verify(&parts, b"", 1_000_000, 60), Ok(key.public()));
-        assert!(verify(&parts, b"x", 1_000_000, 60).is_err());
+        verify(&parts, b"x", 1_000_000, 60).unwrap_err();
     }
 
     #[test]
@@ -331,7 +331,7 @@ mod tests {
         parts
             .headers
             .insert("host", HeaderValue::from_static("other.example"));
-        assert!(verify(&parts, b"", 50, 5).is_err());
+        verify(&parts, b"", 50, 5).unwrap_err();
     }
 
     #[test]
@@ -340,19 +340,19 @@ mod tests {
         let body = b"payload";
         let parts = request("https://node.example/inbox?a=1", body, &key);
 
-        assert!(verify(&parts, b"payloae", 1_000_000, 60).is_err());
+        verify(&parts, b"payloae", 1_000_000, 60).unwrap_err();
 
         let mut p = parts.clone();
         p.uri = "https://node.example/outbox?a=1".parse().unwrap();
-        assert!(verify(&p, body, 1_000_000, 60).is_err());
+        verify(&p, body, 1_000_000, 60).unwrap_err();
 
         let mut p = parts.clone();
         p.uri = "https://node.example/inbox?a=2".parse().unwrap();
-        assert!(verify(&p, body, 1_000_000, 60).is_err());
+        verify(&p, body, 1_000_000, 60).unwrap_err();
 
         let mut p = parts.clone();
         p.method = http::Method::PUT;
-        assert!(verify(&p, body, 1_000_000, 60).is_err());
+        verify(&p, body, 1_000_000, 60).unwrap_err();
 
         // Recomputed digest for a new body: signature no longer matches.
         let mut p = parts.clone();
@@ -360,7 +360,7 @@ mod tests {
             "content-digest",
             HeaderValue::from_str(&content_digest(b"evil")).unwrap(),
         );
-        assert!(verify(&p, b"evil", 1_000_000, 60).is_err());
+        verify(&p, b"evil", 1_000_000, 60).unwrap_err();
 
         // Another key claiming the same keyid.
         let other = Keypair::from_seed([5; 32]);
@@ -368,7 +368,7 @@ mod tests {
         let mut p = parts.clone();
         p.headers
             .insert("signature", forged.headers["signature"].clone());
-        assert!(verify(&p, body, 1_000_000, 60).is_err());
+        verify(&p, body, 1_000_000, 60).unwrap_err();
 
         // Garbage headers do not panic.
         let mut p = parts.clone();
@@ -376,7 +376,7 @@ mod tests {
             "signature-input",
             HeaderValue::from_static("sig1=(\"@method"),
         );
-        assert!(verify(&p, body, 1_000_000, 60).is_err());
+        verify(&p, body, 1_000_000, 60).unwrap_err();
     }
 
     #[test]

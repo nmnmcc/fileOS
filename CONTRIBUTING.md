@@ -82,6 +82,7 @@ crates/
   hs-api          everything served over HTTP: REST, federation, DAV, MCP, Bitwarden, S3
   hs-node         assembles the components into one node
   hs-net          federation and mutual aid between servers
+  hs-client       REST client and wire types, with optional OpenAPI schemas
   hs-plugin-host  sandboxed WebAssembly plugin runtime
   hs-idp          OpenID Connect provider, passkeys, forward auth (no I/O)
   hs-objects      blobs, replicas, encryption at the trust boundary
@@ -145,7 +146,7 @@ budget   # compile-time budget
 
 The workspace declares its MSRV in `Cargo.toml`. Nix supplies that compiler for a locked check of all native targets.
 
-To measure request handling with access logging enabled, run `cargo bench -p hs-api --bench request_path`. Set `HS_BENCH_REQUESTS` to change the sample size. The benchmark includes queueing and flushing access events; the bounded queue applies backpressure under load.
+To measure request handling with access logging enabled, run `cargo bench -p hs-api --bench request_path`. Set `HS_BENCH_REQUESTS` to change the sample size. The benchmark includes queueing and flushing access events. It also reports p99 latency for concurrent blob range reads and resource writes over loopback HTTP.
 
 Formatters and their settings are defined only in `devenv.nix` (via treefmt-nix). Entering the shell does not rewrite files; run `treefmt` yourself.
 

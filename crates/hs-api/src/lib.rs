@@ -19,7 +19,6 @@ use http::{Method, StatusCode, header};
 mod access_log;
 mod auth;
 mod bitwarden;
-pub mod client;
 mod condition;
 mod dav;
 pub mod export;
@@ -33,9 +32,13 @@ pub mod replica;
 mod rest;
 mod s3;
 pub mod sync;
-pub mod types;
 pub mod util;
 mod web;
+
+#[doc(inline)]
+pub use hs_client as client;
+#[doc(inline)]
+pub use hs_client::types;
 
 use util::{ApiError, Result};
 

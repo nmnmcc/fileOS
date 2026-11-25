@@ -8,7 +8,7 @@ use http::header;
 
 use crate::util::header as hdr;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct Conditions {
     if_match: Option<String>,
     if_none_match: Option<String>,

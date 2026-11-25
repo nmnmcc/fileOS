@@ -10,10 +10,11 @@ use std::sync::Arc;
 
 use clap::{Args, Subcommand};
 use clap_complete::engine::ArgValueCandidates;
-use hs_api::client::{Reply, resource_path};
+use hs_api::Api;
 use hs_api::replica;
-use hs_api::types as t;
-use hs_api::{Api, types::Role};
+use hs_client::types as t;
+use hs_client::types::Role;
+use hs_client::{Reply, resource_path};
 use hs_node::Node;
 use http::{Method, StatusCode, header};
 use serde_json::{Value as Json, json};
@@ -372,7 +373,9 @@ pub(crate) async fn grants(t: &Target) -> Res<Vec<t::Grant>> {
 fn parse_duration(s: &str) -> Result<u64, String> {
     let split = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
     let (n, unit) = s.split_at(split);
-    let n: u64 = n.parse().map_err(|_| format!("not a duration: {s}"))?;
+    let n: u64 = n
+        .parse()
+        .map_err(|error| format!("not a duration: {s}: {error}"))?;
     let unit: u64 = match unit {
         "s" => 1_000,
         "m" | "min" => 60_000,
@@ -491,7 +494,7 @@ pub async fn export(g: &Global) -> Res {
             r
         }
         Target::Remote(s) => {
-            let mut out = std::io::BufWriter::new(out.lock());
+            let mut out = tokio::io::BufWriter::new(tokio::io::stdout());
             s.download("/api/export", &mut out).await?;
             Ok(())
         }
@@ -1083,9 +1086,10 @@ pub struct TimelineArgs {
 /// The start of a day, in milliseconds since 1970.
 fn parse_date(s: &str) -> Result<u64, String> {
     let format = time::macros::format_description!("[year]-[month]-[day]");
-    let day = time::Date::parse(s, &format).map_err(|_| format!("not a date: {s} (YYYY-MM-DD)"))?;
+    let day = time::Date::parse(s, &format)
+        .map_err(|error| format!("not a date: {s} (YYYY-MM-DD): {error}"))?;
     let secs = day.midnight().assume_utc().unix_timestamp();
-    u64::try_from(secs * 1000).map_err(|_| "before 1970".into())
+    u64::try_from(secs * 1000).map_err(|error| format!("before 1970: {error}"))
 }
 
 pub async fn timeline(g: &Global, a: TimelineArgs) -> Res {
@@ -1189,10 +1193,12 @@ pub async fn blob(g: &Global, cmd: BlobCommand) -> Res {
             Ok(())
         }
         BlobCommand::Get { hash, output } => {
-            let path = format!("/api/blobs/{}", hs_api::client::seg(&hash));
+            let path = format!("/api/blobs/{}", hs_client::seg(&hash));
             if let Some(p) = output {
-                let f = std::fs::File::create(&p).map_err(|e| format!("{}: {e}", p.display()))?;
-                let mut w = std::io::BufWriter::new(f);
+                let f = tokio::fs::File::create(&p)
+                    .await
+                    .map_err(|e| format!("{}: {e}", p.display()))?;
+                let mut w = tokio::io::BufWriter::new(f);
                 s.download(&path, &mut w).await?;
                 return Ok(());
             }
@@ -1200,7 +1206,7 @@ pub async fn blob(g: &Global, cmd: BlobCommand) -> Res {
             if out.is_terminal() {
                 return Err("redirect it to a file, or give -o FILE".into());
             }
-            s.download(&path, &mut out.lock()).await?;
+            s.download(&path, &mut tokio::io::stdout()).await?;
             Ok(())
         }
     }
@@ -1239,10 +1245,10 @@ mod tests {
     fn durations_and_dates() {
         assert_eq!(parse_duration("90m"), Ok(5_400_000));
         assert_eq!(parse_duration("30d"), Ok(2_592_000_000));
-        assert!(parse_duration("3y").is_err());
-        assert!(parse_duration("h").is_err());
+        parse_duration("3y").unwrap_err();
+        parse_duration("h").unwrap_err();
         assert_eq!(parse_date("1970-01-02"), Ok(86_400_000));
-        assert!(parse_date("2026-13-01").is_err());
+        parse_date("2026-13-01").unwrap_err();
     }
 
     #[test]

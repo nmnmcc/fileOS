@@ -184,7 +184,7 @@ async fn call(
                 .ok_or("body must be an object")?;
             let mut body = body.clone();
             if target.starts_with("file/") {
-                rest::enrich_file(api, &mut body);
+                rest::enrich_file(api, &mut body).await;
             }
             let bytes = serde_json::to_vec(&body).unwrap_or_default();
             let seq = sync::write(

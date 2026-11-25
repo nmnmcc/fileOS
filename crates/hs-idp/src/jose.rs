@@ -25,7 +25,7 @@ pub fn b64e(data: &[u8]) -> String {
 pub fn b64d(s: &str) -> Result<Vec<u8>> {
     URL_SAFE_NO_PAD
         .decode(s)
-        .map_err(|_| Error("bad base64url".into()))
+        .map_err(|error| Error(format!("bad base64url: {error}")))
 }
 
 /// A JWS signature algorithm.
@@ -91,6 +91,10 @@ impl SigningKey {
     /// # Errors
     ///
     /// Returns an error if the key cannot be generated or parsed by the signing backend.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "ring provides an opaque generation failure"
+    )]
     pub fn generate_es256() -> Result<SigningKey> {
         let rng = SystemRandom::new();
         let doc = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
@@ -165,7 +169,7 @@ impl SigningKey {
     pub fn from_bytes(pkcs8: &[u8]) -> Result<SigningKey> {
         SigningKey::es256_from_pkcs8(pkcs8)
             .or_else(|_| SigningKey::eddsa_from_pkcs8(pkcs8))
-            .map_err(|_| Error("unrecognized signing key".into()))
+            .map_err(|error| Error(format!("unrecognized signing key: {error}")))
     }
 
     /// The key's algorithm.
@@ -198,6 +202,10 @@ impl SigningKey {
     /// # Errors
     ///
     /// Returns an error if the signing backend cannot produce a signature.
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "ring reports signing failures as Unspecified"
+    )]
     pub fn sign_bytes(&self, msg: &[u8]) -> Result<Vec<u8>> {
         match self {
             SigningKey::Es256 { pair, .. } => pair
@@ -363,8 +371,13 @@ pub fn verify_full(token: &str, key: &PublicKey) -> Result<(Value, Value)> {
     else {
         return err("malformed JWS");
     };
-    let header: Value =
-        serde_json::from_slice(&b64d(h)?).map_err(|_| Error("bad JWS header".into()))?;
+    let header: Value = serde_json::from_slice(&b64d(h)?).map_err(|error| {
+        Error(format!(
+            "bad JWS header at line {}, column {}",
+            error.line(),
+            error.column()
+        ))
+    })?;
     if header.get("alg").and_then(Value::as_str) != Some(key.alg.name()) {
         return err("JWS algorithm mismatch");
     }
@@ -381,8 +394,13 @@ pub fn verify_full(token: &str, key: &PublicKey) -> Result<(Value, Value)> {
     if !key.verify_bytes(&token.as_bytes()[..input_len], &sig) {
         return err("bad JWS signature");
     }
-    let claims: Value =
-        serde_json::from_slice(&b64d(c)?).map_err(|_| Error("bad JWS payload".into()))?;
+    let claims: Value = serde_json::from_slice(&b64d(c)?).map_err(|error| {
+        Error(format!(
+            "bad JWS payload at line {}, column {}",
+            error.line(),
+            error.column()
+        ))
+    })?;
     if !claims.is_object() {
         return err("JWS payload is not an object");
     }
@@ -422,10 +440,10 @@ mod tests {
         let mut parts: Vec<&str> = token.split('.').collect();
         let forged = b64e(br#"{"sub":"mallory","n":1}"#);
         parts[1] = &forged;
-        assert!(verify(&parts.join("."), &pk).is_err());
-        assert!(verify("a.b", &pk).is_err());
-        assert!(verify("a.b.c.d", &pk).is_err());
-        assert!(verify("!!.!!.!!", &pk).is_err());
+        verify(&parts.join("."), &pk).unwrap_err();
+        verify("a.b", &pk).unwrap_err();
+        verify("a.b.c.d", &pk).unwrap_err();
+        verify("!!.!!.!!", &pk).unwrap_err();
     }
 
     #[test]
@@ -444,8 +462,8 @@ mod tests {
         let b = SigningKey::generate_es256().unwrap();
         let e = SigningKey::generate_eddsa().unwrap();
         let t = a.sign(&Value::Null, &json!({})).unwrap();
-        assert!(verify(&t, &b.public_key()).is_err());
-        assert!(verify(&t, &e.public_key()).is_err());
+        verify(&t, &b.public_key()).unwrap_err();
+        verify(&t, &e.public_key()).unwrap_err();
     }
 
     #[test]
@@ -465,6 +483,6 @@ mod tests {
         let a = SigningKey::eddsa_from_seed(&seed).unwrap();
         let b = SigningKey::eddsa_from_seed(&seed).unwrap();
         assert_eq!(a.public_key(), b.public_key());
-        assert!(SigningKey::from_bytes(b"junk").is_err());
+        SigningKey::from_bytes(b"junk").unwrap_err();
     }
 }

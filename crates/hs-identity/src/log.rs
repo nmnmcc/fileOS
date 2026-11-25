@@ -311,6 +311,6 @@ mod tests {
             kind: LogKind::AddNode { key: node.public() },
         };
         forged.entries.push(node.sign1(entry.encode()).encode());
-        assert!(forged.state().is_err());
+        forged.state().unwrap_err();
     }
 }

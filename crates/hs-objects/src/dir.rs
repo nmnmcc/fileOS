@@ -7,16 +7,13 @@
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use hs_core::Hash;
 
 /// A directory of named objects. Names may contain `/` to form subdirectories.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Dir {
     root: PathBuf,
-    // Serializes conditional writes within this process.
-    lock: Mutex<()>,
 }
 
 fn check_name(name: &str) -> io::Result<()> {
@@ -48,7 +45,6 @@ impl Dir {
         fs::create_dir_all(root.as_ref())?;
         Ok(Dir {
             root: root.as_ref().to_path_buf(),
-            lock: Mutex::new(()),
         })
     }
 
@@ -72,6 +68,19 @@ impl Dir {
             Ok(b) => Ok(Some(b)),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e),
+        }
+    }
+
+    /// Open an object for streaming or seeking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the name is invalid or opening the file fails.
+    pub fn open_file(&self, name: &str) -> io::Result<Option<fs::File>> {
+        match fs::File::open(self.path(name)?) {
+            Ok(file) => Ok(Some(file)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
         }
     }
 
@@ -125,22 +134,45 @@ impl Dir {
         Ok(())
     }
 
+    /// Publish an object and flush its directory entries to storage on Unix.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the object or its containing directories cannot be synced.
+    pub fn put_durable(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
+        self.put(name, bytes)?;
+        #[cfg(unix)]
+        {
+            let path = self.path(name)?;
+            for parent in path.ancestors().skip(1) {
+                fs::File::open(parent)?.sync_all()?;
+                if parent == self.root {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Write only if the current content hashes to `expected` (or the object
     /// does not exist, when `expected` is `None`). Returns whether it wrote.
     ///
     /// # Errors
     ///
-    /// Returns an error if the name is invalid, the lock is poisoned, or the read or write fails.
+    /// Returns an error if the name is invalid, the directory cannot be locked, or I/O fails.
     pub fn put_if(&self, name: &str, bytes: &[u8], expected: Option<Hash>) -> io::Result<bool> {
-        let _guard = self
-            .lock
-            .lock()
-            .map_err(|_| io::Error::other("lock poisoned"))?;
+        // A separate descriptor per caller also serializes independent processes.
+        let lock = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(self.root.join(".tmp-cas.lock"))?;
+        lock.lock()?;
         let current = self.get(name)?.map(|b| Hash::of(&b));
         if current != expected {
             return Ok(false);
         }
-        self.put(name, bytes)?;
+        self.put_durable(name, bytes)?;
         Ok(true)
     }
 

@@ -11,6 +11,7 @@ publish.workspace = true
 
 [dependencies]
 tracing.workspace = true
+hs-client = { workspace = true, features = ["openapi"] }
 hs-core.workspace = true
 hs-identity.workspace = true
 hs-idp.workspace = true
@@ -28,6 +29,7 @@ form_urlencoded.workspace = true
 httpdate.workspace = true
 percent-encoding.workspace = true
 tar.workspace = true
+tempfile.workspace = true
 time.workspace = true
 http.workspace = true
 quick-xml.workspace = true
@@ -39,7 +41,6 @@ utoipa.workspace = true
 tokio = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
-tempfile.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
 
 [[bench]]

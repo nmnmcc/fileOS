@@ -31,7 +31,10 @@ impl ApiError {
             backtrace: Box::new(std::backtrace::Backtrace::capture()),
         }
     }
-    fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+    pub(crate) fn with_source(
+        mut self,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
         self.source = Some(Box::new(source));
         self
     }
@@ -95,6 +98,7 @@ impl From<hs_node::Error> for ApiError {
             E::PreconditionFailed => {
                 ApiError::new(StatusCode::PRECONDITION_FAILED, error.message())
             }
+            E::Conflict => ApiError::new(StatusCode::CONFLICT, error.message()),
             E::Io => ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, error.message()),
         };
         result.with_source(error)

@@ -67,7 +67,10 @@ async fn send_fed(
     let (mut parts, ()) = req.into_parts();
     hs_net::sig::sign(&mut parts, &body, &api.node.key, now_ms() / 1000)
         .map_err(|e| e.to_string())?;
-    api.nodes.send(http::Request::from_parts(parts, body)).await
+    api.nodes
+        .send(http::Request::from_parts(parts, body))
+        .await
+        .map_err(String::from)
 }
 
 fn peer_error(url: &str, resp: &http::Response<Vec<u8>>) -> String {
@@ -302,7 +305,17 @@ pub async fn write(
     let signed = api
         .node
         .propose(access, id, kind, target, payload, media_type, nonce)?;
-    write_checked(api, id, &signed, payload, &Conditions::default()).await
+    Ok(
+        write_checked(api, id, &signed, payload, &Conditions::default())
+            .await?
+            .seq,
+    )
+}
+
+#[derive(serde::Deserialize)]
+struct Receipt {
+    seq: u64,
+    created: Option<bool>,
 }
 
 pub(crate) async fn write_checked(
@@ -311,13 +324,14 @@ pub(crate) async fn write_checked(
     signed: &[u8],
     payload: Option<&[u8]>,
     conditions: &Conditions,
-) -> Result<u64> {
+) -> Result<hs_node::Committed> {
+    let local = conditions.clone();
     match api
         .node
-        .submit_checked(id, signed, payload, |current| conditions.check(current))
+        .commit(id, signed, payload, move |current| local.check(current))
         .await
     {
-        Ok((seq, _)) => Ok(seq),
+        Ok(committed) => Ok(committed),
         Err(error) => {
             let hs_node::ErrorKind::NotPrimary {
                 home: Some(home), ..
@@ -327,44 +341,47 @@ pub(crate) async fn write_checked(
             };
             let inbox = format!("/fed/spaces/{}/inbox", id.to_hex());
             let gateway = |message| ApiError::new(StatusCode::BAD_GATEWAY, message);
-            let body = if conditions.is_empty() {
-                fed(api, Method::POST, &url(home, &inbox), pair(signed, payload))
-                    .await
-                    .map_err(gateway)?
+            let (path, request) = if conditions.is_empty() {
+                (inbox, pair(signed, payload))
             } else {
                 // Older primaries reject the separate endpoint rather than accepting
                 // a write whose preconditions they do not understand.
-                let endpoint = url(home, &format!("{inbox}/conditional"));
-                let response = send_fed(
-                    api,
-                    Method::POST,
-                    &endpoint,
+                (
+                    format!("{inbox}/conditional"),
                     pack_conditional(signed, payload, conditions),
                 )
+            };
+            let endpoint = url(home, &path);
+            let response = send_fed(api, Method::POST, &endpoint, request)
                 .await
                 .map_err(gateway)?;
-                match response.status() {
-                    StatusCode::PRECONDITION_FAILED => {
-                        return Err(ApiError::new(
-                            StatusCode::PRECONDITION_FAILED,
-                            "the resource has changed",
-                        ));
-                    }
-                    StatusCode::NOT_FOUND
-                        if response.headers().contains_key("hs-conditional-write") =>
-                    {
-                        return Err(ApiError::not_found());
-                    }
-                    status if status.is_success() => response.into_body(),
-                    _ => return Err(gateway(peer_error(&endpoint, &response))),
+            match response.status() {
+                StatusCode::PRECONDITION_FAILED => {
+                    return Err(ApiError::new(
+                        StatusCode::PRECONDITION_FAILED,
+                        "the resource has changed",
+                    ));
                 }
-            };
-            let seq = serde_json::from_slice::<serde_json::Value>(&body)
-                .ok()
-                .and_then(|v| v.get("seq").and_then(serde_json::Value::as_u64))
-                .ok_or_else(|| gateway("primary omitted the committed sequence".into()))?;
+                StatusCode::CONFLICT => {
+                    return Err(ApiError::new(
+                        StatusCode::CONFLICT,
+                        "idempotency key already used for a different request",
+                    ));
+                }
+                StatusCode::NOT_FOUND
+                    if response.headers().contains_key("hs-conditional-write") =>
+                {
+                    return Err(ApiError::not_found());
+                }
+                status if status.is_success() => {}
+                _ => return Err(gateway(peer_error(&endpoint, &response))),
+            }
+            let receipt: Receipt = serde_json::from_slice(response.body())
+                .map_err(|error| gateway(format!("invalid commit receipt: {error}")))?;
             pull(api, id).await?;
-            Ok(seq)
+            let mut committed = api.node.committed(id, receipt.seq, signed).await?;
+            committed.created = receipt.created;
+            Ok(committed)
         }
     }
 }

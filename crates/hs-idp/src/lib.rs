@@ -92,7 +92,7 @@ pub fn percent_decode(s: &str) -> Result<String> {
     percent_encoding::percent_decode_str(&s)
         .decode_utf8()
         .map(std::borrow::Cow::into_owned)
-        .map_err(|_| Error("query is not UTF-8".into()))
+        .map_err(|error| Error(format!("query is not UTF-8: {error}")))
 }
 
 #[cfg(test)]
@@ -112,7 +112,7 @@ mod tests {
         let s = "https://a.example/x?y=1&z=é ~";
         assert_eq!(percent_decode(&percent_encode(s)).unwrap(), s);
         assert_eq!(percent_decode("a+b%20c").unwrap(), "a b c");
-        assert!(percent_decode("%ff").is_err());
+        percent_decode("%ff").unwrap_err();
     }
 
     #[test]

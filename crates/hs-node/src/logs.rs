@@ -15,11 +15,11 @@ use std::path::{Path, PathBuf};
 
 use hs_core::cose::Sign1;
 use hs_core::event::{Entry, Proposal, decode_segment, encode_segment};
-use hs_core::{Hash, cbor};
+use hs_core::{Hash, PublicKey, cbor};
 use hs_identity::Keypair;
 use hs_space::{Applied, Payloads, Space};
 
-use crate::{Error, Result};
+use crate::{Committed, Error, ErrorKind, Result, WriteId};
 
 /// Entries per sealed segment.
 pub const SEGMENT_ENTRIES: usize = 256;
@@ -61,6 +61,17 @@ fn payload_of(entry: &[u8]) -> Option<Hash> {
     Proposal::decode(&Sign1::decode(&e.proposal).ok()?.payload)
         .ok()?
         .payload
+}
+
+fn bad_entry(error: impl std::error::Error + Send + Sync + 'static) -> Error {
+    Error::io(format!("invalid committed entry: {error}")).with_source(error)
+}
+
+fn key_conflict() -> Error {
+    Error::new(
+        ErrorKind::Conflict,
+        "idempotency key already used for a different request".into(),
+    )
 }
 
 /// Read length-prefixed entries, stopping at a torn end.
@@ -188,30 +199,88 @@ impl SpaceLog {
         payloads: &dyn Payloads,
         time: u64,
         check: impl FnOnce(Option<Hash>) -> Result<()>,
-    ) -> Result<(u64, Hash)> {
+    ) -> Result<Committed> {
         let Self {
             space,
             dir,
             append_failed,
             ..
         } = self;
+        let mut created = false;
+        let check = |current: Option<Hash>| {
+            created = current.is_none();
+            check(current)
+        };
         let ordered = space.order_checked(key, proposal, payloads, time, check, |bytes| {
             append(dir, append_failed, bytes)
         })?;
         match ordered {
-            hs_space::Ordered::Duplicate(seq) => {
-                let entry = usize::try_from(seq)
-                    .ok()
-                    .and_then(|n| self.entries.get(n))
-                    .ok_or_else(|| Error::io(format!("committed sequence {seq} missing")))?;
-                Ok((seq, Hash::of(entry)))
-            }
+            hs_space::Ordered::Duplicate(seq) => self.committed(seq, proposal),
             hs_space::Ordered::New(entry, applied) => {
-                let out = (applied.seq, applied.hash);
+                let out = Committed {
+                    seq: applied.seq,
+                    entry: applied.hash,
+                    payload: applied.proposal.payload,
+                    created: Some(created),
+                };
                 self.record(&entry, applied.proposal.payload);
                 self.enqueue(applied, Some(true));
                 Ok(out)
             }
+        }
+    }
+
+    fn recorded(&self, seq: u64) -> Result<(Committed, Proposal, Vec<u8>)> {
+        let bytes = usize::try_from(seq)
+            .ok()
+            .and_then(|n| self.entries.get(n))
+            .ok_or_else(|| Error::io(format!("committed sequence {seq} missing")))?;
+        let entry =
+            Entry::decode(&Sign1::decode(bytes).map_err(bad_entry)?.payload).map_err(bad_entry)?;
+        let signed = Sign1::decode(&entry.proposal).map_err(bad_entry)?;
+        let proposal = Proposal::decode(&signed.payload).map_err(bad_entry)?;
+        let committed = Committed {
+            seq,
+            entry: Hash::of(bytes),
+            payload: proposal.payload,
+            created: Some(false),
+        };
+        Ok((committed, proposal, signed.kid))
+    }
+
+    pub(crate) fn committed(&self, seq: u64, signed: &[u8]) -> Result<Committed> {
+        let (result, recorded, kid) = self.recorded(seq)?;
+        let candidate = Sign1::decode(signed).map_err(bad_entry)?;
+        let candidate_proposal = Proposal::decode(&candidate.payload).map_err(bad_entry)?;
+        let same_request = match (recorded.request, candidate_proposal.request) {
+            (Some(a), Some(b)) => a == b,
+            _ => {
+                recorded.payload == candidate_proposal.payload
+                    && recorded.media_type == candidate_proposal.media_type
+            }
+        };
+        if kid == candidate.kid
+            && recorded.nonce == candidate_proposal.nonce
+            && recorded.kind == candidate_proposal.kind
+            && recorded.target == candidate_proposal.target
+            && recorded.grant == candidate_proposal.grant
+            && same_request
+        {
+            Ok(result)
+        } else {
+            Err(key_conflict())
+        }
+    }
+
+    pub(crate) fn replay(&self, author: PublicKey, write: &WriteId) -> Result<Option<Committed>> {
+        let Some(seq) = self.space.sequence_for(author, &write.nonce) else {
+            return Ok(None);
+        };
+        let (result, proposal, _) = self.recorded(seq)?;
+        match proposal.request {
+            Some(request) if request == write.request => Ok(Some(result)),
+            Some(_) => Err(key_conflict()),
+            None => Ok(None),
         }
     }
 
@@ -265,6 +334,10 @@ impl SpaceLog {
                 "Could not trim the sealed prefix from the space log");
         }
         Ok(())
+    }
+
+    pub(crate) fn has_unsealed_segment(&self) -> bool {
+        self.entries.len() / SEGMENT_ENTRIES > self.segments.len()
     }
 
     /// A sealed segment's bytes.

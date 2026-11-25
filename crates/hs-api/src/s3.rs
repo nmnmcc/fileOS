@@ -15,6 +15,7 @@
 //! Each key reaches one bucket, kept under `buckets/<bucket>/` in the data
 //! directory. What is stored there is already encrypted by its owner.
 
+use hs_core::Hash;
 use hs_objects::Dir;
 use hs_objects::s3::{self, Credentials, Object};
 use http::{Method, StatusCode, header};
@@ -199,21 +200,43 @@ pub fn handle(api: &Api, req: &Request) -> Result {
     }
     let io = |_: std::io::Error| s3_error(StatusCode::BAD_REQUEST, "InvalidArgument");
     Ok(match *req.method() {
-        Method::PUT => match dir.put(&key, req.body()) {
-            Ok(()) => {
-                let mut r = empty(StatusCode::OK);
-                set_header(
-                    &mut r,
-                    header::ETAG,
-                    &format!("\"{}\"", &s3::sha256_hex(req.body())[..32]),
-                );
-                r
+        Method::PUT => {
+            let write = match (hdr(req, header::IF_MATCH), hdr(req, header::IF_NONE_MATCH)) {
+                (Some(tag), None) => {
+                    let Some(hash) = tag
+                        .strip_prefix('"')
+                        .and_then(|s| s.strip_suffix('"'))
+                        .and_then(Hash::from_hex)
+                    else {
+                        return Ok(s3_error(
+                            StatusCode::PRECONDITION_FAILED,
+                            "PreconditionFailed",
+                        ));
+                    };
+                    dir.put_if(&key, req.body(), Some(hash))
+                }
+                (None, Some("*")) => dir.put_if(&key, req.body(), None),
+                (None, None) => dir.put(&key, req.body()).map(|()| true),
+                _ => return Ok(s3_error(StatusCode::BAD_REQUEST, "InvalidArgument")),
+            };
+            match write {
+                Ok(true) => {
+                    let mut r = empty(StatusCode::OK);
+                    set_header(
+                        &mut r,
+                        header::ETAG,
+                        &format!("\"{}\"", Hash::of(req.body())),
+                    );
+                    r
+                }
+                Ok(false) => s3_error(StatusCode::PRECONDITION_FAILED, "PreconditionFailed"),
+                Err(e) => io(e),
             }
-            Err(e) => io(e),
-        },
+        }
         Method::GET | Method::HEAD => match dir.get(&key) {
             Ok(Some(b)) => {
                 let len = b.len() as u64;
+                let tag = format!("\"{}\"", Hash::of(&b));
                 let mut r =
                     match hdr(req, header::RANGE).and_then(|h| hs_objects::parse_range(h, len)) {
                         Some((s, e)) => {
@@ -235,9 +258,15 @@ pub fn handle(api: &Api, req: &Request) -> Result {
                     *r.body_mut() = hs_net::server::Body::empty();
                     set_header(&mut r, header::CONTENT_LENGTH, &len.to_string());
                 }
+                set_header(&mut r, header::ETAG, &tag);
+                set_header(&mut r, "hs-conditional-put", "1");
                 r
             }
-            Ok(None) => s3_error(StatusCode::NOT_FOUND, "NoSuchKey"),
+            Ok(None) => {
+                let mut r = s3_error(StatusCode::NOT_FOUND, "NoSuchKey");
+                set_header(&mut r, "hs-conditional-put", "1");
+                r
+            }
             Err(e) => io(e),
         },
         Method::DELETE => match dir.delete(&key) {

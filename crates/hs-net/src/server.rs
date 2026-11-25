@@ -25,6 +25,8 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 /// The largest request body accepted.
+///
+/// Accommodates file uploads while capping the bytes buffered per request.
 pub const MAX_BODY: usize = 256 * 1024 * 1024;
 
 /// A response body: complete, or a stream of chunks that ends when the
@@ -34,6 +36,8 @@ pub enum Body {
     Full(Bytes),
     /// Chunks as they come.
     Stream(mpsc::Receiver<Bytes>),
+    /// Chunks from a producer that can fail after the headers are sent.
+    Fallible(mpsc::Receiver<std::io::Result<Bytes>>),
 }
 
 impl std::fmt::Debug for Body {
@@ -75,12 +79,12 @@ impl From<Bytes> for Body {
 
 impl http_body::Body for Body {
     type Data = Bytes;
-    type Error = Infallible;
+    type Error = std::io::Error;
 
     fn poll_frame(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Bytes>, Infallible>>> {
+    ) -> Poll<Option<Result<Frame<Bytes>, Self::Error>>> {
         match &mut *self {
             Body::Full(b) => {
                 if b.is_empty() {
@@ -90,6 +94,9 @@ impl http_body::Body for Body {
                 }
             }
             Body::Stream(rx) => rx.poll_recv(cx).map(|c| c.map(|b| Ok(Frame::data(b)))),
+            Body::Fallible(rx) => rx
+                .poll_recv(cx)
+                .map(|chunk| chunk.map(|result| result.map(Frame::data))),
         }
     }
 
@@ -100,7 +107,7 @@ impl http_body::Body for Body {
     fn size_hint(&self) -> http_body::SizeHint {
         match self {
             Body::Full(b) => http_body::SizeHint::with_exact(b.len() as u64),
-            Body::Stream(_) => http_body::SizeHint::default(),
+            Body::Stream(_) | Body::Fallible(_) => http_body::SizeHint::default(),
         }
     }
 }

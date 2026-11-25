@@ -116,6 +116,6 @@ fn refused_member_change_leaves_state_unchanged() {
         None,
     );
     let before = space.members.clone();
-    assert!(space.order(&owner, &p, &blobs, 1).is_err());
+    space.order(&owner, &p, &blobs, 1).unwrap_err();
     assert_eq!(space.members, before);
 }

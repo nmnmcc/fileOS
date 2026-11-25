@@ -12,14 +12,14 @@ use utoipa::OpenApi;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::openapi::{ContentBuilder, RefOr, ResponseBuilder};
 
-use crate::rest;
 use crate::types as t;
+use crate::{push, rest};
 
 #[derive(OpenApi)]
 #[openapi(
     info(
         title = "homeserver",
-        description = "The REST API of a homeserver node. Every request carries a token: \
+        description = "The REST API of a homeserver node. Protected operations accept a token: \
             `Authorization: Bearer …`, the password of HTTP Basic, or the session cookie \
             set by `POST /api/session`. Errors are `{\"error\": \"…\"}`.",
         license(name = "AGPL-3.0-only", identifier = "AGPL-3.0-only"),
@@ -29,12 +29,13 @@ use crate::types as t;
         rest::node, rest::openapi, rest::identity, rest::health, rest::export,
         rest::list_spaces, rest::new_space, rest::join_space, rest::get_space,
         rest::add_member, rest::remove_member, rest::handover, rest::pull,
-        rest::list_resources, rest::get_resource, rest::put_resource,
+        rest::list_resources, rest::get_resource, rest::head_resource, rest::put_resource,
         rest::patch_resource, rest::delete, rest::erase,
         rest::search, rest::timeline, rest::near, rest::related,
-        rest::put_blob, rest::get_blob, rest::events,
+        rest::put_blob, rest::get_blob, rest::head_blob, rest::events,
         rest::list_grants, rest::new_grant, rest::revoke_grant,
         rest::list_replicas, rest::sync_replicas,
+        push::key, push::subscribe, push::test_notification,
     ),
     components(schemas(t::Event)),
     modifiers(&Common),
@@ -48,6 +49,7 @@ use crate::types as t;
         (name = "blobs", description = "Bytes by their hash"),
         (name = "events", description = "Changes as they happen"),
         (name = "grants", description = "Tokens and what they may do"),
+        (name = "push", description = "Browser push notifications"),
     ),
 )]
 struct Doc;
@@ -56,8 +58,8 @@ struct Doc;
 struct Common;
 
 impl utoipa::Modify for Common {
-    fn modify(&self, doc: &mut utoipa::openapi::OpenApi) {
-        let components = doc.components.get_or_insert_with(Default::default);
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
         components.add_security_scheme(
             "token",
             SecurityScheme::Http(HttpBuilder::new().scheme(HttpAuthScheme::Bearer).build()),
@@ -77,7 +79,7 @@ impl utoipa::Modify for Common {
             .schemas
             .entry("Error".into())
             .or_insert_with(<t::Error as utoipa::PartialSchema>::schema);
-        for item in doc.paths.paths.values_mut() {
+        for item in openapi.paths.paths.values_mut() {
             for op in [
                 &mut item.get,
                 &mut item.put,
@@ -98,57 +100,25 @@ impl utoipa::Modify for Common {
     }
 }
 
-/// The document.
-pub fn document() -> utoipa::openapi::OpenApi {
+fn document() -> utoipa::openapi::OpenApi {
     let mut doc = Doc::openapi();
     doc.info.version = env!("CARGO_PKG_VERSION").to_string();
     doc
 }
 
 /// The document as pretty JSON, built once.
+///
+/// # Panics
+///
+/// Panics if the generated document violates JSON serialization invariants.
 pub fn json() -> Vec<u8> {
     static JSON: OnceLock<Vec<u8>> = OnceLock::new();
     JSON.get_or_init(|| {
-        let mut text = document().to_pretty_json().unwrap_or_default();
+        let mut text = document()
+            .to_pretty_json()
+            .expect("the generated OpenAPI document must serialize as JSON");
         text.push('\n');
         text.into_bytes()
     })
     .clone()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `docs/openapi.json` is the document as built; to update it, run
-    /// with `HS_UPDATE_OPENAPI=1`.
-    #[test]
-    fn the_committed_document_is_current() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/openapi.json");
-        let built = json();
-        if std::env::var_os("HS_UPDATE_OPENAPI").is_some() {
-            std::fs::write(path, &built).unwrap();
-            return;
-        }
-        let kept = std::fs::read(path).unwrap_or_default();
-        assert!(
-            kept == built,
-            "docs/openapi.json is out of date; run `HS_UPDATE_OPENAPI=1 cargo test -p hs-api openapi`"
-        );
-    }
-
-    #[test]
-    fn every_route_is_described() {
-        let doc = document();
-        let paths: Vec<&str> = doc.paths.paths.keys().map(String::as_str).collect();
-        for p in [
-            "/api/session",
-            "/api/spaces/{space}/resources/{type}/{id}",
-            "/api/blobs/{hash}",
-            "/api/grants/{grant}",
-        ] {
-            assert!(paths.contains(&p), "{p} missing");
-        }
-        assert!(doc.components.unwrap().schemas.contains_key("Space"));
-    }
 }

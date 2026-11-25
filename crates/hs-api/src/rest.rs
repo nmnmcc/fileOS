@@ -13,12 +13,17 @@
 //! Timeline and resource lists accept `page=1` to return `items` with a
 //! `next_offset`; without it they return a bare array.
 
+use std::io;
+
+use bytes::Bytes;
 use hs_core::Hash;
 use hs_core::event::Kind;
-use hs_node::{Access, now_ms};
+use hs_node::{Access, Committed, WriteId, now_ms};
 use hs_space::Role;
 use http::{Method, StatusCode, header};
 use serde_json::{Value as Json, json};
+use tokio::io::{AsyncReadExt as _, AsyncSeekExt as _};
+use tokio::sync::mpsc;
 
 use crate::types as t;
 use crate::util::{
@@ -52,10 +57,41 @@ fn allowed_types(access: &Access) -> Option<&[String]> {
     }
 }
 
+fn wire_role(role: Role) -> t::Role {
+    match role {
+        Role::Reader => t::Role::Reader,
+        Role::Writer => t::Role::Writer,
+        Role::Owner => t::Role::Owner,
+    }
+}
+
+fn domain_role(role: t::Role) -> Role {
+    match role {
+        t::Role::Reader => Role::Reader,
+        t::Role::Writer => Role::Writer,
+        t::Role::Owner => Role::Owner,
+    }
+}
+
+fn wire_row(r: hs_store::Row) -> t::Row {
+    t::Row {
+        space: r.space,
+        target: r.target,
+        kind: r.kind,
+        payload: r.payload,
+        media_type: r.media_type,
+        seq: r.seq,
+        updated: r.updated,
+        time: r.time,
+        title: r.title,
+        body: r.body,
+    }
+}
+
 fn rows(access: &Access, rows: Vec<hs_store::Row>) -> Vec<t::Row> {
     rows.into_iter()
         .filter(|r| type_ok(access, &r.kind))
-        .map(t::Row::from)
+        .map(wire_row)
         .collect()
 }
 
@@ -105,7 +141,7 @@ pub async fn space_json(api: &Api, id: &Hash) -> Result<t::Space> {
                     .map(|(k, m)| t::Member {
                         node: k.to_id(),
                         identity: m.identity.to_id(),
-                        role: m.role.into(),
+                        role: wire_role(m.role),
                         home: m.home.clone(),
                     })
                     .collect(),
@@ -125,11 +161,26 @@ fn matches_etag(list: &str, tag: &str) -> bool {
         .any(|t| t == "*" || t.trim_start_matches("W/") == tag)
 }
 
-/// A nonce from an `Idempotency-Key`, so retries are ordered once.
-pub fn nonce(req: &Request, access: &Access) -> Option<Vec<u8>> {
+fn write_id(req: &Request, access: &Access, target: &str) -> Option<WriteId> {
     let key = hdr(req, "idempotency-key")?;
     let who = access.grant_id().unwrap_or_default();
-    Some(blake3::hash(format!("{who}\n{key}").as_bytes()).as_bytes()[..16].to_vec())
+    let nonce = blake3::hash(format!("{who}\n{key}").as_bytes()).as_bytes()[..16].to_vec();
+    let mut hash = blake3::Hasher::new();
+    for field in [
+        req.method().as_str().as_bytes(),
+        target.as_bytes(),
+        hdr(req, header::CONTENT_TYPE).unwrap_or("").as_bytes(),
+        hdr(req, header::IF_MATCH).unwrap_or("").as_bytes(),
+        hdr(req, header::IF_NONE_MATCH).unwrap_or("").as_bytes(),
+        req.body(),
+    ] {
+        hash.update(&(field.len() as u64).to_le_bytes());
+        hash.update(field);
+    }
+    Some(WriteId {
+        nonce,
+        request: Hash(*hash.finalize().as_bytes()),
+    })
 }
 
 /// The current payload hash of a resource (`None` if absent or deleted).
@@ -143,7 +194,7 @@ pub async fn current(api: &Api, id: &Hash, target: &str) -> Result<Option<Hash>>
 }
 
 /// Add what a file's bytes say about it (size, dimensions, time, place).
-pub fn enrich_file(api: &Api, body: &mut Json) {
+pub async fn enrich_file(api: &Api, body: &mut Json) {
     let Some(hash) = body
         .get("hash")
         .and_then(Json::as_str)
@@ -151,7 +202,7 @@ pub fn enrich_file(api: &Api, body: &mut Json) {
     else {
         return;
     };
-    let Ok(Some(bytes)) = api.node.blob(&hash) else {
+    let Ok(Some(bytes)) = api.node.blob_async(&hash).await else {
         return;
     };
     let Some(o) = body.as_object_mut() else {
@@ -200,7 +251,7 @@ async fn put_version(
         let mut v: Json =
             serde_json::from_slice(&bytes).map_err(|e| ApiError::bad(format!("bad JSON: {e}")))?;
         if target.starts_with("file/") {
-            enrich_file(api, &mut v);
+            enrich_file(api, &mut v).await;
         }
         bytes = serde_json::to_vec(&v).unwrap_or_default();
     }
@@ -209,27 +260,36 @@ async fn put_version(
     } else {
         media_type
     };
-    let signed = api.node.propose(
+    let signed = api.node.propose_request(
         access,
         id,
         Kind::Put,
         target,
-        Some(&bytes),
-        mt,
-        nonce(req, access),
+        (Some(&bytes), mt),
+        write_id(req, access, target),
     )?;
     let conditions = crate::condition::Conditions::from_request(req, expected, false);
-    let seq = sync::write_checked(api, id, &signed, Some(&bytes), &conditions).await?;
-    let tag = etag(&Hash::of(&bytes));
-    let status = if before.is_some() {
-        StatusCode::OK
-    } else {
+    let committed = sync::write_checked(api, id, &signed, Some(&bytes), &conditions).await?;
+    written(committed, before.is_none())
+}
+
+fn written(committed: Committed, legacy_created: bool) -> Result {
+    let payload = committed.payload.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "committed PUT has no payload",
+        )
+    })?;
+    let tag = etag(&payload);
+    let status = if committed.created.unwrap_or(legacy_created) {
         StatusCode::CREATED
+    } else {
+        StatusCode::OK
     };
     let mut r = typed(
         status,
         &t::Written {
-            seq,
+            seq: committed.seq,
             etag: tag.clone(),
         },
     );
@@ -244,14 +304,13 @@ pub(crate) async fn delete_resource(
     id: &Hash,
     target: &str,
 ) -> Result {
-    let signed = api.node.propose(
+    let signed = api.node.propose_request(
         access,
         id,
         Kind::Delete,
         target,
-        None,
-        "",
-        nonce(req, access),
+        (None, ""),
+        write_id(req, access, target),
     )?;
     let conditions = crate::condition::Conditions::from_request(req, None, true);
     sync::write_checked(api, id, &signed, None, &conditions).await?;
@@ -283,7 +342,7 @@ pub async fn create_grant(api: &Api, new: &t::NewGrant) -> Result<t::NewToken> {
     let (token, id) = api
         .node
         .create_token(
-            new.role.into(),
+            domain_role(new.role),
             spaces,
             &new.label,
             Some(Json::Object(extra)),
@@ -356,7 +415,8 @@ pub async fn handle(
                 return Err(ApiError::bad("bad type or id"));
             }
             match m {
-                Method::GET | Method::HEAD => get_resource(api, req, access, &id, &target).await,
+                Method::GET => get_resource(api, req, access, &id, &target).await,
+                Method::HEAD => head_resource(api, req, access, &id, &target).await,
                 Method::PUT => put_resource(api, req, access, &id, &target).await,
                 Method::PATCH => patch_resource(api, req, access, &id, &target).await,
                 Method::DELETE => delete_resource(api, req, access, &id, &target).await,
@@ -372,8 +432,9 @@ pub async fn handle(
         (&Method::GET, ["related", s, kind, rid]) => {
             related(api, req, access, s, &format!("{kind}/{rid}")).await
         }
-        (&Method::POST, ["blobs"]) => put_blob(api, req, access),
-        (&Method::GET | &Method::HEAD, ["blobs", h]) => get_blob(api, req, access, h).await,
+        (&Method::POST, ["blobs"]) => put_blob(api, req, access).await,
+        (&Method::GET, ["blobs", h]) => get_blob(api, req, access, h).await,
+        (&Method::HEAD, ["blobs", h]) => head_blob(api, req, access, h).await,
         (&Method::GET, ["events"]) => events(api, access),
         (&Method::GET, ["grants"]) => list_grants(api, access).await,
         (&Method::POST, ["grants"]) => new_grant(api, req, access).await,
@@ -404,7 +465,7 @@ fn session_of(access: &Access) -> t::Session {
             types,
         } => t::Session {
             grant: Some(id.clone()),
-            role: Some((*role).into()),
+            role: Some(wire_role(*role)),
             owner: Some(access.is_owner()),
             spaces: spaces.as_ref().map(|s| hexes(s)),
             types: types.clone(),
@@ -417,7 +478,7 @@ fn session_of(access: &Access) -> t::Session {
                     .iter()
                     .map(|(s, r)| t::SpaceRole {
                         space: s.to_hex(),
-                        role: (*r).into(),
+                        role: wire_role(*r),
                     })
                     .collect(),
             ),
@@ -545,13 +606,13 @@ async fn add_member(api: &Api, req: &Request, access: &Access, s: &str) -> Resul
         let req = http::Request::get(&u)
             .body(Vec::new())
             .map_err(|e| ApiError::bad(e.to_string()))?;
-        let resp = api
-            .nodes
-            .send(req)
-            .await
-            .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, e))?;
-        let info: t::NodeInfo = serde_json::from_slice(resp.body())
-            .map_err(|_| ApiError::new(StatusCode::BAD_GATEWAY, "not a homeserver"))?;
+        let resp =
+            api.nodes.send(req).await.map_err(|e| {
+                ApiError::new(StatusCode::BAD_GATEWAY, e.to_string()).with_source(e)
+            })?;
+        let info: t::NodeInfo = serde_json::from_slice(resp.body()).map_err(|error| {
+            ApiError::new(StatusCode::BAD_GATEWAY, "not a homeserver").with_source(error)
+        })?;
         node = Some(info.node);
         identity = Some(info.identity);
     }
@@ -785,6 +846,7 @@ async fn get_resource(
         }
         _ => (bytes, res.media_type.clone()),
     };
+    let length = body.len();
     let mut r = respond(
         StatusCode::OK,
         if mt.is_empty() {
@@ -803,8 +865,33 @@ async fn get_resource(
     set_header(&mut r, header::CACHE_CONTROL, "private, no-cache");
     if req.method() == Method::HEAD {
         *r.body_mut() = Body::empty();
+        set_header(&mut r, header::CONTENT_LENGTH, &length.to_string());
     }
     Ok(r)
+}
+
+/// The same headers as GET, without the resource body.
+#[utoipa::path(head, path = "/api/spaces/{space}/resources/{type}/{id}", tag = "resources",
+    params(
+        ("space" = String, Path, description = "A space's name, ID or unique ID prefix"),
+        ("type" = String, Path, description = "The resource type"),
+        ("id" = String, Path, description = "The resource ID"),
+        ("If-None-Match" = Option<String>, Header),
+        t::ResourceQuery,
+    ),
+    responses(
+        (status = 200, description = "Resource metadata", headers(("ETag" = String), ("Last-Modified" = String), ("Content-Length" = u64))),
+        (status = 304, description = "Not modified"),
+        (status = 410, description = "Deleted"),
+    ))]
+async fn head_resource(
+    api: &Api,
+    req: &Request,
+    access: &Access,
+    id: &Hash,
+    target: &str,
+) -> Result {
+    get_resource(api, req, access, id, target).await
 }
 
 /// Store a resource: JSON, vCard or iCalendar (kept as JSON), or any other
@@ -816,7 +903,7 @@ async fn get_resource(
         ("id" = String, Path, description = "The resource ID"),
         ("If-Match" = Option<String>, Header, description = "Only if the current ETag matches"),
         ("If-None-Match" = Option<String>, Header, description = "`*`: only if it does not exist yet"),
-        ("Idempotency-Key" = Option<String>, Header, description = "Retries with the same key are applied once"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Retries with identical method, target, content and conditions are applied once"),
     ),
     request_body(content(
         (Object = "application/json"),
@@ -827,6 +914,7 @@ async fn get_resource(
     responses(
         (status = 200, description = "Replaced", body = t::Written, headers(("ETag" = String))),
         (status = 201, description = "Created", body = t::Written, headers(("ETag" = String))),
+        (status = 409, description = "The idempotency key was used for a different write", body = t::Error),
         (status = 412, description = "The condition did not hold", body = t::Error),
     ))]
 async fn put_resource(
@@ -870,11 +958,12 @@ async fn put_resource(
         ("type" = String, Path, description = "The resource type"),
         ("id" = String, Path, description = "The resource ID"),
         ("If-Match" = Option<String>, Header, description = "Only if the current ETag matches"),
-        ("Idempotency-Key" = Option<String>, Header, description = "Retries with the same key are applied once"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Retries with identical method, target, content and conditions are applied once"),
     ),
     request_body(content((Object = "application/merge-patch+json"), (Object = "application/json"))),
     responses(
         (status = 200, description = "Patched", body = t::Written, headers(("ETag" = String))),
+        (status = 409, description = "The idempotency key was used for a different write", body = t::Error),
         (status = 412, description = "The condition did not hold", body = t::Error),
         (status = 415, description = "Not JSON", body = t::Error),
     ))]
@@ -885,6 +974,11 @@ async fn patch_resource(
     id: &Hash,
     target: &str,
 ) -> Result {
+    if let Some(write) = write_id(req, access, target)
+        && let Some(committed) = api.node.replay_request(access, id, target, &write).await?
+    {
+        return written(committed, false);
+    }
     let patch: Json = body(req)?;
     let Some((res, Some(bytes))) = api.node.get(id, target).await? else {
         return Err(ApiError::not_found());
@@ -917,10 +1011,11 @@ async fn patch_resource(
         ("type" = String, Path, description = "The resource type"),
         ("id" = String, Path, description = "The resource ID"),
         ("If-Match" = Option<String>, Header, description = "Only if the current ETag matches"),
-        ("Idempotency-Key" = Option<String>, Header, description = "Retries with the same key are applied once"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Retries with identical method, target, content and conditions are applied once"),
     ),
     responses(
         (status = 204, description = "Deleted"),
+        (status = 409, description = "The idempotency key was used for a different write", body = t::Error),
         (status = 412, description = "The condition did not hold", body = t::Error),
     ))]
 #[expect(
@@ -1027,7 +1122,7 @@ async fn related(api: &Api, req: &Request, access: &Access, s: &str, target: &st
         .filter(|(_, r)| allowed.contains(&r.space) && type_ok(access, &r.kind))
         .map(|(rel, row)| t::Related {
             rel,
-            row: row.into(),
+            row: wire_row(row),
         })
         .collect();
     Ok(typed(StatusCode::OK, &out))
@@ -1047,7 +1142,7 @@ fn can_write_somewhere(access: &Access) -> bool {
 #[utoipa::path(post, path = "/api/blobs", tag = "blobs",
     request_body(content(("application/octet-stream"))),
     responses((status = 201, body = t::Blob, headers(("Location" = String)))))]
-fn put_blob(api: &Api, req: &Request, access: &Access) -> Result {
+async fn put_blob(api: &Api, req: &Request, access: &Access) -> Result {
     if !can_write_somewhere(access) {
         return Err(if matches!(access, Access::Public) {
             ApiError::unauthorized()
@@ -1055,7 +1150,7 @@ fn put_blob(api: &Api, req: &Request, access: &Access) -> Result {
             ApiError::forbidden("needs writer")
         });
     }
-    let hash = api.node.put_blob(req.body())?;
+    let hash = api.node.put_blob_async(req.body().clone()).await?;
     let mut r = typed(
         StatusCode::CREATED,
         &t::Blob {
@@ -1087,26 +1182,139 @@ fn put_blob(api: &Api, req: &Request, access: &Access) -> Result {
 async fn get_blob(api: &Api, req: &Request, access: &Access, h: &str) -> Result {
     signed_in(access)?;
     let hash = Hash::from_hex(h).ok_or_else(ApiError::not_found)?;
+    let file = api
+        .node
+        .open_blob(&hash)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
     let tag = etag(&hash);
     if hdr(req, header::IF_NONE_MATCH).is_some_and(|m| matches_etag(m, &tag)) {
-        return Ok(empty(StatusCode::NOT_MODIFIED));
+        let mut response = empty(StatusCode::NOT_MODIFIED);
+        set_header(&mut response, header::ETAG, &tag);
+        return Ok(response);
     }
-    let bytes = api.node.blob(&hash)?.ok_or_else(ApiError::not_found)?;
     let q: t::BlobQuery = params(req)?;
-    let mut mt = q
-        .media_type
-        .unwrap_or_else(|| "application/octet-stream".into());
-    let mut bytes = bytes;
-    if let Some(side) = q.thumb {
-        let worker = api.preview.as_ref().ok_or_else(|| {
-            ApiError::new(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "thumbnail worker is not configured",
-            )
-        })?;
-        let side = side.clamp(16, 1024);
-        let thumb = worker.run(&bytes, side).await.map_err(|error| {
-            let status = if error.kind() == std::io::ErrorKind::WouldBlock {
+    let (source, total, media_type) = if let Some(side) = q.thumb {
+        let (bytes, media_type) = thumbnail(api, &hash, side).await?;
+        let total = bytes.len() as u64;
+        (
+            BlobBody::Thumbnail(Bytes::from(bytes)),
+            total,
+            media_type.to_owned(),
+        )
+    } else {
+        let total = file.metadata().await.map_err(hs_node::Error::from)?.len();
+        if total == 0 && hash != Hash::of(b"") {
+            return Err(ApiError::not_found());
+        }
+        let media_type = q
+            .media_type
+            .unwrap_or_else(|| "application/octet-stream".into());
+        (BlobBody::File(file), total, media_type)
+    };
+    let media_type = if ["html", "svg", "xml", "javascript"]
+        .iter()
+        .any(|kind| media_type.contains(kind))
+    {
+        "application/octet-stream"
+    } else {
+        &media_type
+    };
+    let mut range = None;
+    if let Some(header) = hdr(req, header::RANGE)
+        && header.starts_with("bytes=")
+        && !header.contains(',')
+    {
+        range = hs_objects::parse_range(header, total);
+        if range.is_none() {
+            let mut response = empty(StatusCode::RANGE_NOT_SATISFIABLE);
+            set_header(
+                &mut response,
+                header::CONTENT_RANGE,
+                &format!("bytes */{total}"),
+            );
+            return Ok(response);
+        }
+    }
+    let (start, end) = range.unwrap_or((0, total));
+    let status = if range.is_some() {
+        StatusCode::PARTIAL_CONTENT
+    } else {
+        StatusCode::OK
+    };
+    let body = if req.method() == Method::HEAD || end == start {
+        Body::empty()
+    } else {
+        match source {
+            BlobBody::Thumbnail(bytes) => Body::from(bytes.slice(start as usize..end as usize)),
+            BlobBody::File(file) => {
+                stream_blob(file, start, end - start, range.is_none().then_some(hash))
+            }
+        }
+    };
+    let mut response = respond(status, media_type, body);
+    set_header(&mut response, header::ETAG, &tag);
+    set_header(
+        &mut response,
+        header::CONTENT_LENGTH,
+        &(end - start).to_string(),
+    );
+    set_header(
+        &mut response,
+        header::CACHE_CONTROL,
+        "private, max-age=31536000, immutable",
+    );
+    set_header(&mut response, header::ACCEPT_RANGES, "bytes");
+    set_header(&mut response, "content-security-policy", "sandbox");
+    if range.is_some() {
+        set_header(
+            &mut response,
+            header::CONTENT_RANGE,
+            &format!("bytes {start}-{}/{total}", end - 1),
+        );
+    }
+    Ok(response)
+}
+
+/// The same headers as GET, without the blob body.
+#[utoipa::path(head, path = "/api/blobs/{hash}", tag = "blobs",
+    params(
+        ("hash" = String, Path, description = "The blob's hash (hex)"),
+        ("Range" = Option<String>, Header, description = "One range of bytes"),
+        t::BlobQuery,
+    ),
+    responses(
+        (status = 200, description = "Blob metadata", headers(("ETag" = String), ("Content-Length" = u64))),
+        (status = 206, description = "Range metadata", headers(("Content-Range" = String), ("Content-Length" = u64))),
+        (status = 304, description = "Not modified"),
+        (status = 416, description = "The range is outside the blob"),
+    ))]
+async fn head_blob(api: &Api, req: &Request, access: &Access, hash: &str) -> Result {
+    get_blob(api, req, access, hash).await
+}
+
+enum BlobBody {
+    File(tokio::fs::File),
+    Thumbnail(Bytes),
+}
+
+async fn thumbnail(api: &Api, hash: &Hash, side: u32) -> Result<(Vec<u8>, &'static str)> {
+    let worker = api.preview.as_ref().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "thumbnail worker is not configured",
+        )
+    })?;
+    let bytes = api
+        .node
+        .blob_async(hash)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    let thumb = worker
+        .run(&bytes, side.clamp(16, 1024))
+        .await
+        .map_err(|error| {
+            let status = if error.kind() == io::ErrorKind::WouldBlock {
                 StatusCode::SERVICE_UNAVAILABLE
             } else {
                 tracing::warn!(name: "media.thumbnail.failed", %error, "Thumbnail worker failed");
@@ -1114,55 +1322,52 @@ async fn get_blob(api: &Api, req: &Request, access: &Access, h: &str) -> Result 
             };
             ApiError::new(status, "thumbnail worker unavailable")
         })?;
-        let (t, t_mt) = thumb.ok_or_else(|| {
-            ApiError::new(StatusCode::UNSUPPORTED_MEDIA_TYPE, "no thumbnail for this")
-        })?;
-        bytes = t;
-        mt = t_mt.to_string();
-    }
-    if mt.contains("html") || mt.contains("svg") || mt.contains("xml") || mt.contains("javascript")
-    {
-        // Never let a stored file run script in this origin.
-        mt = "application/octet-stream".into();
-    }
-    let total = bytes.len();
-    let mut status = StatusCode::OK;
-    let mut range_header = None;
-    if let Some(range) = hdr(req, header::RANGE).and_then(|r| r.strip_prefix("bytes="))
-        && !range.contains(',')
-        && let Some((a, b)) = range.split_once('-')
-    {
-        let (start, end) = match (a.parse::<usize>().ok(), b.parse::<usize>().ok()) {
-            (Some(s), Some(e)) => (s, e.min(total.saturating_sub(1))),
-            (Some(s), None) => (s, total.saturating_sub(1)),
-            (None, Some(n)) => (total.saturating_sub(n), total.saturating_sub(1)),
-            (None, None) => (0, total.saturating_sub(1)),
-        };
-        if start >= total || start > end {
-            let mut r = empty(StatusCode::RANGE_NOT_SATISFIABLE);
-            set_header(&mut r, header::CONTENT_RANGE, &format!("bytes */{total}"));
-            return Ok(r);
+    thumb.ok_or_else(|| ApiError::new(StatusCode::UNSUPPORTED_MEDIA_TYPE, "no thumbnail for this"))
+}
+
+// A small read and two queued chunks bound memory per streaming response.
+const BLOB_CHUNK: usize = 64 * 1024;
+
+fn stream_blob(file: tokio::fs::File, start: u64, len: u64, hash: Option<Hash>) -> Body {
+    let (tx, rx) = mpsc::channel(2);
+    tokio::spawn(async move {
+        if let Err(error) = read_chunks(file, start, len, hash, &tx).await {
+            let _ = tx.send(Err(error)).await;
         }
-        bytes = bytes[start..=end].to_vec();
-        status = StatusCode::PARTIAL_CONTENT;
-        range_header = Some(format!("bytes {start}-{end}/{total}"));
+    });
+    Body::Fallible(rx)
+}
+
+async fn read_chunks(
+    mut file: tokio::fs::File,
+    start: u64,
+    mut remaining: u64,
+    expected: Option<Hash>,
+    tx: &mpsc::Sender<io::Result<Bytes>>,
+) -> io::Result<()> {
+    if start != 0 {
+        file.seek(io::SeekFrom::Start(start)).await?;
     }
-    let mut r = respond(status, &mt, bytes);
-    set_header(&mut r, header::ETAG, &tag);
-    set_header(
-        &mut r,
-        header::CACHE_CONTROL,
-        "private, max-age=31536000, immutable",
-    );
-    set_header(&mut r, header::ACCEPT_RANGES, "bytes");
-    set_header(&mut r, "content-security-policy", "sandbox");
-    if let Some(cr) = range_header {
-        set_header(&mut r, header::CONTENT_RANGE, &cr);
+    let mut hash = expected.map(|_| blake3::Hasher::new());
+    while remaining > 0 && !tx.is_closed() {
+        let mut chunk = vec![0; remaining.min(BLOB_CHUNK as u64) as usize];
+        file.read_exact(&mut chunk).await?;
+        remaining -= chunk.len() as u64;
+        if let Some(hash) = &mut hash {
+            hash.update(&chunk);
+            // Withhold the last chunk so a bad digest cannot complete a fixed-length response.
+            if remaining == 0 && expected != Some(Hash(*hash.finalize().as_bytes())) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "blob does not match its hash",
+                ));
+            }
+        }
+        if tx.send(Ok(Bytes::from(chunk))).await.is_err() {
+            break;
+        }
     }
-    if req.method() == Method::HEAD {
-        *r.body_mut() = Body::empty();
-    }
-    Ok(r)
+    Ok(())
 }
 
 /// Changes as they happen, as Server-Sent Events. Each `data:` line is an

@@ -7,12 +7,17 @@
 //! streams, whose bodies are anything, go through [`Client::send`],
 //! [`Client::download`] and [`Client::events`].
 
-use std::io::Write;
+use std::backtrace::Backtrace;
+use std::fmt;
+use std::sync::Arc;
 
 use http::{Method, StatusCode, header};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use tokio::io::{AsyncWrite, AsyncWriteExt as _};
+
+pub mod types;
 
 use crate::types as t;
 
@@ -62,24 +67,74 @@ pub struct Error {
     pub status: Option<StatusCode>,
     /// What went wrong, for people.
     pub message: String,
+    context: Arc<ErrorContext>,
+}
+
+#[derive(Debug)]
+struct ErrorContext {
+    source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    backtrace: Backtrace,
 }
 
 impl Error {
     fn local(message: impl Into<String>) -> Error {
+        Self::new(None, message, None)
+    }
+
+    fn new(
+        status: Option<StatusCode>,
+        message: impl Into<String>,
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    ) -> Error {
         Error {
-            status: None,
+            status,
             message: message.into(),
+            context: Arc::new(ErrorContext {
+                source,
+                backtrace: Backtrace::capture(),
+            }),
         }
+    }
+
+    fn caused_by(
+        message: impl Into<String>,
+        source: impl Into<Box<dyn std::error::Error + Send + Sync>>,
+    ) -> Self {
+        Self::new(None, message, Some(source.into()))
+    }
+
+    /// The backtrace captured when the request failed.
+    pub fn backtrace(&self) -> &Backtrace {
+        &self.context.backtrace
     }
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.message)
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context
+            .source
+            .as_deref()
+            .map(|source| source as &dyn std::error::Error)
+    }
+}
+
+impl From<hs_net::client::Error> for Error {
+    fn from(error: hs_net::client::Error) -> Self {
+        Self::caused_by(error.to_string(), error)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::caused_by(error.to_string(), error)
+    }
+}
 
 impl From<Error> for String {
     fn from(e: Error) -> String {
@@ -118,7 +173,7 @@ impl Reply {
     /// Returns an error if the body is not that type.
     pub fn typed<T: DeserializeOwned>(&self) -> Result<T, Error> {
         serde_json::from_slice(&self.body)
-            .map_err(|e| Error::local(format!("the server sent bad JSON: {e}")))
+            .map_err(|error| Error::caused_by(format!("the server sent bad JSON: {error}"), error))
     }
 
     /// A header, if it is text.
@@ -131,6 +186,7 @@ impl Reply {
 pub type Body<'a> = Option<(&'a str, Vec<u8>)>;
 
 /// A node's API, reached with a token.
+#[derive(Clone)]
 pub struct Client {
     /// `http(s)://host:port`, without a trailing slash.
     pub url: String,
@@ -183,18 +239,19 @@ impl Client {
             }
             None => Vec::new(),
         };
-        b.body(bytes).map_err(|e| Error::local(e.to_string()))
+        b.body(bytes)
+            .map_err(|error| Error::caused_by(error.to_string(), error))
     }
 
     async fn open(
         &self,
         req: http::Request<Vec<u8>>,
     ) -> Result<http::Response<hs_net::client::Streaming>, Error> {
-        self.http.send_streaming(req).await.map_err(|e| {
-            Error::local(format!(
-                "cannot reach {}: {e}\n(is `hs serve` running there? Commands for a stopped node take --dir.)",
+        self.http.send_streaming(req).await.map_err(|error| {
+            Error::caused_by(format!(
+                "cannot reach {}: {error}\n(is `hs ctl serve` running there? Commands for a stopped node take --dir.)",
                 self.url
-            ))
+            ), error)
         })
     }
 
@@ -215,7 +272,7 @@ impl Client {
         Ok(Reply {
             status: parts.status,
             headers: parts.headers,
-            body: body.read_to_end(MAX_BODY).await.map_err(Error::local)?,
+            body: body.read_to_end(MAX_BODY).await?,
         })
     }
 
@@ -245,6 +302,10 @@ impl Client {
         if r.status.is_success() || r.status == StatusCode::NOT_MODIFIED {
             return Ok(());
         }
+        Err(self.status_error(r))
+    }
+
+    fn status_error(&self, r: &Reply) -> Error {
         let message = serde_json::from_slice::<t::Error>(&r.body)
             .map(|e| e.error)
             .unwrap_or_else(|_| {
@@ -263,10 +324,7 @@ impl Client {
             }
             s => format!("{message} ({})", s.as_u16()),
         };
-        Err(Error {
-            status: Some(r.status),
-            message,
-        })
+        Error::new(Some(r.status), message, None)
     }
 
     async fn call<T: DeserializeOwned>(
@@ -275,12 +333,11 @@ impl Client {
         path: &str,
         body: Option<&impl Serialize>,
     ) -> Result<T, Error> {
-        let body = body.map(|b| {
-            (
-                "application/json",
-                serde_json::to_vec(b).unwrap_or_default(),
-            )
-        });
+        let body = body
+            .map(serde_json::to_vec)
+            .transpose()
+            .map_err(|error| Error::caused_by("cannot serialize the request body", error))?
+            .map(|bytes| ("application/json", bytes));
         self.send(method, path, &[], body).await?.typed()
     }
 
@@ -293,7 +350,8 @@ impl Client {
         path: &str,
         query: &impl Serialize,
     ) -> Result<T, Error> {
-        let q = serde_urlencoded::to_string(query).map_err(|e| Error::local(e.to_string()))?;
+        let q = serde_urlencoded::to_string(query)
+            .map_err(|error| Error::caused_by(error.to_string(), error))?;
         let path = if q.is_empty() {
             path.to_string()
         } else {
@@ -323,7 +381,7 @@ impl Client {
     pub async fn download(
         &self,
         path: &str,
-        out: &mut dyn Write,
+        out: &mut (impl AsyncWrite + Unpin + Send),
     ) -> Result<http::response::Parts, Error> {
         let req = self.request(Method::GET, path, &[], None)?;
         let (parts, mut body) = self.open(req).await?.into_parts();
@@ -333,14 +391,12 @@ impl Client {
                 headers: parts.headers,
                 body: body.read_to_end(MAX_BODY).await.unwrap_or_default(),
             };
-            self.check(&reply)?;
-            unreachable!("check fails for a status other than 2xx");
+            return Err(self.status_error(&reply));
         }
-        while let Some(data) = body.chunk().await.map_err(Error::local)? {
-            out.write_all(&data)
-                .map_err(|e| Error::local(e.to_string()))?;
+        while let Some(data) = body.chunk().await? {
+            out.write_all(&data).await?;
         }
-        out.flush().map_err(|e| Error::local(e.to_string()))?;
+        out.flush().await?;
         Ok(parts)
     }
 
@@ -367,7 +423,7 @@ impl Client {
             return self.check(&reply);
         }
         let mut pending = Vec::new();
-        while let Some(data) = body.chunk().await.map_err(Error::local)? {
+        while let Some(data) = body.chunk().await? {
             pending.extend_from_slice(&data);
             while let Some(end) = pending.iter().position(|b| *b == b'\n') {
                 let line: Vec<u8> = pending.drain(..=end).collect();
@@ -688,8 +744,8 @@ mod tests {
             resource_path("家", "note/x").unwrap(),
             "/api/spaces/%E5%AE%B6/resources/note/x"
         );
-        assert!(resource_path("s", "note").is_err());
-        assert!(resource_path("s", "note/../x").is_err());
+        resource_path("s", "note").unwrap_err();
+        resource_path("s", "note/../x").unwrap_err();
     }
 
     #[test]
@@ -705,5 +761,49 @@ mod tests {
             ..t::ListQuery::default()
         };
         assert_eq!(serde_urlencoded::to_string(&q).unwrap(), "type=note&page=1");
+    }
+}
+
+#[cfg(test)]
+mod download_tests {
+    use super::*;
+    use tokio::io::AsyncReadExt as _;
+
+    #[tokio::test]
+    async fn not_modified_is_a_download_error_and_the_future_is_send() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                request.push(stream.read_u8().await.unwrap());
+            }
+            stream
+                .write_all(b"HTTP/1.1 304 Not Modified\r\nConnection: close\r\n\r\n")
+                .await
+                .unwrap();
+        });
+        let client = Client::new(url, String::new(), false);
+        let download = tokio::spawn(async move {
+            let mut output = Vec::new();
+            let error = client.download("/export", &mut output).await.unwrap_err();
+            assert_eq!(error.status, Some(StatusCode::NOT_MODIFIED));
+            assert_eq!(output, [] as [u8; 0]);
+        });
+        download.await.unwrap();
+        server.await.unwrap();
+    }
+
+    #[test]
+    fn malformed_response_preserves_the_json_error() {
+        use std::error::Error as _;
+        let reply = Reply {
+            status: StatusCode::OK,
+            headers: http::HeaderMap::new(),
+            body: b"{".to_vec(),
+        };
+        let error = reply.typed::<t::Space>().unwrap_err();
+        assert!(error.source().unwrap().is::<serde_json::Error>());
     }
 }

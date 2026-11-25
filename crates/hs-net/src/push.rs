@@ -336,11 +336,11 @@ mod tests {
 
     #[test]
     fn rejects_bad_keys() {
-        assert!(encrypt("AAAA", &b64([0; 16]), b"x").is_err());
-        assert!(encrypt("!!", "!!", b"x").is_err());
+        encrypt("AAAA", &b64([0; 16]), b"x").unwrap_err();
+        encrypt("!!", "!!", b"x").unwrap_err();
         let mut point = vec![4u8];
         point.extend_from_slice(&[1; 64]); // Not on the curve.
-        assert!(encrypt(&b64(&point), &b64([0; 16]), b"x").is_err());
+        encrypt(&b64(&point), &b64([0; 16]), b"x").unwrap_err();
     }
 
     fn check_jwt(vapid: &Vapid, header: &str) -> serde_json::Value {
@@ -403,9 +403,9 @@ mod tests {
         assert_eq!(claims["exp"], 1000 + VAPID_LIFETIME);
         assert_eq!(decrypt(receiver, &ua_public, &auth, req.body()), b"hi");
 
-        assert!(request(&serde_json::json!({}), b"", &vapid, "x", 0).is_err());
+        request(&serde_json::json!({}), b"", &vapid, "x", 0).unwrap_err();
         let mut plain = sub.clone();
         plain["endpoint"] = "http://push.example.net/x".into();
-        assert!(request(&plain, b"", &vapid, "x", 0).is_err());
+        request(&plain, b"", &vapid, "x", 0).unwrap_err();
     }
 }

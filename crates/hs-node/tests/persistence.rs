@@ -31,7 +31,9 @@ async fn journal_failure_does_not_advance_state_or_acknowledge_a_retry() {
     fs::rename(&tail, &backup).unwrap();
     fs::create_dir(&tail).unwrap();
 
-    assert!(node.submit(&id, &proposal, Some(payload)).await.is_err());
+    node.submit(&id, &proposal, Some(payload))
+        .await
+        .unwrap_err();
     assert!(node.get(&id, "note/first").await.unwrap().is_none());
     assert_eq!(
         node.entries(&id, Some(0), 10).await.unwrap(),
@@ -89,7 +91,9 @@ async fn index_failure_resumes_on_retry_without_a_duplicate_entry() {
         )
         .unwrap();
 
-    assert!(node.submit(&space, &proposal, Some(b"{}")).await.is_err());
+    node.submit(&space, &proposal, Some(b"{}"))
+        .await
+        .unwrap_err();
     assert_eq!(node.entries(&space, Some(0), 10).await.unwrap().len(), 1);
     assert!(
         node.index
@@ -109,7 +113,7 @@ async fn index_failure_resumes_on_retry_without_a_duplicate_entry() {
         1
     );
     assert_eq!(events.try_recv().unwrap().seq, 1);
-    assert!(events.try_recv().is_err());
+    events.try_recv().unwrap_err();
     assert_eq!(node.entries(&space, Some(0), 10).await.unwrap().len(), 1);
     assert!(
         node.index
@@ -156,7 +160,7 @@ async fn segment_manifest_failure_can_resume_without_rewriting_the_entry() {
             None,
         )
         .unwrap();
-    assert!(node.submit(&id, &signed, Some(b"{}")).await.is_err());
+    node.submit(&id, &signed, Some(b"{}")).await.unwrap_err();
     let count = hs_node::SEGMENT_ENTRIES;
     assert_eq!(
         node.entries(&id, None, count + 1).await.unwrap().len(),

@@ -7,7 +7,7 @@
 //! It is for keeping and for reading with other tools; 0.1.0 does not restore
 //! a node from it. `hs ctl restore` brings a node back from a replica.
 
-use std::io::{BufWriter, Read as _, Write};
+use std::io::{self, BufWriter, Read as _, Write};
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
@@ -32,27 +32,26 @@ fn skipped(rel: &Path) -> bool {
 }
 
 /// Every regular file under `dir`, relative to it, sorted.
-fn files(dir: &Path) -> Vec<PathBuf> {
+fn files(dir: &Path) -> io::Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     let mut stack = vec![PathBuf::new()];
     while let Some(rel) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(dir.join(&rel)) else {
-            continue;
-        };
-        for e in rd.flatten() {
+        for e in std::fs::read_dir(dir.join(&rel))? {
+            let e = e?;
             let r = rel.join(e.file_name());
             if skipped(&r) {
                 continue;
             }
-            match e.file_type() {
-                Ok(t) if t.is_dir() => stack.push(r),
-                Ok(t) if t.is_file() => out.push(r),
-                _ => {}
+            let kind = e.file_type()?;
+            if kind.is_dir() {
+                stack.push(r);
+            } else if kind.is_file() {
+                out.push(r);
             }
         }
     }
     out.sort();
-    out
+    Ok(out)
 }
 
 /// Write the archive of a data directory to `out`.
@@ -62,10 +61,8 @@ fn files(dir: &Path) -> Vec<PathBuf> {
 /// Returns an I/O error if a file cannot be read or the archive cannot be written.
 pub fn archive(dir: &Path, out: impl Write) -> std::io::Result<()> {
     let mut tar = tar::Builder::new(out);
-    for rel in files(dir) {
-        let Ok(f) = std::fs::File::open(dir.join(&rel)) else {
-            continue;
-        };
+    for rel in files(dir)? {
+        let f = std::fs::File::open(dir.join(&rel))?;
         let meta = f.metadata()?;
         let mut h = tar::Header::new_gnu();
         h.set_entry_type(tar::EntryType::Regular);
@@ -77,24 +74,30 @@ pub fn archive(dir: &Path, out: impl Write) -> std::io::Result<()> {
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map_or(0, |d| d.as_secs()),
         );
-        // Exactly the size in the header, even if the file changes meanwhile.
-        let data = f
-            .take(meta.len())
-            .chain(std::io::repeat(0))
-            .take(meta.len());
-        tar.append_data(&mut h, Path::new("homeserver").join(&rel), data)?;
+        let mut data = f.take(meta.len());
+        tar.append_data(&mut h, Path::new("homeserver").join(&rel), &mut data)?;
+        if data.limit() != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("{} shrank during export", rel.display()),
+            ));
+        }
     }
     tar.into_inner()?.flush()
 }
 
 /// Sends what is written as chunks over a channel.
-struct ChannelWriter(mpsc::Sender<Bytes>);
+struct ChannelWriter(mpsc::Sender<io::Result<Bytes>>);
 
 impl Write for ChannelWriter {
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "a dropped receiver returns the confidential chunk rather than a failure cause"
+    )]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.0
-            .blocking_send(Bytes::copy_from_slice(buf))
-            .map_err(|_| std::io::Error::other("client went away"))?;
+            .blocking_send(Ok(Bytes::copy_from_slice(buf)))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "client went away"))?;
         Ok(buf.len())
     }
 
@@ -111,10 +114,19 @@ impl Write for ChannelWriter {
 pub fn response(api: &Api) -> Result {
     let dir = api.node.dir().to_path_buf();
     let (tx, rx) = mpsc::channel(8);
-    tokio::task::spawn_blocking(move || {
-        let _ = archive(&dir, BufWriter::with_capacity(CHUNK, ChannelWriter(tx)));
+    let writer = ChannelWriter(tx.clone());
+    let worker =
+        tokio::task::spawn_blocking(move || archive(&dir, BufWriter::with_capacity(CHUNK, writer)));
+    tokio::spawn(async move {
+        if let Err(error) = worker
+            .await
+            .map_err(io::Error::other)
+            .and_then(|result| result)
+        {
+            let _ = tx.send(Err(error)).await;
+        }
     });
-    let mut r = Response::new(Body::Stream(rx));
+    let mut r = Response::new(Body::Fallible(rx));
     *r.status_mut() = StatusCode::OK;
     set_header(&mut r, header::CONTENT_TYPE, "application/x-tar");
     let date = bitwarden::iso(hs_node::now_ms());
@@ -139,7 +151,7 @@ mod tests {
         std::fs::write(dir.join("keys/node"), b"secret").unwrap();
         let mut out = Vec::new();
         archive(&dir, &mut out).unwrap();
-        let mut a = tar::Archive::new(&out[..]);
+        let mut a = tar::Archive::new(out.as_slice());
         let mut names: Vec<String> = a
             .entries()
             .unwrap()

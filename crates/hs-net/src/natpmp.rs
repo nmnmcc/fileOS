@@ -423,6 +423,10 @@ async fn map_at(
     }
 }
 
+#[expect(
+    clippy::map_err_ignore,
+    reason = "the operating system RNG failure is opaque in ring"
+)]
 fn new_nonce() -> Result<[u8; 12], Error> {
     let mut nonce = [0u8; 12];
     SystemRandom::new()

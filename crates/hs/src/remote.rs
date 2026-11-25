@@ -120,7 +120,9 @@ pub fn normalize_url(url: &str) -> Res<String> {
     } else {
         format!("https://{url}")
     };
-    let uri: http::Uri = url.parse().map_err(|_| format!("not a URL: {url}"))?;
+    let uri: http::Uri = url
+        .parse()
+        .map_err(|error| format!("not a URL: {url}: {error}"))?;
     if !matches!(uri.scheme_str(), Some("http" | "https")) || uri.host().is_none() {
         return Err(format!("not an http(s) URL: {url}"));
     }
@@ -263,7 +265,7 @@ fn without_echo<T>(read: impl FnOnce() -> T) -> T {
 // Requests
 
 /// A node reached over HTTP, with a token.
-pub use hs_api::client::Client as Server;
+pub use hs_client::Client as Server;
 
 #[cfg(test)]
 mod tests {
@@ -287,7 +289,7 @@ mod tests {
             normalize_url("http://hs.example.org").unwrap(),
             "http://hs.example.org"
         );
-        assert!(normalize_url("ftp://x").is_err());
-        assert!(normalize_url("https://x/api").is_err());
+        normalize_url("ftp://x").unwrap_err();
+        normalize_url("https://x/api").unwrap_err();
     }
 }
