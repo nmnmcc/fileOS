@@ -1,0 +1,7 @@
+# The single source of truth for the Rust toolchain.
+# Used by rustup, devenv (devenv.nix) and CI.
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy", "rust-analyzer", "rust-src"]
+# Portable crates are also checked for the browser (see CONTRIBUTING.md).
+targets = ["wasm32-unknown-unknown"]

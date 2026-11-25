@@ -1,0 +1,17 @@
+{
+  "name": "homeserver-docs",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "3.7.6",
+    "@astrojs/starlight": "0.43.1",
+    "@formatjs/intl-localematcher": "0.10.2",
+    "astro": "7.4.13"
+  }
+}

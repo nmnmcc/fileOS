@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "hs-store"
+description = "Derived index in SQLite: current resources, links, search and places"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

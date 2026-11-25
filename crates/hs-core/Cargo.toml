@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "hs-core"
+description = "Object model shared by every homeserver component"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Built for wasm32-unknown-unknown too; see CONTRIBUTING.md.
+[package.metadata.hs]
+portable = true
+
+[dependencies]
+
+[lints]
+workspace = true

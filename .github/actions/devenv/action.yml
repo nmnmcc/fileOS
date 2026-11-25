@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: Set up devenv
+description: Install Nix and devenv, using the public devenv binary cache.
+
+runs:
+  using: composite
+  steps:
+    - uses: cachix/install-nix-action@v31
+    - uses: cachix/cachix-action@v16
+      with:
+        name: devenv
+    - name: Install devenv
+      shell: bash
+      run: nix profile install nixpkgs#devenv

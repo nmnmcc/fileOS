@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+
+[package]
+name = "hs-plugin-api"
+description = "Plugin Interface for homeserver: types and bindings for plugins"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# Permissive on purpose: plugins link this crate, and the homeserver Plugin Exception
+# lets them use any license. See PLUGIN-EXCEPTION.md.
+license = "MIT OR Apache-2.0"
+publish.workspace = true
+
+# Built for wasm32-unknown-unknown too; see CONTRIBUTING.md.
+[package.metadata.hs]
+portable = true
+
+[dependencies]
+
+[lints]
+workspace = true

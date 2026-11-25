@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Python is used only for the helper scripts in scripts/. Not a package.
+
+[project]
+name = "homeserver-scripts"
+version = "0.0.0"
+description = "Development and CI scripts for homeserver"
+license = "AGPL-3.0-only"
+requires-python = "==3.14.*"
+dependencies = ["typer>=0.29.2"]
+
+[dependency-groups]
+dev = ["basedpyright>=1.40.2"]
+
+[tool.uv]
+package = false
+
+[tool.basedpyright]
+include = ["scripts"]
+# pyright's "standard" mode: the type-safety bar every script must pass.
+typeCheckingMode = "standard"
+pythonVersion = "3.14"

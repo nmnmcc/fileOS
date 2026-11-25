@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "hs"
+description = "The homeserver binary: one program, one data directory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hs-core.workspace = true
+hs-identity.workspace = true
+hs-store.workspace = true
+hs-net.workspace = true
+hs-node.workspace = true
+hs-plugin-api.workspace = true
+hs-plugin-host.workspace = true
+
+[lints]
+workspace = true

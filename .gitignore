@@ -1,0 +1,19 @@
+/target
+
+# devenv and direnv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+.direnv
+
+# docs (Astro Starlight)
+/docs/node_modules
+/docs/dist
+/docs/.astro
+
+# release artifacts (scripts/artifacts.py)
+/artifacts
+
+# Python (uv creates .venv when used without devenv)
+/.venv
+__pycache__/

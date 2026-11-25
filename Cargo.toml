@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.100"
+license = "AGPL-3.0-only"
+publish = false
+
+# Internal crates. Dependencies flow downward only; see CONTRIBUTING.md.
+# Every external dependency must be added here, with `default-features = false`,
+# after review (see "Dependency policy" in CONTRIBUTING.md).
+[workspace.dependencies]
+hs-core = { path = "crates/hs-core" }
+hs-identity = { path = "crates/hs-identity" }
+hs-store = { path = "crates/hs-store" }
+hs-net = { path = "crates/hs-net" }
+hs-node = { path = "crates/hs-node" }
+hs-plugin-api = { path = "crates/hs-plugin-api" }
+hs-plugin-host = { path = "crates/hs-plugin-host" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+# Compile time is a feature. These settings keep debug builds and links fast.
+[profile.dev]
+debug = "line-tables-only"
+
+# Dependencies are compiled once and cached; light optimization makes tests faster.
+[profile.dev.package."*"]
+opt-level = 1
+
+[profile.release]
+lto = "thin"
+strip = true
