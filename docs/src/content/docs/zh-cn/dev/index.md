@@ -23,4 +23,4 @@ description: 写给开发 homeserver 或基于它开发的人。
 - [架构](architecture/)：homeserver 怎样构建，选了哪些技术，以及为什么。
 - [值得学习的项目](prior-art/)：我们研究的项目，以及从每个项目中学什么。
 
-原则优先。仓库中的 README 按优先级列出了这些原则，每项修改都以它们为准。
+原则优先。[宣言](https://github.com/nmnmcc/homeserver/blob/main/MANIFESTO.zh-CN.md)按优先级列出了这些原则，每项修改都以它们为准。

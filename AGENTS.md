@@ -5,7 +5,7 @@ This file is for AI coding agents working on homeserver. `CLAUDE.md` is a link t
 ## Language
 
 - All English that the project puts out is in **Basic English**: docs, README, CONTRIBUTING, CLI help, error messages, code comments, commit messages, pull requests, change files and release notes. Use short sentences and common words. Names of things (Rust, SQLite, OpenID Connect) stay as they are.
-- Docs are in English and Simplified Chinese with the same file names: `docs/src/content/docs/en-us/` and `docs/src/content/docs/zh-cn/`. A change to one is also made to the other. The same is true of `README.md` / `README.zh-CN.md`, `CONTRIBUTING.md` / `CONTRIBUTING.zh-CN.md` and `SECURITY.md` / `SECURITY.zh-CN.md`.
+- Docs are in English and Simplified Chinese with the same file names: `docs/src/content/docs/en-us/` and `docs/src/content/docs/zh-cn/`. A change to one is also made to the other. The same is true of `README.md` / `README.zh-CN.md`, `MANIFESTO.md` / `MANIFESTO.zh-CN.md`, `CONTRIBUTING.md` / `CONTRIBUTING.zh-CN.md` and `SECURITY.md` / `SECURITY.zh-CN.md`.
 
 ## Commands
 

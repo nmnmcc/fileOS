@@ -4,7 +4,7 @@
 
 Talk is as welcome as code. Open an issue to question a principle, a design decision or anything in this file.
 
-Read the [README](README.md) first. We judge contributions by its principles.
+Read the [manifesto](MANIFESTO.md) first. We judge contributions by its principles.
 
 ## Language: Basic English
 

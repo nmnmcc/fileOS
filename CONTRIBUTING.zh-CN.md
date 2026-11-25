@@ -4,7 +4,7 @@
 
 讨论和代码同样欢迎：可以开 issue 质疑某条原则、某个设计决定或本文件中的任何内容。
 
-请先阅读 [README](README.zh-CN.md)，贡献会对照其中的原则评判。
+请先阅读[宣言](MANIFESTO.zh-CN.md)，贡献会对照其中的原则评判。
 
 ## 语言：Basic English
 
