@@ -31,5 +31,5 @@ permission model.
 - [Projects to learn from](prior-art/): projects we study, and what we take
   from each.
 
-Principles come first. The README in the repository lists them, the most
+Principles come first. The [manifesto](https://github.com/nmnmcc/homeserver/blob/main/MANIFESTO.md) lists them, the most
 important first. We judge every change by them.
