@@ -1,6 +1,6 @@
 # Notes for coding agents
 
-This file is for AI coding agents working on homeserver. `CLAUDE.md` is a link to it. People should read [CONTRIBUTING.md](CONTRIBUTING.md); everything here comes from it, and CONTRIBUTING.md is right when the two are different.
+This file is for AI coding agents working on homeserver. `CLAUDE.md` is a link to it. People should read [CONTRIBUTING.md](CONTRIBUTING.md). Everything here except "Worktrees" comes from it, and CONTRIBUTING.md is right when the two are different.
 
 ## Language
 
@@ -21,6 +21,21 @@ The devenv shell (`direnv allow`, or `devenv shell -- <command>`) has every tool
 | `cargo test -p <crate>` | Tests for one crate, while working.                                 |
 
 `docs/openapi.json` is made from the API types, and a test in `hs-api` checks it. After changing the REST API, make it again with `HS_UPDATE_OPENAPI=1 cargo test -p hs-api --test openapi`.
+
+## Worktrees
+
+The main folder (the repository root) always stays on `main`. Never switch its branch, and do not make commits there. Someone else may be working in it.
+
+For every piece of work, make a worktree in `.worktrees/` from an up-to-date `main`, and do all the work, the commits and the push there:
+
+```sh
+git fetch origin
+git worktree add -b <branch> .worktrees/<name> origin/main
+```
+
+The `<name>` of the folder says in full what the work is, for example `.worktrees/remove-built-in-acme-certificates`, not `.worktrees/fix`. `.worktrees/` is in `.gitignore`.
+
+When the work is done (the pull request is merged or closed, or the work is dropped), take the worktree away with `git worktree remove .worktrees/<name>`, then delete the local branch.
 
 ## How changes get in
 
