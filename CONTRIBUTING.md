@@ -6,6 +6,14 @@ Discussion is as welcome as code: open an issue to question a principle, a desig
 
 Read the [README](README.md) first; contributions are judged against its principles.
 
+## Language: Basic English
+
+All English that the project itself puts out is in [Basic English](https://en.wikipedia.org/wiki/Basic_English): the README, the documentation, this file, help for the command line, error messages, comments in the code, commit messages, release notes and the GitHub templates. Basic English uses short sentences and a small number of common words, so it is easy to read for people whose first language is not English, and it goes well through machine translation. Names of things (Rust, SQLite, OpenID Connect) and words for things that have no simpler name stay as they are.
+
+For your issues, pull requests and comments, we suggest Basic English, but it is not a rule. Writing in Chinese is also good. When your pull request changes text that the project puts out, the maintainers may make changes to the wording before it is merged.
+
+Some older text is not yet in Basic English. Changes that put it into Basic English are welcome.
+
 ## Development environment
 
 **We recommend [devenv](https://devenv.sh) with [direnv](https://direnv.net). This is a recommendation, not a requirement.** Any setup works; only CI decides whether a change is accepted.
@@ -156,3 +164,50 @@ Without devenv, run the scripts directly. `check` expects `treefmt` on `PATH`, s
 uv run scripts/check.py
 uv run scripts/budget.py
 ```
+
+## How changes get in
+
+`main` is the only long-lived branch. Nobody, not even a maintainer, pushes to it directly: every change comes in through a pull request.
+
+1. Make a branch from `main` in your fork (or in this repository, if you are a maintainer).
+2. Make your commits, each with a sign-off. If users will see the change, make a change file (see below).
+3. Open a pull request into `main`. GitHub asks the code owners for a review.
+4. A pull request may be merged when the `ci` check is green and every comment thread is resolved. It is merged with "Squash and merge": `main` gets one commit for each pull request, with the title of the pull request as its first line. The branch is deleted after the merge.
+
+The `ci` check is green only when every job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is green: `check`, `budget`, `artifacts` and, for pull requests, `dco`. A pull request that changes `docs/` also makes the documentation site as a test. After a merge into `main`, the site goes to <https://hs.nmnm.cc/>.
+
+Dependabot opens pull requests for dependency updates: every week for GitHub Actions, and every month for Cargo, npm and uv. They go through the same checks. A major update is checked like a new dependency (see "Dependency policy").
+
+## Changes and releases
+
+We keep the changelog with [Knope](https://knope.tech). Knope is in the devenv shell; without Nix, get it with `cargo install --locked knope`.
+
+### Change files
+
+Every pull request with a change that users will see also gives a change file in `.changeset/`. Make one with:
+
+```sh
+knope document-change
+```
+
+Knope asks for the type of change and a short summary:
+
+- `major`: a breaking change, for example a command line option that is no longer there, or a change to a data format. Before 1.0, this gives a new minor version (0.1.0 to 0.2.0).
+- `minor`: a new feature.
+- `patch`: a fix.
+
+The summary is the heading of the change. Under it, you may say more in a few short paragraphs, for users, not for developers. Write it in Basic English. Commit the file with the rest of the pull request. Changes that users will not see, such as tests, refactoring or CI, do not need a change file.
+
+Do not make changes to `CHANGELOG.md` by hand. Knope puts the change files into it at release time.
+
+### Making a release
+
+A maintainer makes a release from an up-to-date `main` with no uncommitted changes:
+
+```sh
+knope prepare-release
+```
+
+Knope works out the new version from the change files. It puts that version in `Cargo.toml` (also for `hs-client`), puts the change files into `CHANGELOG.md` under the new version, and deletes them. Then [`scripts/release_pr.py`](scripts/release_pr.py) makes the branch `release/v<version>` with one commit, and opens a pull request.
+
+When that pull request is merged, the [Release workflow](.github/workflows/release.yml) sees a version in `Cargo.toml` that has no tag. It makes the release files (`hs-<version>-linux-x86_64.tar.gz`, the documentation, and `SHA256SUMS`) and runs `knope release`. Knope makes the tag `v<version>` and the GitHub release, with the part of `CHANGELOG.md` for that version as the release notes.

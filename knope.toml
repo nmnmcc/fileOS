@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Changes and releases with Knope (https://knope.tech). See "Changes and
+# releases" in CONTRIBUTING.md.
+#
+#   knope document-change   make a change file in .changeset/
+#   knope prepare-release   put the change files into CHANGELOG.md, give a new
+#                           version, and open a release pull request
+#
+# When a release pull request is merged, .github/workflows/release.yml makes
+# the tag and the GitHub release.
+
+[package]
+versioned_files = [
+  "Cargo.toml",
+  # The version other crates use to get hs-client.
+  { path = "Cargo.toml", dependency = "hs-client" },
+]
+changelog = "CHANGELOG.md"
+assets = "release/*"
+
+[[workflows]]
+name = "document-change"
+
+[[workflows.steps]]
+type = "CreateChangeFile"
+
+[[workflows]]
+name = "prepare-release"
+
+[[workflows.steps]]
+type = "PrepareRelease"
+
+[[workflows.steps]]
+type = "Command"
+# Make the branch, commit and pull request (scripts/release_pr.py).
+command = "uv run scripts/release_pr.py NEW_VERSION"
+variables = { "NEW_VERSION" = "Version" }
+
+[[workflows]]
+name = "release"
+
+[[workflows.steps]]
+type = "Release"
+
+[github]
+owner = "nmnmcc"
+repo = "homeserver"

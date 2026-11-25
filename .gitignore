@@ -11,9 +11,12 @@ devenv.local.yaml
 /docs/dist
 /docs/.astro
 
-# release artifacts (scripts/artifacts.py)
+# release artifacts (scripts/artifacts.py, .github/workflows/release.yml)
 /artifacts
+/release
 
 # Python (uv creates .venv when used without devenv)
 /.venv
 __pycache__/
+
+/.worktrees

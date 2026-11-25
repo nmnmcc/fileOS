@@ -63,6 +63,7 @@ in
     pkgs.cargo-llvm-lines
     pkgs.git
     pkgs.gh
+    pkgs.knope # change files and releases: knope.toml
   ];
 
   # One command formats every file in the repository: `treefmt`.

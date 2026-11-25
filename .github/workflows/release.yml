@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Makes a release when main has a version with no tag yet: this happens when
+# a release pull request from `knope prepare-release` is merged. Knope makes
+# the tag v<version> and the GitHub release. The release notes are the part of
+# CHANGELOG.md for that version. See "Changes and releases" in CONTRIBUTING.md.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      new: ${{ steps.version.outputs.new }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: version
+    if: needs.version.outputs.new == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/devenv
+      - run: devenv shell -- artifacts
+      - name: Package
+        run: |
+          name="hs-$VERSION-linux-x86_64"
+          mkdir "$name" release
+          cp -P artifacts/hs artifacts/hsctl LICENSE PLUGIN-EXCEPTION.md README.md CHANGELOG.md "$name/"
+          tar -czf "release/$name.tar.gz" "$name"
+          tar -czf "release/homeserver-docs-$VERSION.tar.gz" -C artifacts docs
+          (cd release && sha256sum ./*.tar.gz > SHA256SUMS)
+      - run: devenv shell -- knope release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

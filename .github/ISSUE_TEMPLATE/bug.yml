@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: Bug
+description: Something does not do what the documentation says.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Write in English or Chinese. For a security problem, send a
+        [private report](https://github.com/nmnmcc/homeserver/security/advisories/new) in place of an issue.
+  - type: textarea
+    id: what
+    attributes:
+      label: What took place
+      description: What you did, what you were hoping for, and what took place in its place.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it take place again
+      placeholder: |
+        1. hs ctl init
+        2. hs ctl serve
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `hs --version`, or the commit you made it from.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Machine and system
+      placeholder: Debian 13, x86_64
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The useful part of the output. Take out tokens, keys and private details first.
+      render: text

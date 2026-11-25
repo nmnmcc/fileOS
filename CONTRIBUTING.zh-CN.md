@@ -6,6 +6,14 @@
 
 请先阅读 [README](README.zh-CN.md)，贡献会对照其中的原则评判。
 
+## 语言：Basic English
+
+项目自身发布的英文一律使用 [Basic English](https://zh.wikipedia.org/wiki/基本英语)，包括 README、文档、本文件、命令行帮助、错误信息、代码注释、提交信息、发布说明和 GitHub 模板。Basic English 句子短、只用少量常见词，母语不是英语的读者容易读懂，机器翻译效果也好。专有名称（Rust、SQLite、OpenID Connect）以及没有更简单说法的术语保持原样。
+
+我们建议你在 issue、PR 和评论中也使用 Basic English，但不作要求，用中文写同样可以。如果你的 PR 修改了项目发布的文字，维护者可能在合并前调整措辞。
+
+部分旧文字还没有改成 Basic English，欢迎提交改写。
+
 ## 开发环境
 
 **我们推荐使用 [devenv](https://devenv.sh) 配合 [direnv](https://direnv.net)。这是推荐做法，不是强制做法。** 任何环境都可以，改动能否合并只由 CI 决定。
@@ -156,3 +164,50 @@ budget   # 编译时间预算
 uv run scripts/check.py
 uv run scripts/budget.py
 ```
+
+## 变更如何进入 main
+
+`main` 是唯一的长期分支。任何人（包括维护者）都不直接推送，所有改动都通过 PR 进入。
+
+1. 从 `main` 建分支：在你的 fork 中，维护者也可以在本仓库中。
+2. 提交时每个 commit 都要签署（sign-off）。用户能感知的改动要附一个变更文件（见下文）。
+3. 向 `main` 发起 PR，GitHub 会自动请求代码所有者审查。
+4. `ci` 检查通过、所有评论都已解决后即可合并。只用 “Squash and merge”：每个 PR 在 `main` 上对应一个提交，第一行是 PR 标题。合并后自动删除分支。
+
+只有 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 中的所有任务（`check`、`budget`、`artifacts`，PR 还有 `dco`）都通过，`ci` 才会通过。修改了 `docs/` 的 PR 还会试构建文档站点；合并到 `main` 后，站点发布到 <https://hs.nmnm.cc/>。
+
+Dependabot 会为依赖更新开 PR：GitHub Actions 每周一次，Cargo、npm 和 uv 每月一次。这些 PR 走同样的检查。主版本升级按新增依赖的标准审查（见“依赖政策”）。
+
+## 变更记录与发布
+
+我们用 [Knope](https://knope.tech) 维护变更记录。devenv shell 中已包含 Knope；不用 Nix 时可执行 `cargo install --locked knope` 安装。
+
+### 变更文件
+
+每个包含用户可感知改动的 PR 都要在 `.changeset/` 中附一个变更文件，用下面的命令创建：
+
+```sh
+knope document-change
+```
+
+Knope 会询问改动类型和一句摘要：
+
+- `major`：不兼容的改动，例如删除了命令行选项、修改了数据格式。1.0 之前，这会提升次版本号（0.1.0 到 0.2.0）。
+- `minor`：新功能。
+- `patch`：修复。
+
+摘要会成为这条改动的标题，下面可以再写几段简短说明，面向用户而不是开发者。变更文件用 Basic English 写，并和 PR 的其他改动一起提交。测试、重构、CI 等用户感知不到的改动不需要变更文件。
+
+不要手动编辑 `CHANGELOG.md`，发布时由 Knope 把变更文件写进去。
+
+### 发布新版本
+
+维护者在最新且没有未提交改动的 `main` 上执行：
+
+```sh
+knope prepare-release
+```
+
+Knope 根据变更文件算出新版本号，写入 `Cargo.toml`（包括 `hs-client` 的版本），把变更文件写进 `CHANGELOG.md` 中新版本的小节，然后删除这些文件。随后 [`scripts/release_pr.py`](scripts/release_pr.py) 建立分支 `release/v<版本>`，提交一个 commit 并开 PR。
+
+该 PR 合并后，[Release 工作流](.github/workflows/release.yml) 发现 `Cargo.toml` 中的版本还没有对应标签，于是构建发布文件（`hs-<版本>-linux-x86_64.tar.gz`、文档和 `SHA256SUMS`）并执行 `knope release`。Knope 创建标签 `v<版本>` 和 GitHub Release，发布说明取自 `CHANGELOG.md` 中该版本的小节。

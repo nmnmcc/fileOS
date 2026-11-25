@@ -1,0 +1,40 @@
+# Notes for coding agents
+
+This file is for AI coding agents working on homeserver. `CLAUDE.md` is a link to it. People should read [CONTRIBUTING.md](CONTRIBUTING.md); everything here comes from it, and CONTRIBUTING.md is right when the two are different.
+
+## Language
+
+- All English that the project puts out is in **Basic English**: docs, README, CONTRIBUTING, CLI help, error messages, code comments, commit messages, pull requests, change files and release notes. Use short sentences and common words. Names of things (Rust, SQLite, OpenID Connect) stay as they are.
+- Docs are in English and Simplified Chinese with the same file names: `docs/src/content/docs/en-us/` and `docs/src/content/docs/zh-cn/`. A change to one is also made to the other. The same is true of `README.md` / `README.zh-CN.md`, `CONTRIBUTING.md` / `CONTRIBUTING.zh-CN.md` and `SECURITY.md` / `SECURITY.zh-CN.md`.
+
+## Commands
+
+The devenv shell (`direnv allow`, or `devenv shell -- <command>`) has every tool. Without it, use `uv run scripts/<name>.py`.
+
+| Command                 | What it does                                                        |
+| ----------------------- | ------------------------------------------------------------------- |
+| `treefmt`               | Formats every file. Run it before every commit.                     |
+| `check`                 | Formatting, Clippy, tests, Rustdoc, cargo-deny, wasm, Python, MSRV. |
+| `budget`                | The compile-time budget. Run it after changes to dependencies.      |
+| `docs`                  | Shows the documentation site.                                       |
+| `knope document-change` | Makes a change file in `.changeset/`.                               |
+| `cargo test -p <crate>` | Tests for one crate, while working.                                 |
+
+`docs/openapi.json` is made from the API types, and a test in `hs-api` checks it. After changing the REST API, make it again with `HS_UPDATE_OPENAPI=1 cargo test -p hs-api --test openapi`.
+
+## How changes get in
+
+- Never push to `main`; the branch rules do not let anyone do it. Make a branch, commit, push, and open a pull request into `main`. Pull requests are squashed when merged, so the title of the pull request becomes the commit message.
+- Every commit has a sign-off: `git commit -s`. The `dco` check fails without it.
+- A pull request may be merged only when the `ci` check is green.
+- For a change that users will see, add a change file in `.changeset/` (`knope document-change` makes one; the type is `major`, `minor` or `patch`). Never make changes to `CHANGELOG.md` or the version in `Cargo.toml` by hand: `knope prepare-release` does that at release time.
+
+## Rules for the code
+
+- Compile time is a feature. A pull request over the budget is not merged. Keep generics from spreading (inner-function pattern), use `dyn Trait` at crate edges, use few procedural macros. No `async-trait`. No code generation in `build.rs`.
+- Every new external dependency needs a reason in the pull request and its cost to a clean build. Put it once in the root `Cargo.toml` under `[workspace.dependencies]` with `default-features = false`. One version of every crate. No C or C++ that needs cmake. TLS is rustls with `ring`.
+- Dependencies between crates go down only. `hs-core` uses no other homeserver crate; `hs-plugin-api` has no dependencies; `hs` stays thin. The layout is in CONTRIBUTING.md under "Workspace layout".
+- Crates with `portable = true` in `[package.metadata.hs]` must build for `wasm32-unknown-unknown`: no threads, files, sockets or clocks in them.
+- Protocol logic is sans-IO, so it runs in the simulation in `hs-sim`.
+- Mechanism, not policy: when code decides what should happen (whom to help, what to share, what to keep), make it a policy that can be replaced, with a default.
+- Every source file starts with an SPDX header: `// SPDX-License-Identifier: AGPL-3.0-only`, or `MIT OR Apache-2.0` in `crates/hs-plugin-api`.

@@ -1,45 +1,52 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Builds the documentation site and publishes it to GitHub Pages.
+# Makes the documentation site. For a pull request it only makes the site, as
+# a test. For a push to main it also puts the site on GitHub Pages.
 
 name: Docs
 
 on:
   push:
-    branches: [mvp-0.1]
+    branches: [main]
+    paths: [docs/**, .github/workflows/docs.yml]
+  pull_request:
     paths: [docs/**, .github/workflows/docs.yml]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# One deployment at a time; a newer push replaces a queued one.
 concurrency:
-  group: pages
+  group: docs-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
+    name: docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/devenv
       - id: pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
       - name: Build
         run: devenv shell -- bash -c 'cd docs && npm ci --no-fund --no-audit && npx astro build'
         env:
           DOCS_SITE_URL: ${{ steps.pages.outputs.origin }}
           DOCS_BASE: ${{ steps.pages.outputs.base_path }}
-      - uses: actions/upload-pages-artifact@v3
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
         with:
           path: docs/dist
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
