@@ -5,9 +5,10 @@ import sitemap from "@astrojs/sitemap";
 import starlight from "@astrojs/starlight";
 import starlightSidebarTopics from "starlight-sidebar-topics";
 
-const site = process.env.DOCS_SITE_URL;
+// An empty value, as in a pull request build, is the same as no value.
+const site = process.env.DOCS_SITE_URL || undefined;
 // The path the site is served under, such as /homeserver on GitHub Pages.
-const base = process.env.DOCS_BASE;
+const base = process.env.DOCS_BASE || undefined;
 const defaultLocale = "en-us";
 const locales = {
   "en-us": { label: "English", lang: "en-US" },
@@ -75,7 +76,7 @@ const topics = [
       page("dev/contributing", "Contributing", "参与贡献"),
       page("dev/api", "REST API", "REST API"),
       page("dev/architecture", "Architecture", "架构"),
-      page("dev/prior-art", "Prior art", "值得学习的项目"),
+      page("dev/prior-art", "Projects to learn from", "值得学习的项目"),
     ],
   },
 ];
