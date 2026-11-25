@@ -21,7 +21,7 @@ pub fn b64e(data: &[u8]) -> String {
 ///
 /// # Errors
 ///
-/// Returns an error for an invalid base64url string.
+/// Returns an error for a base64url string that is not valid.
 pub fn b64d(s: &str) -> Result<Vec<u8>> {
     URL_SAFE_NO_PAD
         .decode(s)
@@ -56,12 +56,12 @@ impl Alg {
     }
 }
 
-/// PKCS#8 v1 prefix for an Ed25519 private key; the 32-byte seed follows.
+/// PKCS#8 v1 prefix for an Ed25519 private key. The 32-byte seed comes after it.
 const ED25519_PKCS8_PREFIX: [u8; 16] = [
     0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
 ];
 
-/// A private signing key. Persist it with [`SigningKey::to_bytes`].
+/// A private signing key. Store it with [`SigningKey::to_bytes`].
 pub enum SigningKey {
     /// An ES256 key and its PKCS#8 document.
     Es256 {
@@ -90,7 +90,7 @@ impl SigningKey {
     ///
     /// # Errors
     ///
-    /// Returns an error if the key cannot be generated or parsed by the signing backend.
+    /// Returns an error if the signing backend cannot make or parse the key.
     #[expect(
         clippy::map_err_ignore,
         reason = "ring provides an opaque generation failure"
@@ -106,7 +106,7 @@ impl SigningKey {
     ///
     /// # Errors
     ///
-    /// Returns an error if the generated seed cannot be loaded by the signing backend.
+    /// Returns an error if the signing backend cannot load the new seed.
     pub fn generate_eddsa() -> Result<SigningKey> {
         SigningKey::eddsa_from_seed(&crate::random::<32>())
     }
@@ -115,7 +115,7 @@ impl SigningKey {
     ///
     /// # Errors
     ///
-    /// Returns an error if the PKCS #8 data is malformed or describes an incompatible key.
+    /// Returns an error if the PKCS #8 data is badly formed or is for a key of another kind.
     pub fn es256_from_pkcs8(pkcs8: &[u8]) -> Result<SigningKey> {
         let pair = EcdsaKeyPair::from_pkcs8(
             &signature::ECDSA_P256_SHA256_FIXED_SIGNING,
@@ -133,7 +133,7 @@ impl SigningKey {
     ///
     /// # Errors
     ///
-    /// Returns an error if the signing backend rejects the Ed25519 seed.
+    /// Returns an error if the signing backend does not accept the Ed25519 seed.
     pub fn eddsa_from_seed(seed: &[u8; 32]) -> Result<SigningKey> {
         let mut pkcs8 = ED25519_PKCS8_PREFIX.to_vec();
         pkcs8.extend_from_slice(seed);
@@ -144,7 +144,7 @@ impl SigningKey {
     ///
     /// # Errors
     ///
-    /// Returns an error if the PKCS #8 data is malformed or describes an incompatible key.
+    /// Returns an error if the PKCS #8 data is badly formed or is for a key of another kind.
     pub fn eddsa_from_pkcs8(pkcs8: &[u8]) -> Result<SigningKey> {
         let pair = Ed25519KeyPair::from_pkcs8_maybe_unchecked(pkcs8)
             .map_err(|e| Error(format!("bad Ed25519 key: {e}")))?;
@@ -161,15 +161,15 @@ impl SigningKey {
         }
     }
 
-    /// Load a key stored with [`SigningKey::to_bytes`], whatever its algorithm.
+    /// Load a key stored with [`SigningKey::to_bytes`], for any of its algorithms.
     ///
     /// # Errors
     ///
-    /// Returns an error if the stored algorithm or key bytes are invalid.
+    /// Returns an error if the stored algorithm or key bytes are not valid.
     pub fn from_bytes(pkcs8: &[u8]) -> Result<SigningKey> {
         SigningKey::es256_from_pkcs8(pkcs8)
             .or_else(|_| SigningKey::eddsa_from_pkcs8(pkcs8))
-            .map_err(|error| Error(format!("unrecognized signing key: {error}")))
+            .map_err(|error| Error(format!("unknown signing key: {error}")))
     }
 
     /// The key's algorithm.
@@ -201,7 +201,7 @@ impl SigningKey {
     ///
     /// # Errors
     ///
-    /// Returns an error if the signing backend cannot produce a signature.
+    /// Returns an error if the signing backend cannot make a signature.
     #[expect(
         clippy::map_err_ignore,
         reason = "ring reports signing failures as Unspecified"
@@ -216,12 +216,12 @@ impl SigningKey {
         }
     }
 
-    /// Create a compact JWS. The header gets `alg` and `kid`, plus `typ: JWT`
-    /// unless `header_extra` (an object, or null) sets other fields.
+    /// Make a compact JWS. The header gets `alg` and `kid`. It also gets
+    /// `typ: JWT`, unless `header_extra` (an object, or null) sets other fields.
     ///
     /// # Errors
     ///
-    /// Returns an error if the payload cannot be serialized or the signing operation fails.
+    /// Returns an error if the payload cannot be written out or the signing fails.
     pub fn sign(&self, header_extra: &Value, claims: &Value) -> Result<String> {
         let mut header = Map::new();
         header.insert("typ".into(), "JWT".into());
@@ -243,7 +243,7 @@ impl SigningKey {
     }
 }
 
-/// A public verification key.
+/// A public key for checking signatures.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicKey {
     /// The algorithm.
@@ -253,7 +253,7 @@ pub struct PublicKey {
 }
 
 impl PublicKey {
-    /// Build a key from raw bytes, checking the length for the algorithm.
+    /// Make a key from raw bytes, and check the length for the algorithm.
     ///
     /// # Errors
     ///
@@ -290,8 +290,8 @@ impl PublicKey {
 
     /// The RFC 7638 JWK thumbprint (SHA-256, base64url).
     pub fn thumbprint(&self) -> String {
-        // Required members in lexicographic order, no whitespace. Values are
-        // fixed strings or base64url, so no JSON escaping is needed.
+        // The needed members in lexicographic order, with no whitespace. Values
+        // are fixed strings or base64url, so no JSON escaping is needed.
         let body: Vec<String> = self
             .members()
             .iter()
@@ -316,7 +316,7 @@ impl PublicKey {
     ///
     /// # Errors
     ///
-    /// Returns an error if a required JWK field is invalid or the key type is unsupported.
+    /// Returns an error if a needed JWK field is not valid or the key type is not supported.
     pub fn from_jwk(jwk: &Value) -> Result<PublicKey> {
         let s = |k: &str| jwk.get(k).and_then(Value::as_str);
         match (s("kty"), s("crv")) {
@@ -338,7 +338,7 @@ impl PublicKey {
         }
     }
 
-    /// Verify a JWS signature (fixed `r || s` for ES256) over `msg`.
+    /// Check a JWS signature (fixed `r || s` for ES256) over `msg`.
     pub fn verify_bytes(&self, msg: &[u8], sig: &[u8]) -> bool {
         let alg: &dyn signature::VerificationAlgorithm = match self.alg {
             Alg::Es256 => &signature::ECDSA_P256_SHA256_FIXED,
@@ -355,15 +355,15 @@ pub fn jwks(keys: &[PublicKey]) -> Value {
     json!({ "keys": keys.iter().map(PublicKey::to_jwk).collect::<Vec<_>>() })
 }
 
-/// Verify a compact JWS and return its header and claims.
+/// Check a compact JWS and return its header and claims.
 ///
-/// The header's `alg` must match the key, and a `kid`, if present, must be the
-/// key's thumbprint. Claims are not checked; see [`crate::oidc`] for that.
+/// The `alg` of the header must match the key. If there is a `kid`, it must be
+/// the key's thumbprint. Claims are not checked; see [`crate::oidc`] for that.
 ///
 /// # Errors
 ///
-/// Returns an error if the JWS is malformed, conflicts with the expected key, or has an invalid
-/// signature.
+/// Returns an error if the JWS is badly formed, does not agree with the expected key, or has a
+/// signature that is not valid.
 pub fn verify_full(token: &str, key: &PublicKey) -> Result<(Value, Value)> {
     let mut parts = token.split('.');
     let (Some(h), Some(c), Some(s), None) =
@@ -407,11 +407,11 @@ pub fn verify_full(token: &str, key: &PublicKey) -> Result<(Value, Value)> {
     Ok((header, claims))
 }
 
-/// Verify a compact JWS and return its claims.
+/// Check a compact JWS and return its claims.
 ///
 /// # Errors
 ///
-/// Returns an error if the JWS is malformed or its signature cannot be verified with the key.
+/// Returns an error if the JWS is badly formed or its signature is not valid for the key.
 pub fn verify(token: &str, key: &PublicKey) -> Result<Value> {
     verify_full(token, key).map(|(_, claims)| claims)
 }
@@ -429,14 +429,14 @@ mod tests {
         assert_eq!(header["typ"], "at+jwt");
         assert_eq!(header["kid"], key.kid());
 
-        // Through JWK and persisted bytes.
+        // Through JWK and stored bytes.
         let jwk = pk.to_jwk();
         assert_eq!(PublicKey::from_jwk(&jwk).unwrap(), pk);
         assert_eq!(jwks(std::slice::from_ref(&pk))["keys"][0], jwk);
         let again = SigningKey::from_bytes(&key.to_bytes()).unwrap();
         assert_eq!(again.public_key(), pk);
 
-        // Tampering fails.
+        // Changed bytes make it fail.
         let mut parts: Vec<&str> = token.split('.').collect();
         let forged = b64e(br#"{"sub":"mallory","n":1}"#);
         parts[1] = &forged;

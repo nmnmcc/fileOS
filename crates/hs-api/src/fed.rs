@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! What nodes ask each other, under `/fed/`. Every request is signed by the
-//! asking node; it gets the roles that node holds in this node's spaces.
+//! What nodes ask each other, under `/fed/`. The asking node signs every
+//! request; the request gets the roles that node holds in this node's spaces.
 //!
 //! - `GET /fed/spaces/{space}/log?after=N`: entries, a CBOR array of byte
 //!   strings, at most [`PAGE`] at a time.
@@ -10,7 +10,7 @@
 //! - `POST /fed/spaces/{space}/inbox`: `[proposal, payload|null]`, ordered by
 //!   the primary; answers `{"seq": N}`.
 //! - `POST /fed/spaces/{space}/inbox/conditional`: the same write with
-//!   version preconditions in the signed request body.
+//!   version conditions in the signed request body.
 //! - `POST /fed/spaces/{space}/push`: `[entry, payload|null]` from the
 //!   primary.
 

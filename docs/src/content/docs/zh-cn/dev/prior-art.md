@@ -103,7 +103,7 @@ homeserver 自己编写核心，使它保持轻量、易于扩展，并符合我
 - **[pkarr](https://github.com/pubky/pkarr)**：用 Ed25519 密钥签名的 DNS 记录，
   发布在 Mainline DHT 上。不需要拥有域名，别人也能通过密钥找到你。
 - **[Keybase](https://book.keybase.io/docs/teams/sigchain)**：每台设备独立的密钥、
-  签名链（sigchain）和社交证明。说明了一个人的身份如何不依赖于任何一台设备。
+  签名链（sigchain）和社交证明。说明了一个人的身份如何比任何一台设备都长久。
 - **[Matrix 交叉签名](https://spec.matrix.org/latest/client-server-api/#cross-signing)**：
   验证设备和人，以及把这件事做得好用有多难。
 - **[Secure Scuttlebutt](https://ssbc.github.io/scuttlebutt-protocol-guide/)**：

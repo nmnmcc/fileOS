@@ -2,11 +2,12 @@
 
 //! A space's log on disk.
 //!
-//! New entries are appended to `tail`, each prefixed by its length. Every
-//! [`SEGMENT_ENTRIES`] entries the tail is sealed into an immutable segment
-//! named by its hash, listed in `segments`. Sealed segments never change, so
-//! replicas and followers copy them once. A torn write at the end of the
-//! tail (a crash mid-append) is cut off on load.
+//! New entries are appended to `tail`, each with its length in front. After
+//! every [`SEGMENT_ENTRIES`] entries, the tail is sealed into a segment that
+//! never changes. The segment is named by its hash and listed in `segments`.
+//! Sealed segments never change, so replicas and followers copy them once.
+//! A torn write at the end of the tail (from a crash during an append) is
+//! cut off on load.
 
 use std::collections::{HashSet, VecDeque};
 use std::fs;
@@ -21,7 +22,7 @@ use hs_space::{Applied, Payloads, Space};
 
 use crate::{Committed, Error, ErrorKind, Result, WriteId};
 
-/// Entries per sealed segment.
+/// The number of entries in each sealed segment.
 pub const SEGMENT_ENTRIES: usize = 256;
 
 /// A space, its log and where its primary lives.
@@ -34,7 +35,7 @@ pub struct SpaceLog {
     pub segments: Vec<Hash>,
     /// Where the primary can be reached, if it is not this node.
     pub home: Option<String>,
-    /// Every payload hash referenced by the log.
+    /// Every payload hash that the log names.
     pub payloads: HashSet<Hash>,
     dir: PathBuf,
     append_failed: bool,
@@ -64,7 +65,7 @@ fn payload_of(entry: &[u8]) -> Option<Hash> {
 }
 
 fn bad_entry(error: impl std::error::Error + Send + Sync + 'static) -> Error {
-    Error::io(format!("invalid committed entry: {error}")).with_source(error)
+    Error::io(format!("committed entry is not valid: {error}")).with_source(error)
 }
 
 fn key_conflict() -> Error {
@@ -74,7 +75,7 @@ fn key_conflict() -> Error {
     )
 }
 
-/// Read length-prefixed entries, stopping at a torn end.
+/// Read entries that each have their length in front. Stop at a torn end.
 fn read_tail(bytes: &[u8]) -> (Vec<Vec<u8>>, usize) {
     let mut out = Vec::new();
     let mut pos = 0;
@@ -141,7 +142,7 @@ impl SpaceLog {
             f.set_len(good as u64)?;
         }
         // After a crash between sealing and truncating, the tail repeats the
-        // last segment; skip what is already there.
+        // last segment. Skip what is already there.
         let already = entries.len();
         for e in tail_entries {
             let seq = Sign1::decode(&e)
@@ -323,7 +324,8 @@ impl SpaceLog {
         objects.put("segments.txt", list.as_bytes())?;
         sync_directory(&self.dir)?;
         self.segments = segments;
-        // Once the segment list is durable, a repeated prefix in the tail is safe.
+        // Once the segment list is safely on disk, a repeated start of the
+        // tail does no harm.
         let mut rest = Vec::new();
         for e in &self.entries[end..] {
             rest.extend(cbor::Value::Uint(e.len() as u64).encode());
@@ -331,7 +333,7 @@ impl SpaceLog {
         }
         if let Err(error) = objects.put("tail", &rest) {
             tracing::warn!(name: "space.log.compaction_failed", %error,
-                "Could not trim the sealed prefix from the space log");
+                "Could not cut the sealed entries off the start of the space log");
         }
         Ok(())
     }
@@ -359,7 +361,7 @@ impl SpaceLog {
         (self.space.primary == key.public()).then(|| self.space.head(key, self.segments.clone()))
     }
 
-    /// Remember where the primary is.
+    /// Save where the primary is.
     pub(crate) fn set_home(&mut self, home: &str) -> Result<()> {
         hs_objects::Dir::open(&self.dir)?.put("home", home.as_bytes())?;
         self.home = Some(home.to_string());
@@ -387,7 +389,7 @@ fn read_optional<T>(read: impl FnOnce() -> std::io::Result<T>) -> Result<Option<
 fn append(dir: &Path, append_failed: &mut bool, entry: &[u8]) -> Result<()> {
     if *append_failed {
         return Err(Error::io(
-            "space log must be reopened after a failed write rollback".into(),
+            "space log must be opened again: a failed write could not be undone".into(),
         ));
     }
     let mut framed = cbor::Value::Uint(entry.len() as u64).encode();
@@ -401,7 +403,7 @@ fn append(dir: &Path, append_failed: &mut bool, entry: &[u8]) -> Result<()> {
         if let Err(rollback) = file.set_len(previous_len).and_then(|()| file.sync_data()) {
             *append_failed = true;
             tracing::error!(name: "space.log.rollback_failed", %rollback,
-                "Could not roll back the incomplete space log append");
+                "Could not undo the unfinished append to the space log");
         }
         return Err(error.into());
     }

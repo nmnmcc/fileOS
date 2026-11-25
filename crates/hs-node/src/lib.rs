@@ -2,11 +2,11 @@
 
 //! A homeserver node.
 //!
-//! Assembles identity, spaces, blobs, replicas, the derived index and the HTTP
-//! API into one node. Browsers and phones are user agents that talk to a node
-//! over HTTP; they do not run one.
+//! Puts identity, spaces, blobs, replicas, the derived index and the HTTP
+//! API together into one node. Browsers and phones are user agents that talk
+//! to a node over HTTP. They do not run one.
 //!
-//! The node owns one data directory:
+//! The node has one data directory:
 //!
 //! ```text
 //! config.json        who this node is: identity, private space, URL
@@ -58,31 +58,31 @@ pub const COMPONENTS: &[&str] = &[
     NAME,
 ];
 
-/// The category of a node failure.
+/// The kind of a node error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErrorKind {
-    /// The space refused the operation.
+    /// The space did not let the operation happen.
     Refused,
-    /// The caller lacks permission.
+    /// The caller does not have permission.
     Forbidden,
-    /// The requested object or space does not exist.
+    /// The object or space asked for does not exist.
     NotFound,
-    /// The resource does not match the required version.
+    /// The resource is not the version the request needs.
     PreconditionFailed,
-    /// The idempotency key already names a different operation.
+    /// The idempotency key is already used for a different operation.
     Conflict,
     /// Another node is the primary.
     NotPrimary {
-        /// The affected space.
+        /// The space this is about.
         space: Hash,
-        /// The primary's address, if known.
+        /// The primary's address, if this node knows it.
         home: Option<String>,
     },
-    /// An I/O, index or stored-data failure.
+    /// An error in I/O, in the index or in stored data.
     Io,
 }
 
-/// A node failure and its diagnostic context.
+/// A node error, with the details needed to find its cause.
 #[derive(Debug)]
 pub struct Error(Box<ErrorDetails>);
 
@@ -117,12 +117,12 @@ impl Error {
         Self::new(ErrorKind::Io, message)
     }
 
-    /// Report a resource version conflict.
+    /// An error for a resource that is not the version asked for.
     pub fn precondition_failed(message: &str) -> Self {
         Self::new(ErrorKind::PreconditionFailed, message.into())
     }
 
-    /// Report that the requested resource does not exist.
+    /// An error for a resource that does not exist.
     pub fn resource_missing() -> Self {
         Self::not_found("resource not found".into())
     }
@@ -132,17 +132,17 @@ impl Error {
         self
     }
 
-    /// Classify the failure without parsing its message.
+    /// The kind of error, so callers need not read the message.
     pub fn kind(&self) -> &ErrorKind {
         &self.0.kind
     }
 
-    /// Read the failure's message.
+    /// The error's message.
     pub fn message(&self) -> &str {
         &self.0.message
     }
 
-    /// Read the backtrace captured at the error boundary.
+    /// The backtrace taken where the error was made.
     pub fn backtrace(&self) -> &std::backtrace::Backtrace {
         &self.0.backtrace
     }
@@ -216,22 +216,24 @@ fn read_blob(dir: &Dir, hash: &Hash) -> Result<Option<Vec<u8>>> {
 /// The result recorded in a space's log.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Committed {
-    /// The sequence assigned by the primary.
+    /// The sequence number the primary gave it.
     pub seq: u64,
     /// The hash of the signed entry.
     pub entry: Hash,
     /// The payload hash in that entry.
     pub payload: Option<Hash>,
-    /// Whether this write just created the resource. Absent for older peers.
+    /// Whether this write just created the resource. Older peers do not send
+    /// it.
     pub created: Option<bool>,
 }
 
 /// The key and fingerprint of an idempotent API request.
 #[derive(Debug)]
 pub struct WriteId {
-    /// The stable, scoped request key.
+    /// The request key. It does not change, and is scoped to the caller.
     pub nonce: Vec<u8>,
-    /// The request method, target, conditions and body fingerprint.
+    /// The request method, target, conditions and the fingerprint of the
+    /// body.
     pub request: Hash,
 }
 
@@ -247,7 +249,7 @@ pub fn now_ms() -> u64 {
 ///
 /// # Panics
 ///
-/// Panics if the operating system cannot supply random bytes.
+/// Panics if the operating system cannot give random bytes.
 pub fn random<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
     // The system RNG does not fail on supported platforms.
@@ -277,7 +279,7 @@ pub struct Event {
     pub target: String,
     /// The signed entry.
     pub entry: Arc<Vec<u8>>,
-    /// Whether this node ordered it (it is the primary).
+    /// Whether this node gave it its place in the order (as the primary).
     pub ordered_here: bool,
 }
 
@@ -317,8 +319,8 @@ pub struct Node {
     spaces: Arc<RwLock<BTreeMap<Hash, Arc<SpaceSlot>>>>,
     creating_space: Arc<AsyncMutex<()>>,
     events: tokio::sync::broadcast::Sender<Event>,
-    // Held for the node's lifetime so two processes never append to the
-    // same logs.
+    // Kept for as long as the node lives, so two processes never append to
+    // the same logs.
     lock: Arc<std::fs::File>,
 }
 
@@ -343,8 +345,8 @@ impl SpaceSlot {
     }
 }
 
-/// What `init` returns: the node and the personal recovery code, which is
-/// shown once and never stored.
+/// What `init` returns: the node and the personal recovery code. The code
+/// is shown once and never stored.
 pub struct Initialized {
     /// The node.
     pub node: Node,
@@ -361,12 +363,14 @@ impl std::fmt::Debug for Initialized {
 }
 
 impl Node {
-    /// Create a new data directory: a personal key (returned as a recovery
-    /// code, not stored), a node key, the identity log and a private space.
+    /// Create a new data directory with a personal key (returned as a
+    /// recovery code, not stored), a node key, the identity log and a
+    /// private space.
     ///
     /// # Errors
     ///
-    /// Returns an error if the node already exists or its keys, log or index cannot be initialized.
+    /// Returns an error if the node already exists, or its keys, log or index
+    /// cannot be set up.
     pub async fn init(dir: &Path, name: &str, url: Option<&str>) -> Result<Initialized> {
         if dir.join("config.json").exists() {
             return Err(Error::refused(format!(
@@ -429,12 +433,13 @@ impl Node {
         })
     }
 
-    /// Open an existing data directory, rebuilding the index if needed.
+    /// Open a data directory that already exists. Rebuild the index if
+    /// needed.
     ///
     /// # Errors
     ///
-    /// Returns an error if the directory is locked, stored data fails validation, or replay or
-    /// indexing fails.
+    /// Returns an error if the directory is locked, stored data is not valid,
+    /// or replay or indexing fails.
     pub async fn open(dir: &Path) -> Result<Node> {
         let lock = std::fs::File::create(dir.join("node.lock"))?;
         if lock.try_lock().is_err() {
@@ -529,7 +534,8 @@ impl Node {
     ///
     /// # Errors
     ///
-    /// Returns an error if the edited configuration is invalid or cannot be saved.
+    /// Returns an error if the changed configuration is not valid or cannot be
+    /// saved.
     pub fn set_config(&self, key: &str, value: Json) -> Result<()> {
         let mut c = self.config.write().map_err(poisoned)?;
         let mut raw = c.raw.clone();
@@ -552,7 +558,7 @@ impl Node {
     ///
     /// # Panics
     ///
-    /// Panics if the verified in-memory identity log violates its invariant.
+    /// Panics if the checked identity log in memory breaks its invariant.
     pub fn identity(&self) -> IdentityState {
         self.identity
             .read()
@@ -566,12 +572,12 @@ impl Node {
     }
 
     /// Append to the identity log, signed with the personal key (from the
-    /// recovery code). The key is used and dropped.
+    /// recovery code). The key is used, then dropped.
     ///
     /// # Errors
     ///
-    /// Returns an error if the signing key or declaration is invalid or the new log cannot be
-    /// saved.
+    /// Returns an error if the signing key or declaration is not valid, or
+    /// the new log cannot be saved.
     pub fn identity_append(&self, personal: &Keypair, kind: LogKind) -> Result<IdentityState> {
         let mut log = self.identity.write().map_err(poisoned)?;
         let mut updated = log.clone();
@@ -584,7 +590,7 @@ impl Node {
         Ok(state)
     }
 
-    /// Subscribe to new entries in any space.
+    /// Get new entries in any space as they come.
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<Event> {
         self.events.subscribe()
     }
@@ -595,12 +601,13 @@ impl Node {
     ///
     /// # Errors
     ///
-    /// Returns an error if the blob directory cannot be read or the object cannot be written.
+    /// Returns an error if the blob directory cannot be read or the object
+    /// cannot be written.
     pub fn put_blob(&self, bytes: &[u8]) -> Result<Hash> {
         put_blob(&self.blobs, bytes)
     }
 
-    /// Store bytes without blocking an async worker.
+    /// Store bytes without blocking an async worker thread.
     ///
     /// # Errors
     ///
@@ -610,17 +617,17 @@ impl Node {
         disk(move || put_blob(&dir, bytes.as_ref())).await
     }
 
-    /// Read a blob, verifying its hash.
+    /// Read a blob and check its hash.
     ///
     /// # Errors
     ///
-    /// Returns an I/O error if the object cannot be read. A missing or mismatched blob yields
-    /// `None`.
+    /// Returns an I/O error if the object cannot be read. A blob that is
+    /// missing, or does not match its hash, gives `None`.
     pub fn blob(&self, hash: &Hash) -> Result<Option<Vec<u8>>> {
         read_blob(&self.blobs, hash)
     }
 
-    /// Read and verify a blob on a blocking worker.
+    /// Read and check a blob on a blocking worker thread.
     ///
     /// # Errors
     ///
@@ -631,10 +638,10 @@ impl Node {
         disk(move || read_blob(&dir, &hash)).await
     }
 
-    /// Open a stored blob for metadata access, streaming or range reads.
+    /// Open a stored blob to read its metadata, stream it or read ranges.
     ///
-    /// The file name identifies the blob. A caller requiring an integrity check
-    /// must verify the bytes against the hash.
+    /// The file name says which blob it is. A caller that needs an integrity
+    /// check must check the bytes against the hash.
     ///
     /// # Errors
     ///
@@ -672,14 +679,15 @@ impl Node {
     ///
     /// # Errors
     ///
-    /// Returns an error if the space is missing or the node's space map is poisoned.
+    /// Returns an error if the space is missing or the node's space map is
+    /// poisoned.
     pub async fn with_space<T>(&self, id: &Hash, f: impl FnOnce(&SpaceLog) -> T) -> Result<T> {
         let s = self.space(id)?;
         let g = s.log.lock().await;
         Ok(f(&g))
     }
 
-    /// Remember the address of a space's primary.
+    /// Save the address of a space's primary.
     ///
     /// # Errors
     ///
@@ -688,11 +696,13 @@ impl Node {
         self.space(id)?.log.lock().await.set_home(home)
     }
 
-    /// Find a space by ID or unique ID prefix or name.
+    /// Find a space by its ID, by the start of its ID (if only one space
+    /// matches), or by its name.
     ///
     /// # Errors
     ///
-    /// Returns an error when the name is absent or ambiguous, or a space cannot be read.
+    /// Returns an error when no space has that name, more than one does, or a
+    /// space cannot be read.
     pub async fn find_space(&self, name: &str) -> Result<Hash> {
         if let Some(h) = Hash::from_hex(name) {
             return Ok(h);
@@ -717,7 +727,8 @@ impl Node {
     ///
     /// # Errors
     ///
-    /// Returns an error if genesis validation, persistence or indexing fails.
+    /// Returns an error if checking the genesis entry, storing or indexing
+    /// fails.
     pub async fn create_space(&self, name: &str, info: Json) -> Result<Hash> {
         let mut info = if info.is_object() { info } else { json!({}) };
         if let Some(o) = info.as_object_mut() {
@@ -758,11 +769,12 @@ impl Node {
         Ok(id)
     }
 
-    /// Start following a space from its entries in chronological order.
+    /// Start following a space, from its entries in time order.
     ///
     /// # Errors
     ///
-    /// Returns an error if the history is invalid or cannot be stored or indexed.
+    /// Returns an error if the history is not valid or cannot be stored or
+    /// indexed.
     pub async fn follow(
         &self,
         id: Hash,
@@ -837,13 +849,16 @@ impl Node {
         .await
     }
 
-    /// Apply a remote entry and return the last committed sequence.
+    /// Apply an entry from another node and return the last committed
+    /// sequence number.
     ///
-    /// Already-committed entries resume any outstanding maintenance.
+    /// An entry that is already committed starts again any upkeep work that
+    /// is not yet done.
     ///
     /// # Errors
     ///
-    /// Returns an error if the entry is invalid or cannot be stored or indexed.
+    /// Returns an error if the entry is not valid or cannot be stored or
+    /// indexed.
     pub async fn apply_remote(
         &self,
         id: &Hash,
@@ -878,14 +893,17 @@ impl Node {
         Ok(seq)
     }
 
-    /// Order a signed proposal and return its sequence and entry hash.
+    /// Give a signed proposal its place in the order, and return its sequence
+    /// number and entry hash.
     ///
-    /// Repeating a committed author and nonce returns the original result.
+    /// If the same author and nonce are already committed, this returns the
+    /// first result again.
     ///
     /// # Errors
     ///
-    /// Returns an error if this node is not the primary, the proposal is invalid,
-    /// or persistence or indexing fails. Retrying resumes pending maintenance.
+    /// Returns an error if this node is not the primary, the proposal is not
+    /// valid, or storing or indexing fails. Trying again finishes the upkeep
+    /// work that is not yet done.
     pub async fn submit(
         &self,
         id: &Hash,
@@ -896,11 +914,12 @@ impl Node {
             .await
     }
 
-    /// Submit a proposal with a version check at the primary's commit boundary.
+    /// Send a proposal with a version check. The primary does the check at
+    /// the moment it commits.
     ///
     /// # Errors
     ///
-    /// Returns the submission error or a failed version check.
+    /// Returns the error from sending, or from a failed version check.
     pub async fn submit_checked(
         &self,
         id: &Hash,
@@ -912,12 +931,14 @@ impl Node {
         Ok((committed.seq, committed.entry))
     }
 
-    /// Order a proposal and return the authoritative payload and creation status.
+    /// Give a proposal its place in the order. Return the payload as the
+    /// primary has it, and whether the write created the resource.
     ///
     /// # Errors
     ///
-    /// Returns an error if the proposal conflicts with an existing commit, fails its
-    /// version check, or cannot be validated, stored or indexed.
+    /// Returns an error if the proposal conflicts with a commit that already
+    /// exists, fails its version check, or cannot be checked, stored or
+    /// indexed.
     pub async fn commit(
         &self,
         id: &Hash,
@@ -936,7 +957,7 @@ impl Node {
         let key = self.key.clone();
         let id = *id;
         let signed_proposal = signed_proposal.to_vec();
-        // Keep the writer lock in the worker even if the request is cancelled.
+        // Keep the writer lock in the worker, even if the request is stopped.
         let node_lock = Arc::clone(&self.lock);
         let (_writer, out) = disk(move || {
             let _node_lock = node_lock;
@@ -962,21 +983,24 @@ impl Node {
         Ok(out)
     }
 
-    /// Read a committed result and verify that it matches the submitted proposal.
+    /// Read a committed result and check that it matches the proposal that
+    /// was sent.
     ///
     /// # Errors
     ///
-    /// Returns an error if the commit is missing, malformed or for a different request.
+    /// Returns an error if the commit is missing, badly formed or for a
+    /// different request.
     pub async fn committed(&self, id: &Hash, seq: u64, signed: &[u8]) -> Result<Committed> {
         self.with_space(id, |log| log.committed(seq, signed))
             .await?
     }
 
-    /// Find a prior commit for an authenticated API request on this node.
+    /// Find an earlier commit for an authenticated API request on this node.
     ///
     /// # Errors
     ///
-    /// Returns an error if the caller lacks write access or the key names a different request.
+    /// Returns an error if the caller cannot write, or the key names a
+    /// different request.
     pub async fn replay_request(
         &self,
         access: &Access,
@@ -991,8 +1015,8 @@ impl Node {
         slot.log.lock().await.replay(self.key.public(), write)
     }
 
-    // The slot's writer lock lets us release the log while removing blobs
-    // without allowing another writer to overtake the pending index update.
+    // The slot's writer lock lets us let go of the log while we remove blobs.
+    // No other writer can get ahead of the index update that is waiting.
     async fn finish_pending(&self, slot: &Arc<SpaceSlot>) -> Result<()> {
         let mut log = slot.log.lock().await;
         if log.pending.is_empty() {
@@ -1036,15 +1060,15 @@ impl Node {
         Ok(())
     }
 
-    /// Write on behalf of a caller: this node signs the proposal, recording
-    /// the grant that allowed it. If this node is not the primary, the signed
-    /// proposal is returned in [`ErrorKind::NotPrimary`]'s place by
-    /// [`Node::propose`]; callers forward it.
+    /// Write for a caller. This node signs the proposal, and records the
+    /// grant that let the caller do it. If this node is not the primary, the
+    /// error is [`ErrorKind::NotPrimary`]. Then [`Node::propose`] gives the
+    /// signed proposal, and callers send it on to the primary.
     ///
     /// # Errors
     ///
-    /// Returns an error if access is denied, another node is primary, or the operation cannot be
-    /// completed.
+    /// Returns an error if access is not given, another node is primary, or
+    /// the operation cannot be done.
     #[expect(
         clippy::too_many_arguments,
         reason = "the signature carries the signed proposal fields"
@@ -1063,11 +1087,12 @@ impl Node {
         self.submit(id, &signed, payload).await
     }
 
-    /// Check the caller may do this and build the signed proposal.
+    /// Check that the caller may do this, and make the signed proposal.
     ///
     /// # Errors
     ///
-    /// Returns an error if the target is invalid or the caller lacks permission.
+    /// Returns an error if the target is not valid or the caller does not
+    /// have permission.
     #[expect(
         clippy::too_many_arguments,
         reason = "the signature carries the signed proposal fields"
@@ -1092,11 +1117,12 @@ impl Node {
         )
     }
 
-    /// Sign a write with the fingerprint of its original API request.
+    /// Sign a write with the fingerprint of the API request it came from.
     ///
     /// # Errors
     ///
-    /// Returns an error if the target is invalid or the caller lacks permission.
+    /// Returns an error if the target is not valid or the caller does not
+    /// have permission.
     pub fn propose_request(
         &self,
         access: &Access,
@@ -1250,11 +1276,12 @@ impl Node {
         });
     }
 
-    /// Delete the index and rebuild it from the logs.
+    /// Delete the index and build it again from the logs.
     ///
     /// # Errors
     ///
-    /// Returns an error if a running node holds the directory lock or the index cannot be rebuilt.
+    /// Returns an error if a running node holds the directory lock, or the
+    /// index cannot be built again.
     pub async fn rebuild_index(dir: &Path) -> Result<()> {
         let lock = std::fs::File::create(dir.join("node.lock"))?;
         if lock.try_lock().is_err() {
@@ -1272,7 +1299,7 @@ impl Node {
     }
 }
 
-/// Derive the storage key from the personal seed, so a recovery code is
+/// Derive the storage key from the personal seed. So a recovery code is
 /// enough to decrypt replicas.
 pub fn storage_key(personal_seed: &[u8; 32]) -> [u8; 32] {
     blake3::derive_key("homeserver 2025 storage key v1", personal_seed)
@@ -1343,7 +1370,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(seq, 1);
-        // Idempotent with the same nonce.
+        // The same nonce gives the same result (idempotent).
         let n = Some(vec![7; 16]);
         let a = node
             .write(
@@ -1406,7 +1433,7 @@ mod tests {
         node.index.close().await;
         drop(node);
 
-        // Reopen: same state; rebuild: same index.
+        // Open again: same state. Build the index again: same index.
         let node = Node::open(&dir).await.unwrap();
         assert_eq!(node.with_space(&notes, |l| l.space.seq).await.unwrap(), 3);
         assert!(node.authenticate(&tok).await.is_some());

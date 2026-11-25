@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Thumbnails: decode JPEG or PNG, shrink with a box filter, turn upright
-//! from the EXIF orientation, and encode as JPEG (or PNG when the image has
-//! transparency).
+//! Thumbnails: decode JPEG or PNG, make it smaller with a box filter, turn it
+//! upright using the EXIF orientation, and encode it as JPEG (or as PNG when
+//! the image has transparency).
 
 use zune_jpeg::JpegDecoder;
 use zune_jpeg::zune_core::bit_depth::BitDepth;
@@ -27,8 +27,8 @@ struct Image {
     px: Vec<u8>,
 }
 
-/// Make a preview of a JPEG or PNG no larger than `max_side` on either side
-/// (never enlarged), upright according to its EXIF orientation.
+/// Make a preview of a JPEG or PNG, no larger than `max_side` on either side
+/// (it is never made bigger), and upright as its EXIF orientation says.
 ///
 /// Returns the encoded bytes and their media type (`image/jpeg`, or
 /// `image/png` for images with transparency), or `None` if the format is not
@@ -36,8 +36,8 @@ struct Image {
 ///
 /// # Panics
 ///
-/// A decoder bug can panic. Servers processing external images should call
-/// this function in a separate process.
+/// A bug in a decoder can panic. Servers that work on images from outside
+/// should call this function in a separate process.
 pub fn thumbnail(bytes: &[u8], max_side: u32) -> Option<(Vec<u8>, &'static str)> {
     let media = crate::probe(bytes)?;
     if max_side == 0
@@ -98,7 +98,8 @@ fn image(w: usize, h: usize, px: Vec<u8>) -> Option<Image> {
         .then_some(Image { w, h, channels, px })
 }
 
-/// Shrink so neither side exceeds `max`, averaging each output pixel's box.
+/// Make the image smaller so that no side is over `max`. Each output pixel is
+/// the average of its box.
 fn shrink(src: Image, max: usize) -> Image {
     let long = src.w.max(src.h);
     if long <= max {

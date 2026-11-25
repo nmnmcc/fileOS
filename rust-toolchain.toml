@@ -1,4 +1,4 @@
-# The single source of truth for the Rust toolchain.
+# The one source of truth for the Rust toolchain.
 # Used by rustup, devenv (devenv.nix) and CI.
 [toolchain]
 channel = "1.100.0"

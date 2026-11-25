@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! The identity log as a W3C DID document, so other software can resolve it
-//! with standard tools. The method name is provisional (an open question in
-//! the architecture page).
+//! with standard tools. The method name may still change (it is an open
+//! question on the architecture page).
 
 use serde_json::{Value, json};
 

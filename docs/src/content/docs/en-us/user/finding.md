@@ -1,9 +1,9 @@
 ---
 title: Finding things
-description: Search, the timeline, places, links and live changes.
+description: Search, the timeline, places, links and changes as they happen.
 ---
 
-These commands look across every space you can read.
+These commands look in every space you can read.
 
 ## Search
 
@@ -12,9 +12,9 @@ hs search park
 hs search 公园
 ```
 
-Search covers titles and text, ranked by relevance. Chinese, Japanese and
-Korean text is found by two-character pieces, so `公园` finds
-`人民公园`.
+Search looks at titles and text, and puts the best matches first. Chinese,
+Japanese and Korean text is found by pieces of two characters, so `公园`
+finds `人民公园`.
 
 ## Timeline
 
@@ -33,8 +33,8 @@ hs near 31.23 121.47            # within 1 km
 hs near 31.23 121.47 --km 5
 ```
 
-Latitude first, then longitude. Photos with GPS data and items with a
-`place` are found.
+Give the latitude first, then the longitude. `hs near` finds photos with GPS
+data and items with a `place`.
 
 ## Links
 
@@ -42,8 +42,8 @@ Latitude first, then longitude. Photos with GPS data and items with a
 hs related family person/mum
 ```
 
-Lists what links to an item and what it links to: everything with a person,
-everything at a place, everything in a project.
+This lists what links to an item and what it links to: everything with a
+person, everything at a place, everything in a project.
 
 ## Changes as they happen
 
@@ -51,5 +51,5 @@ everything at a place, everything in a project.
 hs watch
 ```
 
-Prints one line per change in any space you can read, until you press
-Ctrl-C. Useful to see a friend's new photos arrive, or in a script.
+This prints one line for each change in any space you can read, until you
+press Ctrl-C. Use it to see a friend's new photos come in, or in a script.

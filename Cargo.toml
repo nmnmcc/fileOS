@@ -11,7 +11,7 @@ rust-version = "1.98.1"
 license = "AGPL-3.0-only"
 publish = false
 
-# Internal crates. Dependencies flow downward only; see CONTRIBUTING.md.
+# Internal crates. Dependencies go down only; see CONTRIBUTING.md.
 # Every external dependency must be added here, with `default-features = false`,
 # after review (see "Dependency policy" in CONTRIBUTING.md).
 [workspace.dependencies]
@@ -29,7 +29,7 @@ hs-client = { path = "crates/hs-client", version = "0.1.0", default-features = f
 hs-idp = { path = "crates/hs-idp" }
 hs-media = { path = "crates/hs-media" }
 
-# External. Each was measured; see the dependency budget in the architecture page.
+# External. We measured each one; see the dependency budget on the architecture page.
 blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
 ring = { version = "0.17.14", default-features = false, features = ["alloc"] }
 serde = { version = "1.0.229", default-features = false, features = [
@@ -40,8 +40,8 @@ serde_json = { version = "1.0.154", default-features = false, features = [
   "std",
 ] }
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
-# The SQLx core and SQLite driver directly: the `sqlx` facade forces its
-# `migrate` feature, which brings SHA-2 from RustCrypto for checksums.
+# The SQLx core and SQLite driver, used directly. The `sqlx` facade always turns
+# on its `migrate` feature, which brings in SHA-2 from RustCrypto for checksums.
 sqlx-core = { version = "0.9.1", default-features = false, features = [
   "_rt-tokio",
 ] }
@@ -92,8 +92,8 @@ rcgen = { version = "0.14.10", default-features = false, features = [
   "pem",
 ] }
 quick-xml = { version = "0.42.0", default-features = false }
-# Thumbnails. Pure Rust, no build scripts or proc macros; together about 1 s
-# of a clean build.
+# Thumbnails. Pure Rust, no build scripts or proc macros. Together they take
+# about 1 s of a clean build.
 zune-jpeg = { version = "0.5.15", default-features = false, features = [
   "std",
   "x86",
@@ -117,8 +117,8 @@ imagesize = { version = "0.15.0", default-features = false, features = [
   "heif",
 ] }
 
-# Small, well-known building blocks instead of our own copies. Most were
-# already compiled for SQLx, rcgen or hyper.
+# Small, well-known building blocks, in place of our own copies. Most of them
+# were already compiled for SQLx, rcgen or hyper.
 clap = { version = "4.6.10", default-features = false, features = [
   "std",
   "help",
@@ -128,7 +128,7 @@ clap = { version = "4.6.10", default-features = false, features = [
   "derive",
   "env",
 ] }
-# Its dynamic completion is unstable, so the version is exact.
+# Its dynamic completion is not stable yet, so the version is exact.
 clap_complete = { version = "=4.6.12", default-features = false, features = [
   "unstable-dynamic",
 ] }
@@ -159,9 +159,9 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
   "fmt",
 ] }
 mimalloc = { version = "0.1.52", default-features = false }
-# The command line: turning off echo while a token is typed, and aligning
-# table columns that hold wide (CJK) characters. rustix is already built for
-# tempfile.
+# The command line: turning off echo while a token is typed, and lining up
+# table columns that have wide (CJK) characters in them. rustix is already
+# built for tempfile.
 rustix = { version = "1.1.6", default-features = false, features = [
   "std",
   "termios",
@@ -169,7 +169,7 @@ rustix = { version = "1.1.6", default-features = false, features = [
 unicode-width = { version = "0.2.2", default-features = false }
 # The REST API's types and its OpenAPI document come from the same Rust
 # code. utoipa derives the schemas (serde, indexmap and syn, all already
-# built); serde_urlencoded reads and writes the typed queries.
+# built). serde_urlencoded reads and writes the typed queries.
 utoipa = { version = "6.0.0", default-features = false, features = ["macros"] }
 serde_urlencoded = { version = "0.7.1", default-features = false }
 
@@ -217,33 +217,33 @@ unneeded_field_pattern = "warn"
 unused_result_ok = "warn"
 literal_string_with_formatting_args = "allow" # Structured logging uses message templates.
 
-# The dependency duplicate policy and its narrow exceptions live in deny.toml.
+# The rules for duplicate dependencies, and their few exceptions, are in deny.toml.
 multiple_crate_versions = "allow"
-# Public contracts use explicit must-use annotations where discarding a value is a bug.
+# Public contracts use clear must-use annotations where dropping a value is a bug.
 must_use_candidate = "allow"
-# The wire and storage formats use deliberately mixed integer widths and signedness.
+# The wire and storage formats mix integer widths and signedness on purpose.
 cast_possible_truncation = "allow"
 cast_possible_wrap = "allow"
 cast_precision_loss = "allow"
 cast_sign_loss = "allow"
-# Protocol implementations use conventional names and literal field layouts.
+# Protocol code uses the usual names, and writes field layouts out as they are.
 case_sensitive_file_extension_comparisons = "allow"
 decimal_bitwise_operands = "allow"
 many_single_char_names = "allow"
 similar_names = "allow"
 struct_field_names = "allow"
-# These patterns preserve readability across the existing protocol implementations.
+# These patterns keep the existing protocol code readable.
 format_collect = "allow"
 format_push_string = "allow"
 map_unwrap_or = "allow"
 needless_pass_by_value = "allow"
 too_many_lines = "allow"
 
-# Compile time is a feature. These settings keep debug builds and links fast.
+# Compile time is a feature. These settings keep debug builds and links quick.
 [profile.dev]
 debug = "line-tables-only"
 
-# Dependencies are compiled once and cached; light optimization makes tests faster.
+# Dependencies are compiled once and cached. A little optimization makes tests faster.
 [profile.dev.package."*"]
 opt-level = 1
 

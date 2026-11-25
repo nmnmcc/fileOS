@@ -4,8 +4,8 @@ description: What a homeserver keeps for you, and the few ideas you need to use 
 ---
 
 A homeserver keeps your notes, files, photos, contacts, calendars and
-passwords on a machine that belongs to you or someone you trust. This manual
-is for the people who use it. Setting up the node itself is covered in the
+passwords on a machine that is yours, or belongs to someone you trust. This
+manual is for the people who use it. To set up the node itself, see the
 [administration manual](../admin/).
 
 :::note[Version 0.1.0]
@@ -17,23 +17,25 @@ AI assistants.
 ## Five ideas
 
 **Identity.** You are a key, not an account on someone's server. Your
-identity ID, a long string of letters and digits derived from that key,
-stays the same when your homeserver moves to another machine or another
+identity ID is a long string of letters and digits made from that key. It
+stays the same when your homeserver goes to another machine or another
 address. `hs identity` prints it as a DID document.
 
-**Spaces.** A space is a collection that is kept and shared as a whole: your
-private space, a family space, a shared album. Each space has members and
-one node that keeps it in order.
+**Spaces.** A space is a group of things that is kept and shared as one
+unit: your private space, a family space, a shared album. Each space has
+members, and one node keeps it in order.
 
 **Items.** Everything in a space is an item with a type and an ID, written
 `TYPE/ID`: `note/shopping`, `contact/ada`, `event/dentist`, `file/…`. Most
-items are JSON; files keep their original bytes.
+items are JSON; files are kept byte for byte, unchanged.
 
-**History.** Every change is appended to the space's log and signed. Search,
-the timeline and places are built from that log and can always be rebuilt.
+**History.** Every change is signed and added to the end of the space's log.
+Search, the timeline and places are made from that log, and you can always
+make them again.
 
-**Grants.** Every app and person reaches your data with a token, and every
-token is a grant you can list and revoke. Nothing has access you cannot see.
+**Grants.** Every app and person gets to your data with a token. Every token
+is a grant that you can list and take back (revoke). Nothing has access that
+you cannot see.
 
 ## Where to go next
 

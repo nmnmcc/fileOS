@@ -2,10 +2,11 @@
 
 //! Request and response types shared by the REST server and [`crate::Client`].
 //!
-//! The `openapi` feature also enables schema derives for the server's API document.
+//! The `openapi` feature also turns on schema derives for the server's API
+//! document.
 //!
-//! IDs are text: spaces and payloads by their hash in hex, nodes and
-//! identities by their key ID. Times are milliseconds since 1970.
+//! IDs are text. Spaces and payloads use their hash in hex. Nodes and
+//! identities use their key ID. Times are milliseconds since 1970.
 
 use std::collections::BTreeMap;
 
@@ -38,7 +39,7 @@ impl Role {
     }
 }
 
-/// Every error: a message for people.
+/// The body of every error: a message for people.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct Error {
@@ -46,7 +47,7 @@ pub struct Error {
     pub error: String,
 }
 
-/// What a node says about itself, publicly (also at
+/// What a node says about itself to everyone (also at
 /// `/.well-known/homeserver`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -59,7 +60,7 @@ pub struct NodeInfo {
     pub did: String,
     /// The node's own key ID.
     pub node: String,
-    /// Where it is reachable, if set.
+    /// The URL where others can reach it, if set.
     pub url: Option<String>,
     /// The software version.
     pub version: String,
@@ -102,7 +103,7 @@ pub struct SpaceRole {
     pub role: Role,
 }
 
-/// Sign in with a token; the answer also sets the session cookie.
+/// Sign in with a token. The answer also sets the session cookie.
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct SignIn {
@@ -129,13 +130,13 @@ pub struct Space {
     pub info: Json,
     /// How many changes it has had.
     pub seq: u64,
-    /// The node that orders its changes (key ID).
+    /// The node that puts its changes in order (key ID).
     pub primary: String,
     /// Whether that is this node.
     pub is_primary: bool,
-    /// Where the primary is reachable, if this node is not it.
+    /// The URL of the primary, if this node is not the primary.
     pub home: Option<String>,
-    /// Who belongs.
+    /// Its members.
     pub members: Vec<Member>,
 }
 
@@ -149,7 +150,7 @@ pub struct Member {
     pub identity: String,
     /// The role.
     pub role: Role,
-    /// Where the node is reachable.
+    /// The URL where the node can be reached.
     pub home: Option<String>,
 }
 
@@ -176,8 +177,8 @@ pub struct Join {
     pub space: String,
 }
 
-/// Add a member: a node by key and identity, or by `url`, which is asked
-/// for both.
+/// Add a member: a node given by key and identity, or by `url`. With `url`,
+/// this node asks that URL for the key and identity.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct NewMember {
@@ -190,7 +191,7 @@ pub struct NewMember {
     /// The role (writer if not given).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<Role>,
-    /// Where the node is reachable, if not at `url`.
+    /// The URL where the node can be reached, if not `url`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub home: Option<String>,
     /// The node's URL, to look up its key and identity.
@@ -198,7 +199,7 @@ pub struct NewMember {
     pub url: Option<String>,
 }
 
-/// A member added.
+/// The answer when a member is added.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct MemberAdded {
@@ -208,7 +209,7 @@ pub struct MemberAdded {
     pub member: Member,
 }
 
-/// Hand the primary role to another member.
+/// Give the primary role to another member.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct Handover {
@@ -216,7 +217,7 @@ pub struct Handover {
     pub node: String,
 }
 
-/// A change recorded.
+/// The answer when a change is recorded.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct Seq {
@@ -224,7 +225,7 @@ pub struct Seq {
     pub seq: u64,
 }
 
-/// Changes fetched from a space's primary.
+/// Changes got from a space's primary.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct Pulled {
@@ -232,7 +233,7 @@ pub struct Pulled {
     pub pulled: u64,
 }
 
-/// A resource stored.
+/// The answer when a resource is stored.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct Written {
@@ -280,7 +281,7 @@ pub struct Page {
     pub next_offset: Option<u32>,
 }
 
-/// Rows as lists answer: a bare array, or a `Page` with `page=1`.
+/// Rows as lists send them: a bare array, or a `Page` with `page=1`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(untagged)]
@@ -291,7 +292,7 @@ pub enum Listing {
     Page(Page),
 }
 
-/// A row and how it relates to the one asked about.
+/// A row, and how it is related to the row asked about.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct Related {
@@ -301,7 +302,7 @@ pub struct Related {
     pub row: Row,
 }
 
-/// A blob stored.
+/// The answer when a blob is stored.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct Blob {
@@ -371,7 +372,7 @@ pub struct NewGrant {
     /// When it stops working.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires: Option<u64>,
-    /// Mark it as a sign-in session, revoked on sign-out.
+    /// Mark it as a sign-in session. Signing out revokes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<bool>,
 }
@@ -433,7 +434,7 @@ mod tests {
 pub struct Health {
     /// Whether every check passed.
     pub ok: bool,
-    /// Whether the index answers.
+    /// Whether the index works.
     pub index: bool,
     /// Resources by type.
     pub counts: BTreeMap<String, u64>,
@@ -500,7 +501,7 @@ pub struct SearchQuery {
     pub limit: Option<u32>,
 }
 
-/// Where in the timeline.
+/// Which part of the timeline.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(IntoParams))]
 #[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
@@ -519,7 +520,7 @@ pub struct TimelineQuery {
     pub page: Option<u8>,
 }
 
-/// Around which place.
+/// Which place to look near.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(IntoParams))]
 #[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
@@ -551,11 +552,12 @@ pub struct Limit {
 #[cfg_attr(feature = "openapi", derive(IntoParams))]
 #[cfg_attr(feature = "openapi", into_params(parameter_in = Query))]
 pub struct BlobQuery {
-    /// The media type to send it as (never one that runs script).
+    /// The media type to send it as (never one that runs scripts).
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "openapi", param(rename = "type"))]
     pub media_type: Option<String>,
-    /// A thumbnail this many pixels on its longer side instead (16 to 1024).
+    /// Send a thumbnail instead, this many pixels on its longer side (16 to
+    /// 1024).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thumb: Option<u32>,
 }

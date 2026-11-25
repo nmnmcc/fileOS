@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Shamir secret sharing over GF(256), for social recovery of the personal
-//! key: split it among trusted friends so that any `threshold` of them can
-//! restore it, and fewer learn nothing.
+//! key. The key is split among friends you trust. Any `threshold` of them can
+//! put it back together; fewer than that learn nothing.
 
 fn mul(mut a: u8, mut b: u8) -> u8 {
     let mut p = 0u8;
@@ -52,8 +52,8 @@ impl std::fmt::Debug for Share {
     }
 }
 
-/// Split `secret` into `count` shares, any `threshold` of which restore it.
-/// `random` must hold `(threshold - 1) * secret.len()` secure random bytes.
+/// Split `secret` into `count` shares. Any `threshold` of them give it back.
+/// `random` must have `(threshold - 1) * secret.len()` secure random bytes.
 pub fn split(secret: &[u8], threshold: u8, count: u8, random: &[u8]) -> Option<Vec<Share>> {
     if threshold == 0 || threshold > count || random.len() < (threshold as usize - 1) * secret.len()
     {
@@ -81,7 +81,7 @@ pub fn split(secret: &[u8], threshold: u8, count: u8, random: &[u8]) -> Option<V
     Some(shares)
 }
 
-/// Restore the secret from at least `threshold` distinct shares.
+/// Get the secret back from at least `threshold` different shares.
 pub fn combine(shares: &[Share]) -> Option<Vec<u8>> {
     let len = shares.first()?.y.len();
     if shares.iter().any(|s| s.y.len() != len || s.x == 0) {

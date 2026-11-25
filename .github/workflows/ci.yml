@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
 # Every job runs inside Nix, through the same devenv.nix contributors use.
-# Nothing here depends on tools preinstalled on the runner.
+# Nothing here needs tools that are already installed on the runner.
 
 name: CI
 
@@ -31,7 +31,7 @@ jobs:
       - uses: ./.github/actions/devenv
       - run: devenv shell -- check
 
-  # Fails if a build exceeds its compile-time budget (scripts/budget.py).
+  # Fails if a build goes over its compile-time budget (scripts/budget.py).
   budget:
     name: budget
     runs-on: ubuntu-latest
@@ -45,7 +45,7 @@ jobs:
           name: cargo-timings
           path: target/cargo-timings/cargo-timing.html
 
-  # Release artifacts, built in the Nix sandbox as `devenv build` does locally.
+  # Release artifacts, built in the Nix sandbox in the same way as a local `devenv build`.
   artifacts:
     name: artifacts
     runs-on: ubuntu-latest

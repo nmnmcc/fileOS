@@ -49,7 +49,7 @@ C 或 C++。
   crate，`hs` 保持轻薄。
 - 标记为 `portable = true` 的 crate 必须能为 `wasm32-unknown-unknown`
   构建：其中不能有线程、文件、套接字和时钟。
-- 协议逻辑是 sans-IO 的，同一份代码可以在确定性模拟（`hs-sim`）中运行。
+- 协议逻辑是 sans-IO 的（自身不做输入输出），同一份代码可以在确定性模拟（`hs-sim`）中运行。
 - 机制而非策略：当代码要决定"应该发生什么"（帮谁、分享什么、保留什么）时，
   把它做成带默认值、可替换的策略。
 
@@ -70,7 +70,7 @@ crate 布局见[架构](../architecture/#crate)。
 如果改动是用户能感知的，用 `knope document-change` 创建一个变更文件并随 PR
 一起提交。不要手动编辑 `CHANGELOG.md`：发布时由 [Knope](https://knope.tech)
 把变更文件写进去，再由 Release 工作流创建标签和 GitHub Release。完整步骤见
-`CONTRIBUTING.md`。
+`CONTRIBUTING.zh-CN.md`。
 
 ## 许可证与签署
 

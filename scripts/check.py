@@ -4,7 +4,7 @@
 
 Formatting (treefmt), lints, tests, the browser build of portable crates,
 dependency policy and Python type safety (basedpyright, "standard" mode).
-Stops at the first failing check.
+Stops at the first check that fails.
 """
 
 import json
@@ -62,7 +62,7 @@ console = Console()
 
 
 def main() -> None:
-    """Run the checks CI runs. Stops at the first failing check."""
+    """Run the checks CI runs. Stops at the first check that fails."""
     checks: list[list[str] | Callable[[], list[str]]] = [*CHECKS]
     if msrv_cargo := os.environ.get("HS_MSRV_CARGO"):
         checks.append([msrv_cargo, "check", "--workspace", "--all-targets", "--locked"])

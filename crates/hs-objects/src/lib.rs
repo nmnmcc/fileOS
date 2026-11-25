@@ -3,11 +3,11 @@
 //! Immutable objects: blobs, sealed segments and checkpoints, and where they
 //! are kept.
 //!
-//! Everything here is either content-addressed and never changes, or (log
-//! heads) changed only by conditional write. That is what lets the same
-//! objects live in a local directory, on another `hs` or in an S3 bucket, and
-//! makes sync, backup, migration and federation one operation: copy what the
-//! other side lacks ([`plan_sync`]).
+//! Everything here is content-addressed and never changes, or (for log heads)
+//! changes only by a conditional write. That is why the same objects can be
+//! in a local directory, on another `hs` or in an S3 bucket. It also makes
+//! sync, backup, migration and federation one operation: copy what the other
+//! side does not have ([`plan_sync`]).
 
 pub mod crypt;
 mod dir;
@@ -20,14 +20,14 @@ pub use dir::{Dir, blob_name};
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
 /// Which objects to copy so that `to` has everything `from` has.
-/// Both lists hold object names; heads are handled separately.
+/// Both lists have object names. Heads are handled on their own.
 pub fn plan_sync<'a>(from: &'a [String], to: &[String]) -> Vec<&'a String> {
     let have: std::collections::HashSet<&String> = to.iter().collect();
     from.iter().filter(|n| !have.contains(n)).collect()
 }
 
-/// Parse a `Range: bytes=a-b` header against a length. Returns the inclusive
-/// start and exclusive end, or `None` if the range is not satisfiable.
+/// Parse a `Range: bytes=a-b` header for a length. Returns the inclusive
+/// start and exclusive end, or `None` if the range cannot be given.
 pub fn parse_range(header: &str, len: u64) -> Option<(u64, u64)> {
     let spec = header.strip_prefix("bytes=")?;
     if spec.contains(',') {

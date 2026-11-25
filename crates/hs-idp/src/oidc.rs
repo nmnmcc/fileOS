@@ -51,21 +51,21 @@ pub fn hash_secret(secret: &str) -> String {
     hex(&sha256(secret.as_bytes()))
 }
 
-/// A registered relying party.
+/// A relying party that has been registered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Client {
     /// The client ID.
     pub id: String,
     /// A display name for consent screens.
     pub name: String,
-    /// Allowed redirect URIs, matched exactly.
+    /// Redirect URIs that are allowed. They must match exactly.
     pub redirect_uris: Vec<String>,
     /// SHA-256 hex of the secret, or `None` for a public client.
     pub secret_hash: Option<String>,
 }
 
 impl Client {
-    /// Serialize as JSON.
+    /// Write as JSON.
     pub fn to_json(&self) -> Value {
         json!({
             "id": self.id,
@@ -79,7 +79,7 @@ impl Client {
     ///
     /// # Errors
     ///
-    /// Returns an error if required client fields are missing or invalid.
+    /// Returns an error if needed client fields are missing or not valid.
     pub fn from_json(v: &Value) -> Result<Client> {
         let s = |k: &str| {
             v.get(k)
@@ -116,8 +116,8 @@ impl Client {
         self.redirect_uris.iter().any(|u| u == uri)
     }
 
-    /// Whether the presented secret authenticates this client. Public clients
-    /// (no stored hash) need no secret; confidential clients must present one.
+    /// Whether the given secret proves this is the client. Public clients (with
+    /// no stored hash) need no secret; confidential clients must give one.
     pub fn check_secret(&self, secret: Option<&str>) -> bool {
         match (&self.secret_hash, secret) {
             (None, _) => true,
@@ -127,10 +127,10 @@ impl Client {
     }
 }
 
-/// An approved authorization request, bound to an authorization code.
+/// An authorization request that was approved, tied to an authorization code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthRequest {
-    /// The client the code was issued to.
+    /// The client the code was given to.
     pub client_id: String,
     /// The redirect URI used in the request.
     pub redirect_uri: String,
@@ -138,13 +138,13 @@ pub struct AuthRequest {
     pub code_challenge: String,
     /// The OIDC nonce, if the client sent one.
     pub nonce: Option<String>,
-    /// The granted scope, space separated.
+    /// The granted scope, with spaces between the parts.
     pub scope: String,
     /// The signed-in subject.
     pub sub: String,
 }
 
-/// An in-memory store of single-use authorization codes.
+/// A store in memory of authorization codes that can be used only once.
 #[derive(Debug, Default)]
 pub struct Codes {
     codes: Mutex<HashMap<String, (AuthRequest, u64)>>,
@@ -156,7 +156,7 @@ impl Codes {
         Codes::default()
     }
 
-    /// Issue a code for an approved request. Expired codes are pruned.
+    /// Give out a code for an approved request. Codes that have expired are removed.
     pub fn issue(&self, req: AuthRequest, now: u64) -> String {
         let code = b64e(&crate::random::<32>());
         let mut codes = self
@@ -168,11 +168,12 @@ impl Codes {
         code
     }
 
-    /// Redeem a code. It is consumed even if a check fails.
+    /// Use a code. It is used up even if a check fails.
     ///
     /// # Errors
     ///
-    /// Returns an error for a missing, expired or mismatched code, or an invalid PKCE verifier.
+    /// Returns an error for a code that is missing, expired or does not match, or for a PKCE
+    /// verifier that is not valid.
     pub fn take(
         &self,
         code: &str,
@@ -202,11 +203,11 @@ impl Codes {
     }
 }
 
-/// Create a signed ID token.
+/// Make a signed ID token.
 ///
 /// # Errors
 ///
-/// Returns an error if the token cannot be serialized or signed.
+/// Returns an error if the token cannot be written out or signed.
 #[expect(
     clippy::too_many_arguments,
     reason = "issuer, audience and claims are distinct signing inputs"
@@ -237,11 +238,11 @@ pub fn id_token(
     key.sign(&Value::Null, &claims)
 }
 
-/// Create a signed JWT access token (RFC 9068, `typ: at+jwt`).
+/// Make a signed JWT access token (RFC 9068, `typ: at+jwt`).
 ///
 /// # Errors
 ///
-/// Returns an error if the token cannot be serialized or signed.
+/// Returns an error if the token cannot be written out or signed.
 pub fn access_token(
     key: &SigningKey,
     issuer: &str,
@@ -264,12 +265,12 @@ pub fn access_token(
     key.sign(&json!({"typ": "at+jwt"}), &claims)
 }
 
-/// Verify an access token from [`access_token`] and return its claims.
-/// ID tokens are rejected by their `typ`.
+/// Check an access token from [`access_token`] and return its claims.
+/// ID tokens are not accepted, because of their `typ`.
 ///
 /// # Errors
 ///
-/// Returns an error for an invalid signature, JWT type, issuer or expiration.
+/// Returns an error for a signature, JWT type, issuer or expiry time that is not valid.
 pub fn verify_access_token(key: &SigningKey, issuer: &str, token: &str, now: u64) -> Result<Value> {
     let (header, claims) = crate::jose::verify_full(token, &key.public_key())?;
     if header.get("typ").and_then(Value::as_str) != Some("at+jwt") {
@@ -286,16 +287,16 @@ pub fn verify_access_token(key: &SigningKey, issuer: &str, token: &str, now: u64
     }
 }
 
-/// Validated parameters of an authorization request.
+/// Checked parameters of an authorization request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthorizeParams {
     /// The client ID.
     pub client_id: String,
     /// The redirect URI; check it with [`Client::check_redirect`].
     pub redirect_uri: String,
-    /// The requested scope, space separated; contains `openid`.
+    /// The requested scope, with spaces between the parts. It has `openid` in it.
     pub scope: String,
-    /// Opaque client state, echoed back.
+    /// Opaque client state, sent back as it came.
     pub state: Option<String>,
     /// The OIDC nonce.
     pub nonce: Option<String>,
@@ -303,11 +304,11 @@ pub struct AuthorizeParams {
     pub code_challenge: String,
 }
 
-/// Parse and validate the query string of an authorization request.
+/// Parse and check the query string of an authorization request.
 ///
 /// # Errors
 ///
-/// Returns an error when a required parameter is malformed or the request is unsupported.
+/// Returns an error when a needed parameter is badly formed or the request is not supported.
 pub fn parse_authorize_query(query: &str) -> Result<AuthorizeParams> {
     let mut params: HashMap<String, String> = HashMap::new();
     for pair in query

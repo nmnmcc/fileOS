@@ -37,8 +37,8 @@ pub const PULL_EVERY: Duration = Duration::from_secs(60);
 ///
 /// # Errors
 ///
-/// Returns an error if the URL is invalid, signing or transport fails, or the peer returns a non-
-/// success status.
+/// Returns an error if the URL is not valid, signing or transport fails, or the peer answers with a
+/// status that is not success.
 pub async fn fed(
     api: &Api,
     method: Method,
@@ -280,7 +280,7 @@ async fn update_home(api: &Api, id: &Hash) {
     let _ = api.node.set_space_home(id, &home).await;
 }
 
-/// Write on behalf of a caller. If another node is the primary, the signed
+/// Write for a caller. If another node is the primary, the signed
 /// proposal goes to its inbox and the result is pulled back. Returns the
 /// sequence number.
 ///
@@ -344,8 +344,8 @@ pub(crate) async fn write_checked(
             let (path, request) = if conditions.is_empty() {
                 (inbox, pair(signed, payload))
             } else {
-                // Older primaries reject the separate endpoint rather than accepting
-                // a write whose preconditions they do not understand.
+                // Older primaries say no to the separate endpoint. They do not take
+                // a write with conditions they do not understand.
                 (
                     format!("{inbox}/conditional"),
                     pack_conditional(signed, payload, conditions),
@@ -377,7 +377,7 @@ pub(crate) async fn write_checked(
                 _ => return Err(gateway(peer_error(&endpoint, &response))),
             }
             let receipt: Receipt = serde_json::from_slice(response.body())
-                .map_err(|error| gateway(format!("invalid commit receipt: {error}")))?;
+                .map_err(|error| gateway(format!("commit receipt is not valid: {error}")))?;
             pull(api, id).await?;
             let mut committed = api.node.committed(id, receipt.seq, signed).await?;
             committed.created = receipt.created;

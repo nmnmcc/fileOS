@@ -2,18 +2,18 @@
 
 //! Deterministic simulation of many nodes, for tests.
 //!
-//! [`Sim`] runs one space replicated across several nodes over a simulated
-//! network that delays, drops, duplicates and reorders messages, and can
-//! crash nodes and hand the space over to another primary. Everything is
-//! driven by one seeded PRNG, so a seed always gives the same run: when a
-//! seed fails, rerun it to debug.
+//! [`Sim`] runs one space, with replicas on several nodes, over a simulated
+//! network. The network delays, drops, duplicates and reorders messages. The
+//! simulation can also crash nodes and give the space to another primary. One
+//! seeded PRNG drives everything, so a seed always gives the same run. When a
+//! seed fails, run it again to debug.
 //!
-//! The protocol simulated:
-//! - members send signed proposals to the primary they know of, retrying
-//!   with the same nonce until acknowledged;
-//! - the primary orders them ([`Space::order`]), appends the entry to its log,
-//!   acknowledges and pushes the entry to every member;
-//! - members apply entries in order and, on a gap (or now and then), pull the
+//! The protocol that is simulated:
+//! - members send signed proposals to the primary they know of. They send
+//!   again with the same nonce until they get an acknowledgement;
+//! - the primary orders them ([`Space::order`]), adds the entry to the end of
+//!   its log, acknowledges, and pushes the entry to every member;
+//! - members apply entries in order. On a gap (or now and then) they pull the
 //!   missing ones (`after = seq`) from the primary they know of. Any node
 //!   answers pulls from its log.
 
@@ -28,7 +28,7 @@ use hs_space::{Ordered, Space, genesis_proposal, propose};
 /// The name of this component.
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
-/// `SplitMix64`: a small, fast, seeded PRNG. Not for cryptography.
+/// `SplitMix64`: a small, quick, seeded PRNG. Not for cryptography.
 #[derive(Clone, Debug)]
 pub struct Rng(u64);
 
@@ -68,7 +68,7 @@ impl Rng {
     }
 }
 
-/// Fault rates and pacing. Probabilities are per message or per step.
+/// Fault rates and timing. Probabilities are per message or per step.
 #[derive(Clone, Debug)]
 pub struct Config {
     /// Number of nodes (at least 1; 2 or more for a handover).
@@ -77,18 +77,18 @@ pub struct Config {
     pub drop: f64,
     /// Probability that a message is delivered twice.
     pub duplicate: f64,
-    /// Messages take 1 to `max_delay` steps, so later ones can overtake.
+    /// Messages take 1 to `max_delay` steps, so later ones can get there first.
     pub max_delay: u64,
     /// Probability per step that each member (other than the primary) makes
     /// a new proposal.
     pub propose: f64,
     /// Probability per step that some node crashes and restarts from its log.
     pub crash: f64,
-    /// Step at which node 0 hands the space over to node 1, if any.
+    /// Step at which node 0 gives the space to node 1, if there is one.
     pub handover_at: Option<u64>,
-    /// Steps before an unacknowledged proposal is sent again.
+    /// Steps before a proposal with no acknowledgement is sent again.
     pub retry_after: u64,
-    /// Every node pulls from its primary this often, to recover lost pushes.
+    /// Every node pulls from its primary this often, to get back lost pushes.
     pub pull_every: u64,
 }
 
@@ -108,14 +108,14 @@ impl Default for Config {
     }
 }
 
-/// Counts of what happened during a run, to see that faults were exercised.
+/// Counts of what happened during a run, to see that the faults really took place.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Stats {
     /// Proposals made by members.
     pub proposals: u64,
     /// Entries ordered.
     pub ordered: u64,
-    /// Retries the primary recognised as duplicates.
+    /// Retries that the primary saw were duplicates.
     pub duplicates: u64,
     /// Messages lost.
     pub dropped: u64,
@@ -131,7 +131,7 @@ pub struct Stats {
 
 #[derive(Clone)]
 enum Msg {
-    /// A signed proposal; `id` indexes [`Sim::sent`].
+    /// A signed proposal. `id` is its index in [`Sim::sent`].
     Propose {
         from: usize,
         id: usize,
@@ -158,17 +158,17 @@ struct Sent {
 
 struct Node {
     key: Keypair,
-    /// In-memory state; rebuilt from `log` after a crash.
+    /// State in memory. It is built again from `log` after a crash.
     space: Option<Space>,
-    /// Persisted: signed entries, in order.
+    /// Stored: signed entries, in order.
     log: Vec<Vec<u8>>,
-    /// Persisted: proposals not yet acknowledged (indexes into `sent`).
+    /// Stored: proposals with no acknowledgement yet (indexes into `sent`).
     outbox: Vec<usize>,
     nonces: u64,
     down_until: u64,
 }
 
-/// A simulated network of nodes sharing one space.
+/// A simulated network of nodes that share one space.
 pub struct Sim {
     cfg: Config,
     rng: Rng,
@@ -183,7 +183,7 @@ pub struct Sim {
     sends: u64,
     sent: Vec<Sent>,
     stats: Stats,
-    /// Things that must never happen; [`Sim::check`] reports them.
+    /// Things that must never happen. [`Sim::check`] reports them.
     errors: Vec<String>,
 }
 
@@ -211,8 +211,8 @@ impl Sim {
     }
 
     /// A simulation with these settings. Node 0 creates the space and adds
-    /// every other node as a writer; the others start empty and catch up by
-    /// pulling.
+    /// every other node as a writer. The others start empty and get up to
+    /// date by pulling.
     pub fn with_config(seed: u64, cfg: Config) -> Sim {
         let mut rng = Rng::new(seed);
         let count = cfg.nodes.max(1);
@@ -279,7 +279,7 @@ impl Sim {
     fn nonce(&mut self, node: usize) -> Vec<u8> {
         let n = &mut self.nodes[node];
         n.nonces += 1;
-        // Node index and counter: unique per author, and the same on retry.
+        // Node index and counter: different for each author, and the same on a retry.
         [(node as u64).to_le_bytes(), n.nonces.to_le_bytes()].concat()
     }
 
@@ -302,7 +302,7 @@ impl Sim {
         self.order(node, &signed);
     }
 
-    /// As `node`, order a proposal; returns its sequence number.
+    /// As `node`, order a proposal. Returns its sequence number.
     fn order(&mut self, node: usize, signed: &[u8]) -> Option<u64> {
         let Sim {
             nodes, blobs, step, ..
@@ -329,8 +329,8 @@ impl Sim {
                 Some(seq)
             }
             Err(e) => {
-                // A member that has not yet learnt of a handover asks the old
-                // primary; that is expected. Anything else is a bug.
+                // A member that does not yet know of a handover asks the old
+                // primary. That is expected. Anything else is a bug.
                 if e.0 != "not the primary of this space" {
                     self.errors.push(format!("step {}: order: {e}", self.step));
                 }
@@ -357,7 +357,7 @@ impl Sim {
         }
     }
 
-    /// The node `node` believes is the primary.
+    /// The node that `node` thinks is the primary.
     fn primary_of(&self, node: usize) -> usize {
         self.nodes[node]
             .space
@@ -374,7 +374,7 @@ impl Sim {
         }
     }
 
-    /// Apply entries in order; on a gap, pull what is missing.
+    /// Apply entries in order. On a gap, pull what is missing.
     fn receive(&mut self, node: usize, entries: Vec<Vec<u8>>) {
         for e in entries {
             let Some(seq) = entry_seq(&e) else {
@@ -445,8 +445,8 @@ impl Sim {
         }
     }
 
-    /// Crash a node: it loses its memory and, after a while, rebuilds its
-    /// state from its persisted log.
+    /// Crash a node. It loses its memory. After a while it builds its state
+    /// again from its stored log.
     fn crash(&mut self, node: usize) {
         let Sim { nodes, blobs, .. } = self;
         let lookup = |h: &Hash| blobs.get(h).cloned();
@@ -496,7 +496,7 @@ impl Sim {
                     self.sent[id].last_sent = self.step;
                     let signed = self.sent[id].signed.clone();
                     if primary == node {
-                        // It became the primary itself: order directly.
+                        // It is now the primary itself, so it orders directly.
                         if let Some(seq) = self.order(node, &signed) {
                             self.sent[id].acked.get_or_insert(seq);
                             self.nodes[node].outbox.retain(|&p| p != id);
@@ -526,7 +526,7 @@ impl Sim {
             .to_string()
             .into_bytes();
         self.blobs.insert(Hash::of(&payload), payload.clone());
-        // A few shared targets, so writes overwrite each other.
+        // A few shared targets, so writes write over each other.
         let target = format!("note/{}", self.rng.below(8));
         let nonce = self.nonce(node);
         let signed = propose(
@@ -551,17 +551,17 @@ impl Sim {
         self.stats.proposals += 1;
     }
 
-    /// Run `steps` steps with proposals, faults and the handover enabled.
+    /// Run `steps` steps, with proposals, faults and the handover turned on.
     pub fn run(&mut self, steps: u64) {
         for _ in 0..steps {
             self.tick(true);
         }
     }
 
-    /// Keep delivering, retrying and pulling (with faults, but no new
-    /// proposals or crashes) until every proposal is acknowledged and every
-    /// replica has the same head. Returns false if that takes more than
-    /// `max_steps`.
+    /// Keep delivering, retrying and pulling (with faults, but with no new
+    /// proposals or crashes). Stop when every proposal has an acknowledgement
+    /// and every replica has the same head. Returns false if that takes more
+    /// than `max_steps`.
     pub fn settle(&mut self, max_steps: u64) -> bool {
         for _ in 0..max_steps {
             if self.quiet() {
@@ -595,13 +595,14 @@ impl Sim {
     }
 
     /// Settle, then check the invariants: every replica has the same `seq`,
-    /// `head`, members and resources; every log replays to its replica; every
-    /// acknowledged proposal is in the log exactly once, at the acknowledged
-    /// sequence number; nothing was refused that should not have been.
+    /// `head`, members and resources; every log, when replayed, gives its
+    /// replica; every acknowledged proposal is in the log exactly once, at the
+    /// acknowledged sequence number; nothing was refused that should not have
+    /// been.
     ///
     /// # Errors
     ///
-    /// Returns an error if replicas disagree or an event log fails to reconstruct its replica.
+    /// Returns an error if replicas do not agree, or an event log does not give back its replica.
     pub fn check(&mut self) -> Result<(), String> {
         if !self.settle(50_000) {
             return Err(format!("did not settle by step {}", self.step));

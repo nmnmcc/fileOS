@@ -2,14 +2,15 @@
 
 //! Port mapping on home routers.
 //!
-//! A server at home sits behind the router's NAT. Many routers let a device
-//! open an inbound port with PCP (RFC 6887) or its predecessor NAT-PMP
-//! (RFC 6886). Both are small UDP exchanges with the gateway on port 5351.
-//! We try PCP first and fall back to NAT-PMP. `UPnP` IGD is not supported.
+//! A server at home is behind the router's NAT. Many routers let a device
+//! open an inbound port with PCP (RFC 6887) or the older NAT-PMP
+//! (RFC 6886). Both are short UDP exchanges with the gateway on port 5351.
+//! We try PCP first, and use NAT-PMP if PCP does not work. `UPnP` IGD is not
+//! supported.
 //!
-//! The encode and decode functions are pure; [`map_tcp`], [`renew_tcp`] and
-//! [`unmap_tcp`] do the network exchange with a shortened version of the
-//! RFC retransmission schedule (under two seconds per protocol).
+//! The encode and decode functions are pure. [`map_tcp`], [`renew_tcp`] and
+//! [`unmap_tcp`] do the network exchange. They use a shorter form of the RFC
+//! retransmission schedule (under two seconds for each protocol).
 
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -21,14 +22,14 @@ use tokio::net::UdpSocket;
 /// The UDP port PCP and NAT-PMP servers listen on.
 pub const SERVER_PORT: u16 = 5351;
 
-/// Waits between retransmissions: RFC 6886 starts at 250 ms and doubles;
-/// we stop after three tries.
+/// Waits between retransmissions. RFC 6886 starts at 250 ms and doubles the
+/// wait each time. We stop after three tries.
 const SCHEDULE: [u64; 3] = [250, 500, 1000];
 
 /// IANA protocol number for TCP.
 const TCP: u8 = 6;
 
-/// A port mapping failure.
+/// A port mapping error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     /// The gateway did not answer.
@@ -37,7 +38,7 @@ pub enum Error {
     UnsupportedVersion,
     /// The gateway answered with a non-zero result code.
     Refused(u16),
-    /// The answer could not be parsed or did not match the request.
+    /// The answer could not be read, or did not match the request.
     Malformed,
     /// A socket error.
     Io(String),
@@ -48,8 +49,8 @@ impl fmt::Display for Error {
         match self {
             Error::Timeout => f.write_str("port mapping: gateway did not answer"),
             Error::UnsupportedVersion => f.write_str("port mapping: unsupported version"),
-            Error::Refused(code) => write!(f, "port mapping: refused with result code {code}"),
-            Error::Malformed => f.write_str("port mapping: malformed answer"),
+            Error::Refused(code) => write!(f, "port mapping: gateway said no, result code {code}"),
+            Error::Malformed => f.write_str("port mapping: bad answer"),
             Error::Io(e) => write!(f, "port mapping: {e}"),
         }
     }
@@ -72,14 +73,14 @@ pub enum Protocol {
     NatPmp,
 }
 
-/// A port mapping granted by the gateway.
+/// A port mapping the gateway has given.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mapping {
     /// The public address, when the gateway told us.
     pub external_ip: Option<IpAddr>,
-    /// The public port; may differ from the one suggested.
+    /// The public port. It may not be the one we asked for.
     pub external_port: u16,
-    /// Seconds until the mapping expires; renew at about half of this.
+    /// Seconds until the mapping ends. Renew it at about half of this.
     pub lifetime: u32,
     /// The local port being forwarded.
     pub internal_port: u16,
@@ -115,14 +116,14 @@ pub fn natpmp_map_request(
 pub enum NatPmpResponse {
     /// The answer to an external address request.
     Address {
-        /// Seconds since the gateway's mapping table was (re)initialized.
+        /// Seconds since the gateway last started (or reset) its mapping table.
         epoch: u32,
         /// The gateway's public IPv4 address.
         ip: Ipv4Addr,
     },
     /// The answer to a mapping request.
     Map {
-        /// Seconds since the gateway's mapping table was (re)initialized.
+        /// Seconds since the gateway last started (or reset) its mapping table.
         epoch: u32,
         /// 6 for TCP, 17 for UDP.
         protocol: u8,
@@ -143,7 +144,7 @@ fn u32_at(b: &[u8], i: usize) -> u32 {
     u32::from_be_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]])
 }
 
-/// Decode a NAT-PMP response; a non-zero result code is an error.
+/// Decode a NAT-PMP response. A non-zero result code is an error.
 ///
 /// # Errors
 ///
@@ -194,10 +195,10 @@ fn from_mapped(ip: Ipv6Addr) -> IpAddr {
 
 /// Encode a PCP MAP request for TCP.
 ///
-/// The 24-byte common header precedes the 36-byte MAP opcode body.
-/// `client` is our own address as the gateway sees it. Without a suggested
-/// external address we send the all-zeros address of the client's family.
-/// Lifetime 0 deletes the mapping.
+/// The 24-byte common header comes before the 36-byte MAP opcode body.
+/// `client` is our own address as the gateway sees it. If no external
+/// address is suggested, we send the all-zeros address of the client's
+/// family. Lifetime 0 deletes the mapping.
 pub fn pcp_map_request(
     client: IpAddr,
     nonce: &[u8; 12],
@@ -242,8 +243,9 @@ pub struct PcpMapResponse {
     pub external_ip: IpAddr,
 }
 
-/// Decode a PCP MAP response; a non-zero result code is an error. A NAT-PMP
-/// server answering a PCP request gives [`Error::UnsupportedVersion`].
+/// Decode a PCP MAP response. A non-zero result code is an error. When a
+/// NAT-PMP server answers a PCP request, the result is
+/// [`Error::UnsupportedVersion`].
 ///
 /// # Errors
 ///
@@ -281,7 +283,8 @@ pub fn decode_pcp_map(b: &[u8]) -> Result<PcpMapResponse, Error> {
 
 // The exchange.
 
-/// Send `req` until `accept` returns an answer, following [`SCHEDULE`].
+/// Send `req` again and again, as [`SCHEDULE`] says, until `accept` returns
+/// an answer.
 /// `accept` returns `None` for packets that are not the answer.
 async fn transact<T>(
     sock: &UdpSocket,
@@ -417,7 +420,7 @@ async fn map_at(
     };
     match natpmp_map(gateway, internal_port, suggested_external, lifetime_s).await {
         Ok(m) => Ok(m),
-        // Report the more telling of the two failures.
+        // Report the more useful of the two errors.
         Err(Error::Timeout | Error::UnsupportedVersion) => Err(pcp_err),
         Err(e) => Err(e),
     }
@@ -425,7 +428,7 @@ async fn map_at(
 
 #[expect(
     clippy::map_err_ignore,
-    reason = "the operating system RNG failure is opaque in ring"
+    reason = "ring does not say why the operating system RNG failed"
 )]
 fn new_nonce() -> Result<[u8; 12], Error> {
     let mut nonce = [0u8; 12];
@@ -436,11 +439,11 @@ fn new_nonce() -> Result<[u8; 12], Error> {
 }
 
 /// Ask the gateway to forward a public TCP port to `internal_port` on this
-/// machine for `lifetime_s` seconds. Tries PCP, then NAT-PMP.
+/// machine for `lifetime_s` seconds. It tries PCP, then NAT-PMP.
 ///
 /// # Errors
 ///
-/// Returns an error if no supported protocol establishes the mapping.
+/// Returns an error if no supported protocol can make the mapping.
 pub async fn map_tcp(
     gateway: IpAddr,
     internal_port: u16,
@@ -458,11 +461,12 @@ pub async fn map_tcp(
     .await
 }
 
-/// Renew a mapping before it expires, keeping its port and nonce.
+/// Renew a mapping before it ends. The port and nonce stay the same.
 ///
 /// # Errors
 ///
-/// Returns an error if the gateway refuses the renewal or cannot be reached.
+/// Returns an error if the gateway says no to the renewal or cannot be
+/// reached.
 pub async fn renew_tcp(
     gateway: IpAddr,
     mapping: &Mapping,
@@ -483,7 +487,8 @@ pub async fn renew_tcp(
 ///
 /// # Errors
 ///
-/// Returns an error if the gateway refuses removal or cannot be reached.
+/// Returns an error if the gateway says no to the removal or cannot be
+/// reached.
 pub async fn unmap_tcp(gateway: IpAddr, mapping: &Mapping) -> Result<(), Error> {
     unmap_at(SocketAddr::new(gateway, SERVER_PORT), mapping).await
 }
@@ -498,8 +503,8 @@ async fn unmap_at(gw: SocketAddr, mapping: &Mapping) -> Result<(), Error> {
 
 // The default gateway.
 
-/// The default IPv4 gateway, best effort: `/proc/net/route` on Linux,
-/// `route -n get default` on macOS and the BSDs, otherwise `None`.
+/// The default IPv4 gateway, if it can be found: from `/proc/net/route` on
+/// Linux, or `route -n get default` on macOS and the BSDs. Else `None`.
 pub fn default_gateway() -> Option<IpAddr> {
     #[cfg(target_os = "linux")]
     {
@@ -670,8 +675,8 @@ mod tests {
         );
     }
 
-    /// A fake gateway: answers PCP if `pcp`, else replies "unsupported
-    /// version" to PCP and speaks NAT-PMP.
+    /// A fake gateway. If `pcp`, it answers PCP. Else it answers "unsupported
+    /// version" to PCP, and uses NAT-PMP.
     async fn fake_gateway(pcp: bool) -> SocketAddr {
         let sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let addr = sock.local_addr().unwrap();

@@ -79,7 +79,7 @@ pub fn archive(dir: &Path, out: impl Write) -> std::io::Result<()> {
         if data.limit() != 0 {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                format!("{} shrank during export", rel.display()),
+                format!("{} got smaller during export", rel.display()),
             ));
         }
     }
@@ -92,7 +92,7 @@ struct ChannelWriter(mpsc::Sender<io::Result<Bytes>>);
 impl Write for ChannelWriter {
     #[expect(
         clippy::map_err_ignore,
-        reason = "a dropped receiver returns the confidential chunk rather than a failure cause"
+        reason = "a dropped receiver gives back the secret chunk, not the cause of a failure"
     )]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.0

@@ -4,7 +4,7 @@
 //! sync with a space.
 //!
 //! The resources stay JSON (`contact/<id>`, `event/<id>`); this module only
-//! converts at the edge.
+//! changes the format at the edge.
 //!
 //! ```text
 //! /dav/                          the principal
@@ -341,7 +341,7 @@ async fn collection(api: &Api, book: Book, id: Hash) -> Result<Res> {
     })
 }
 
-/// The items of a collection. `with_data` renders each one.
+/// The items of a collection. With `with_data`, each one also has its data.
 async fn items(api: &Api, book: Book, id: &Hash, with_data: bool) -> Result<Vec<Res>> {
     let rows = api
         .node

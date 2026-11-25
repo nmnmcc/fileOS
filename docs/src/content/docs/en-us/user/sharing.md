@@ -3,14 +3,14 @@ title: Sharing
 description: Share a space with people on other homeservers.
 ---
 
-You share by space. Each person keeps their own homeserver; the space is
-kept in order by one of them, its **home node**, and the others follow it.
-Everyone reads and writes on their own node, and changes reach the others
-on their own.
+You share one space at a time. Each person keeps their own homeserver. One
+of them keeps the space in order: this is its **home node**, and the others
+follow it. Everyone reads and writes on their own node, and changes get to
+the others without any work from you.
 
 ## Share a space you keep
 
-Create the space if it does not exist yet, and look up its ID:
+Make the space if it is not there yet, and look up its ID:
 
 ```sh
 hs space create "Family photos"
@@ -25,11 +25,11 @@ hs space member add "Family photos" --url hs.friend.example --role writer
 
 Roles:
 
-| Role     | Can                                        |
-| -------- | ------------------------------------------ |
-| `reader` | read                                       |
-| `writer` | read and write (the default)               |
-| `owner`  | also add and remove members, and hand over |
+| Role     | Can                                                             |
+| -------- | --------------------------------------------------------------- |
+| `reader` | read                                                            |
+| `writer` | read and write (the default)                                    |
+| `owner`  | also add and remove members, and give the space to another node |
 
 Send them the space ID and your node's address.
 
@@ -41,9 +41,8 @@ After the owner has added your node:
 hs space join --home hs.owner.example 4b1d…
 ```
 
-The space now appears in `hs space list` and in search, and new changes are
-pushed to your node as they happen. To catch up straight away, run
-`hs space sync SPACE`.
+The space is now in `hs space list` and in search. New changes come to your
+node as they happen. To get up to date at once, run `hs space sync SPACE`.
 
 ## See and change who is in a space
 
@@ -54,8 +53,8 @@ hs space member remove "Family photos" NODE_KEY
 
 `hs space show` lists each member's node key, owner and role.
 
-Removing a member stops new changes reaching them. What they already have
-stays with them.
+When you remove a member, new changes stop going to them. What they already
+have stays with them.
 
 ## Move a space to another node
 
@@ -67,7 +66,7 @@ hs space handover "Family photos" NODE_KEY
 ```
 
 :::note[Version 0.1.0]
-Shared spaces are not yet end-to-end encrypted. Changes travel over TLS,
-signed by each node, and are kept in plain form on every member's node.
-Share only with people whose homeserver you trust.
+Shared spaces do not have end-to-end encryption yet. Changes go over TLS,
+signed by each node. Every member's node keeps them in plain form. Share
+only with people whose homeserver you trust.
 :::

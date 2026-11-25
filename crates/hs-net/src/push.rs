@@ -3,9 +3,9 @@
 //! Web Push sending.
 //!
 //! A browser subscription gives an endpoint at a push service and two keys.
-//! We encrypt the message for the browser (RFC 8291, `aes128gcm` content
-//! coding of RFC 8188) and authenticate ourselves to the push service with a
-//! VAPID token (RFC 8292). The push service only sees ciphertext.
+//! We encrypt the message for the browser (RFC 8291, the `aes128gcm` content
+//! coding of RFC 8188). We prove who we are to the push service with a VAPID
+//! token (RFC 8292). The push service only sees ciphertext.
 
 use std::fmt;
 
@@ -15,19 +15,21 @@ use ring::rand::{SecureRandom, SystemRandom};
 use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair};
 use ring::{aead, agreement, hkdf};
 
-/// The record size we declare; one record holds the whole message.
+/// The record size we give in the header. One record holds the whole
+/// message.
 const RECORD_SIZE: u32 = 4096;
 
 /// The largest plaintext a push service must accept (RFC 8291 §4).
 pub const MAX_PLAINTEXT: usize = 3993;
 
-/// How long the push service should keep an undelivered message, in seconds.
+/// How long the push service should keep a message it has not yet
+/// delivered, in seconds.
 const TTL: u32 = 24 * 3600;
 
 /// How long a VAPID token is valid, in seconds (RFC 8292 allows up to 24 h).
 const VAPID_LIFETIME: u64 = 12 * 3600;
 
-/// A Web Push failure.
+/// A Web Push error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error(pub String);
 
@@ -59,7 +61,7 @@ impl Vapid {
     ///
     /// # Errors
     ///
-    /// Returns an error if the signing backend cannot generate or load the key.
+    /// Returns an error if the signing backend cannot make or load the key.
     pub fn generate() -> Result<Vapid, Error> {
         let rng = SystemRandom::new();
         let doc = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
@@ -71,7 +73,7 @@ impl Vapid {
     ///
     /// # Errors
     ///
-    /// Returns an error if the encoded signing key is invalid.
+    /// Returns an error if the encoded signing key is not valid.
     pub fn from_pkcs8(pkcs8: &[u8]) -> Result<Vapid, Error> {
         let pair = EcdsaKeyPair::from_pkcs8(
             &ECDSA_P256_SHA256_FIXED_SIGNING,
@@ -85,13 +87,13 @@ impl Vapid {
         })
     }
 
-    /// The PKCS #8 bytes, for storage.
+    /// The PKCS #8 bytes, for storing.
     pub fn pkcs8(&self) -> &[u8] {
         &self.pkcs8
     }
 
-    /// The public key as base64url of the uncompressed point: the
-    /// `applicationServerKey` browsers need when subscribing.
+    /// The public key as base64url of the uncompressed point. Browsers need
+    /// it as the `applicationServerKey` when they subscribe.
     pub fn public_key(&self) -> String {
         b64(self.pair.public_key())
     }
@@ -99,7 +101,7 @@ impl Vapid {
     /// The `Authorization` header value for a push service at
     /// `audience_origin` (such as `https://fcm.googleapis.com`):
     /// `vapid t=<JWT>, k=<public key>`. `subject` is a `mailto:` or `https:`
-    /// contact; `exp` is the token's expiry in Unix seconds.
+    /// contact. `exp` is the time the token ends, in Unix seconds.
     ///
     /// # Errors
     ///
@@ -148,7 +150,7 @@ fn hkdf(salt: &[u8], ikm: &[u8], info: &[&[u8]], out: &mut [u8]) -> Result<(), E
         .or(err("hkdf"))
 }
 
-/// Derive the content encryption key and nonce (RFC 8291 §3.3–3.4).
+/// Make the content encryption key and nonce (RFC 8291 §3.3–3.4).
 fn derive(
     ecdh_secret: &[u8],
     auth: &[u8],
@@ -177,12 +179,12 @@ fn decode_b64(s: &str, what: &str) -> Result<Vec<u8>, Error> {
 }
 
 /// Encrypt a message for a subscription's `p256dh` and `auth` keys (both
-/// base64url). Returns the `aes128gcm` body: header, then a single record.
+/// base64url). Returns the `aes128gcm` body: the header, then one record.
 ///
 /// # Errors
 ///
-/// Returns an error if subscription keys are invalid, the payload is too large, or encryption
-/// fails.
+/// Returns an error if the subscription keys are not valid, the payload is
+/// too large, or encryption fails.
 pub fn encrypt(p256dh_b64url: &str, auth_b64url: &str, plaintext: &[u8]) -> Result<Vec<u8>, Error> {
     let ua_public = decode_b64(p256dh_b64url, "p256dh")?;
     let auth = decode_b64(auth_b64url, "auth")?;
@@ -215,11 +217,11 @@ pub fn encrypt(p256dh_b64url: &str, auth_b64url: &str, plaintext: &[u8]) -> Resu
 
     let mut record = Vec::with_capacity(plaintext.len() + 17);
     record.extend_from_slice(plaintext);
-    record.push(2); // Last-record delimiter, no further padding.
+    record.push(2); // Last-record delimiter, no more padding.
     let key = aead::LessSafeKey::new(
         aead::UnboundKey::new(&aead::AES_128_GCM, &cek).or(err("aead key"))?,
     );
-    // Record sequence number 0: the nonce is used as derived.
+    // Record sequence number 0: the nonce is used as it was derived.
     key.seal_in_place_append_tag(
         aead::Nonce::assume_unique_for_key(nonce),
         aead::Aad::empty(),
@@ -230,7 +232,8 @@ pub fn encrypt(p256dh_b64url: &str, auth_b64url: &str, plaintext: &[u8]) -> Resu
     Ok(out)
 }
 
-/// The origin (`scheme://host[:port]`) of an endpoint URL, the VAPID audience.
+/// The origin (`scheme://host[:port]`) of an endpoint URL. This is the VAPID
+/// audience.
 fn origin(endpoint: &http::Uri) -> Result<String, Error> {
     let scheme = endpoint
         .scheme_str()
@@ -246,11 +249,12 @@ fn origin(endpoint: &http::Uri) -> Result<String, Error> {
 
 /// Build the push request for a subscription (the browser's
 /// `PushSubscription` JSON: `{endpoint, keys: {p256dh, auth}}`). `subject`
-/// is the VAPID contact; `now` is Unix seconds.
+/// is the VAPID contact. `now` is Unix seconds.
 ///
 /// # Errors
 ///
-/// Returns an error if a subscription field or endpoint is invalid, or signing or encryption fails.
+/// Returns an error if a subscription field or the endpoint is not valid, or
+/// signing or encryption fails.
 pub fn request(
     subscription: &serde_json::Value,
     payload: &[u8],
@@ -262,12 +266,12 @@ pub fn request(
         v.get(name)
             .and_then(|x| x.as_str())
             .map(str::to_string)
-            .ok_or(Error(format!("subscription lacks {name}")))
+            .ok_or(Error(format!("subscription has no {name}")))
     };
     let endpoint = field(subscription, "endpoint")?;
     let keys = subscription
         .get("keys")
-        .ok_or(Error("subscription lacks keys".into()))?;
+        .ok_or(Error("subscription has no keys".into()))?;
     let uri: http::Uri = endpoint.parse().or(err("bad endpoint"))?;
     if uri.scheme() != Some(&http::uri::Scheme::HTTPS) {
         return err("endpoint must be https");
@@ -313,7 +317,7 @@ mod tests {
                 &mut record,
             )
             .unwrap();
-        // Strip padding: trailing zeros, then the 0x02 delimiter.
+        // Take off the padding: zeros at the end, then the 0x02 delimiter.
         let end = plain.iter().rposition(|&b| b != 0).unwrap();
         assert_eq!(plain[end], 2);
         plain[..end].to_vec()

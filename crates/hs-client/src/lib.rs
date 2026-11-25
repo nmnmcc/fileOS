@@ -2,10 +2,10 @@
 
 //! A typed client for the REST API, over [`hs_net::client`].
 //!
-//! Each method sends what the REST handlers expect and reads what they answer,
-//! with the same types from [`crate::types`]. Resources, blobs and event
-//! streams, whose bodies are anything, go through [`Client::send`],
-//! [`Client::download`] and [`Client::events`].
+//! Each method sends what the REST handlers expect and reads what they send
+//! back. Both sides use the same types from [`crate::types`]. The bodies of
+//! resources, blobs and event streams may be anything; they go through
+//! [`Client::send`], [`Client::download`] and [`Client::events`].
 
 use std::backtrace::Backtrace;
 use std::fmt;
@@ -21,10 +21,12 @@ pub mod types;
 
 use crate::types as t;
 
-/// Bodies read whole: everything except exports, blobs and event streams.
+/// The largest body read whole. All bodies are read whole except exports,
+/// blobs and event streams.
 const MAX_BODY: usize = 64 * 1024 * 1024;
 
-/// What stays as it is in a path segment (RFC 3986 unreserved).
+/// The characters that stay as they are in a path segment (RFC 3986
+/// unreserved).
 const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
     .remove(b'_')
@@ -63,7 +65,7 @@ fn split_target(target: &str) -> Result<(&str, &str), Error> {
 /// What went wrong with a request.
 #[derive(Clone, Debug)]
 pub struct Error {
-    /// The status the server answered with, if it answered.
+    /// The status the server sent back, if it answered.
     pub status: Option<StatusCode>,
     /// What went wrong, for people.
     pub message: String,
@@ -103,7 +105,7 @@ impl Error {
         Self::new(None, message, Some(source.into()))
     }
 
-    /// The backtrace captured when the request failed.
+    /// The backtrace taken when the request failed.
     pub fn backtrace(&self) -> &Backtrace {
         &self.context.backtrace
     }
@@ -188,7 +190,7 @@ pub type Body<'a> = Option<(&'a str, Vec<u8>)>;
 /// A node's API, reached with a token.
 #[derive(Clone)]
 pub struct Client {
-    /// `http(s)://host:port`, without a trailing slash.
+    /// `http(s)://host:port`, without a slash at the end.
     pub url: String,
     token: String,
     http: hs_net::client::Client,
@@ -203,8 +205,8 @@ impl std::fmt::Debug for Client {
 }
 
 impl Client {
-    /// A client for the node at `url`. With `insecure`, any TLS certificate
-    /// is accepted (a node's own self-signed one).
+    /// A client for the node at `url`. With `insecure`, it accepts any TLS
+    /// certificate (such as a node's own self-signed one).
     pub fn new(url: String, token: String, insecure: bool) -> Client {
         let http = if insecure {
             hs_net::client::Client::accepting_self_signed()
@@ -255,7 +257,7 @@ impl Client {
         })
     }
 
-    /// Send a request and take whatever comes back.
+    /// Send a request and return whatever comes back.
     ///
     /// # Errors
     ///
@@ -276,11 +278,11 @@ impl Client {
         })
     }
 
-    /// Send a request; any answer other than 2xx (or 304) is an error.
+    /// Send a request. Any answer other than 2xx (or 304) is an error.
     ///
     /// # Errors
     ///
-    /// Returns an error if the node cannot be reached or does not succeed.
+    /// Returns an error if the node cannot be reached or the request fails.
     pub async fn send(
         &self,
         method: Method,
@@ -293,7 +295,8 @@ impl Client {
         Ok(reply)
     }
 
-    /// The error for a reply other than 2xx or 304, from its `{"error": …}`.
+    /// The error for a reply other than 2xx or 304. The message comes from
+    /// its `{"error": …}`.
     ///
     /// # Errors
     ///
@@ -320,7 +323,7 @@ impl Client {
                 "{url} did not accept the token ({message}); sign in again with `hs login {url}`"
             ),
             StatusCode::PRECONDITION_FAILED => {
-                format!("it changed on the server in the meantime ({message})")
+                format!("it changed on the server after you read it ({message})")
             }
             s => format!("{message} ({})", s.as_u16()),
         };
@@ -336,7 +339,7 @@ impl Client {
         let body = body
             .map(serde_json::to_vec)
             .transpose()
-            .map_err(|error| Error::caused_by("cannot serialize the request body", error))?
+            .map_err(|error| Error::caused_by("cannot write the request body as JSON", error))?
             .map(|bytes| ("application/json", bytes));
         self.send(method, path, &[], body).await?.typed()
     }
@@ -372,7 +375,7 @@ impl Client {
         self.send(Method::DELETE, path, &[], None).await.map(drop)
     }
 
-    /// Send a GET and hand the body, as it arrives, to `out`. Returns the
+    /// Send a GET and give the body to `out` as it comes in. Returns the
     /// response headers.
     ///
     /// # Errors
@@ -400,8 +403,8 @@ impl Client {
         Ok(parts)
     }
 
-    /// Lines of a `text/event-stream`, as they arrive, until `each` says
-    /// stop or the server closes the stream.
+    /// Give each line of a `text/event-stream` to `each` as it comes in. Stop
+    /// when `each` returns false or the server closes the stream.
     ///
     /// # Errors
     ///
@@ -436,8 +439,8 @@ impl Client {
         Ok(())
     }
 
-    /// Changes as they happen (`GET /api/events`), until `each` says stop
-    /// or the server closes the stream.
+    /// Give each change to `each` as it happens (`GET /api/events`). Stop
+    /// when `each` returns false or the server closes the stream.
     ///
     /// # Errors
     ///

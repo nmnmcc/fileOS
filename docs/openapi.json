@@ -84,7 +84,7 @@
           {
             "name": "type",
             "in": "query",
-            "description": "The media type to send it as (never one that runs script).",
+            "description": "The media type to send it as (never one that runs scripts).",
             "required": false,
             "schema": {
               "type": "string"
@@ -93,7 +93,7 @@
           {
             "name": "thumb",
             "in": "query",
-            "description": "A thumbnail this many pixels on its longer side instead (16 to 1024).",
+            "description": "Send a thumbnail instead, this many pixels on its longer side (16 to\n1024).",
             "required": false,
             "schema": {
               "type": "integer",
@@ -164,7 +164,7 @@
           {
             "name": "type",
             "in": "query",
-            "description": "The media type to send it as (never one that runs script).",
+            "description": "The media type to send it as (never one that runs scripts).",
             "required": false,
             "schema": {
               "type": "string"
@@ -173,7 +173,7 @@
           {
             "name": "thumb",
             "in": "query",
-            "description": "A thumbnail this many pixels on its longer side instead (16 to 1024).",
+            "description": "Send a thumbnail instead, this many pixels on its longer side (16 to\n1024).",
             "required": false,
             "schema": {
               "type": "integer",
@@ -613,7 +613,7 @@
             }
           },
           "503": {
-            "description": "The push key is unavailable"
+            "description": "There is no push key"
           },
           "default": {
             "description": "An error",
@@ -1428,7 +1428,7 @@
         "tags": [
           "resources"
         ],
-        "summary": "A resource's payload, with its `ETag`. Contacts and events stored as\nJSON can be had as vCard or iCalendar.",
+        "summary": "A resource's payload, with its `ETag`. Contacts and events stored as\nJSON can also be read as vCard or iCalendar.",
         "operationId": "get_resource",
         "parameters": [
           {
@@ -1582,7 +1582,7 @@
           {
             "name": "Idempotency-Key",
             "in": "header",
-            "description": "Retries with identical method, target, content and conditions are applied once",
+            "description": "Retries with the same method, target, content and conditions take effect once",
             "required": false,
             "schema": {
               "type": [
@@ -1729,7 +1729,7 @@
           {
             "name": "Idempotency-Key",
             "in": "header",
-            "description": "Retries with identical method, target, content and conditions are applied once",
+            "description": "Retries with the same method, target, content and conditions take effect once",
             "required": false,
             "schema": {
               "type": [
@@ -1920,7 +1920,7 @@
           {
             "name": "Idempotency-Key",
             "in": "header",
-            "description": "Retries with identical method, target, content and conditions are applied once",
+            "description": "Retries with the same method, target, content and conditions take effect once",
             "required": false,
             "schema": {
               "type": [
@@ -2011,7 +2011,7 @@
         "tags": [
           "spaces"
         ],
-        "summary": "Fetch new changes from the space's primary now.",
+        "summary": "Get new changes from the space's primary now.",
         "operationId": "pull",
         "parameters": [
           {
@@ -2128,7 +2128,7 @@
     "schemas": {
       "Blob": {
         "type": "object",
-        "description": "A blob stored.",
+        "description": "The answer when a blob is stored.",
         "required": [
           "hash",
           "size"
@@ -2148,7 +2148,7 @@
       },
       "Error": {
         "type": "object",
-        "description": "Every error: a message for people.",
+        "description": "The body of every error: a message for people.",
         "required": [
           "error"
         ],
@@ -2255,7 +2255,7 @@
       },
       "Handover": {
         "type": "object",
-        "description": "Hand the primary role to another member.",
+        "description": "Give the primary role to another member.",
         "required": [
           "node"
         ],
@@ -2291,7 +2291,7 @@
           },
           "index": {
             "type": "boolean",
-            "description": "Whether the index answers."
+            "description": "Whether the index works."
           },
           "ok": {
             "type": "boolean",
@@ -2343,7 +2343,7 @@
             "description": "With `page=1`."
           }
         ],
-        "description": "Rows as lists answer: a bare array, or a `Page` with `page=1`."
+        "description": "Rows as lists send them: a bare array, or a `Page` with `page=1`."
       },
       "Member": {
         "type": "object",
@@ -2359,7 +2359,7 @@
               "string",
               "null"
             ],
-            "description": "Where the node is reachable."
+            "description": "The URL where the node can be reached."
           },
           "identity": {
             "type": "string",
@@ -2377,7 +2377,7 @@
       },
       "MemberAdded": {
         "type": "object",
-        "description": "A member added.",
+        "description": "The answer when a member is added.",
         "required": [
           "seq",
           "member"
@@ -2424,7 +2424,7 @@
               "boolean",
               "null"
             ],
-            "description": "Mark it as a sign-in session, revoked on sign-out."
+            "description": "Mark it as a sign-in session. Signing out revokes it."
           },
           "spaces": {
             "type": [
@@ -2450,14 +2450,14 @@
       },
       "NewMember": {
         "type": "object",
-        "description": "Add a member: a node by key and identity, or by `url`, which is asked\nfor both.",
+        "description": "Add a member: a node given by key and identity, or by `url`. With `url`,\nthis node asks that URL for the key and identity.",
         "properties": {
           "home": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Where the node is reachable, if not at `url`."
+            "description": "The URL where the node can be reached, if not `url`."
           },
           "identity": {
             "type": [
@@ -2533,7 +2533,7 @@
       },
       "NodeInfo": {
         "type": "object",
-        "description": "What a node says about itself, publicly (also at\n`/.well-known/homeserver`).",
+        "description": "What a node says about itself to everyone (also at\n`/.well-known/homeserver`).",
         "required": [
           "name",
           "identity",
@@ -2563,7 +2563,7 @@
               "string",
               "null"
             ],
-            "description": "Where it is reachable, if set."
+            "description": "The URL where others can reach it, if set."
           },
           "version": {
             "type": "string",
@@ -2598,7 +2598,7 @@
       },
       "Pulled": {
         "type": "object",
-        "description": "Changes fetched from a space's primary.",
+        "description": "Changes got from a space's primary.",
         "required": [
           "pulled"
         ],
@@ -2625,7 +2625,7 @@
       },
       "Related": {
         "type": "object",
-        "description": "A row and how it relates to the one asked about.",
+        "description": "A row, and how it is related to the row asked about.",
         "required": [
           "rel",
           "row"
@@ -2781,7 +2781,7 @@
       },
       "Seq": {
         "type": "object",
-        "description": "A change recorded.",
+        "description": "The answer when a change is recorded.",
         "required": [
           "seq"
         ],
@@ -2864,7 +2864,7 @@
       },
       "SignIn": {
         "type": "object",
-        "description": "Sign in with a token; the answer also sets the session cookie.",
+        "description": "Sign in with a token. The answer also sets the session cookie.",
         "required": [
           "token"
         ],
@@ -2893,7 +2893,7 @@
               "string",
               "null"
             ],
-            "description": "Where the primary is reachable, if this node is not it."
+            "description": "The URL of the primary, if this node is not the primary."
           },
           "id": {
             "type": "string",
@@ -2912,7 +2912,7 @@
             "items": {
               "$ref": "#/components/schemas/Member"
             },
-            "description": "Who belongs."
+            "description": "Its members."
           },
           "name": {
             "type": "string",
@@ -2920,7 +2920,7 @@
           },
           "primary": {
             "type": "string",
-            "description": "The node that orders its changes (key ID)."
+            "description": "The node that puts its changes in order (key ID)."
           },
           "seq": {
             "type": "integer",
@@ -2968,13 +2968,13 @@
         "properties": {
           "ok": {
             "type": "boolean",
-            "description": "The server attempted to send the notification."
+            "description": "The server tried to send the notification."
           }
         }
       },
       "Written": {
         "type": "object",
-        "description": "A resource stored.",
+        "description": "The answer when a resource is stored.",
         "required": [
           "seq",
           "etag"

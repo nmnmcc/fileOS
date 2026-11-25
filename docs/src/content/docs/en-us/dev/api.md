@@ -3,20 +3,20 @@ title: REST API
 description: The typed REST API, its OpenAPI document and the Rust client.
 ---
 
-The `hs` command line uses the same API as every other client, so anything
-it does, your program can do.
+The `hs` command line uses the same API as every other client. So anything
+it does, your program can do too.
 
 ## The OpenAPI document
 
-The API is described by an OpenAPI 3.1 document, derived from the Rust types
-the server uses:
+An OpenAPI 3.1 document describes the API. It is made from the Rust types
+that the server uses, and you can get it in three ways:
 
-- served by every node at `/api/openapi.json`;
-- printed by `hs openapi`;
-- kept in the repository as `docs/openapi.json`, checked by CI.
+- every node serves it at `/api/openapi.json`;
+- `hs openapi` prints it;
+- the repository keeps it as `docs/openapi.json`, and CI checks it.
 
-Generate a client from it in any language, or read it for the details of
-each request and response.
+Use it to make a client in any language, or read it for the details of each
+request and response.
 
 ## Authentication
 
@@ -26,13 +26,12 @@ Send a token as a bearer token:
 curl -H "Authorization: Bearer $TOKEN" https://NODE/api/spaces
 ```
 
-The node also accepts the token as the password of HTTP Basic
-authentication (for DAV clients) and as a session cookie
-(`POST /api/session`). Tokens are made with
-[`hs ctl token create`](../../admin/access/); what a token may do is decided
-by its grant: a role, and optionally a list of spaces and resource types.
-Requests between nodes are signed with HTTP Message Signatures (RFC 9421)
-instead.
+The node also takes the token as the password of HTTP Basic authentication
+(for DAV clients), and as a session cookie (`POST /api/session`). You make
+tokens with [`hs ctl token create`](../../admin/access/). The token's grant
+decides what the token may do: a role and, if you want, a list of spaces and
+resource types. Requests between nodes do not use tokens; they are signed
+with HTTP Message Signatures (RFC 9421).
 
 ## Resources
 
@@ -46,17 +45,19 @@ PATCH  /api/spaces/{space}/resources/{type}/{id}    application/merge-patch+json
 DELETE /api/spaces/{space}/resources/{type}/{id}
 ```
 
-HTTP semantics are used as written: every resource has an `ETag`; send
-`If-Match` to update only the version you read (a stale write gets `412`)
-and `If-None-Match: *` to create only. Blobs are stored by BLAKE3 hash at
-`/api/blobs/{hash}`, never change, and support `Range`.
+HTTP works here as the standard says. Every resource has an `ETag`. Send
+`If-Match` to change only the version you read; a write based on an old
+version gets `412`. Send `If-None-Match: *` to create a resource only if it
+is not there yet. Blobs are stored by BLAKE3 hash at `/api/blobs/{hash}`.
+They never change, and they support `Range`.
 
-Across spaces: `/api/search`, `/api/timeline`, `/api/near`,
-`/api/related/{space}/{type}/{id}`. Changes stream as Server-Sent Events
-from `/api/events`.
+These work across all spaces: `/api/search`, `/api/timeline`, `/api/near`,
+`/api/related/{space}/{type}/{id}`. `/api/events` sends changes as they
+happen, as Server-Sent Events.
 
 ## The Rust client
 
-The `hs-client` crate holds the request and response types and a typed
-client over them; `hs` is built on it. Its OpenAPI schemas are behind an
-optional feature, so a client does not pay for them.
+The `hs-client` crate has the request and response types, and a typed
+client that uses them. `hs` is built on it. Its OpenAPI schemas are behind an
+optional feature, so a client that does not need them does not pay for
+them.

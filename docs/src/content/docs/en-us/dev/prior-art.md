@@ -1,63 +1,67 @@
 ---
 title: Projects to learn from
-description: Prior art we study before building our own, and what we take from each.
+description: Earlier work we study before we build our own, and what we take from each.
 ---
 
 homeserver writes its own core so that it stays light, is easy to extend and
-fits our goals. To do that well we study earlier work: software, protocols,
+fits our goals. To do that well, we study earlier work: software, protocols,
 papers, essays and projects that did not succeed. This page lists them by
-area, with what to learn from each and, where relevant, how we differ.
+area. For each one it says what to learn from it and, where it matters, how
+we are different.
 
 **Learn, don't copy.** We read code and papers to understand ideas. Before
-copying any code, check that its license is compatible with AGPL-3.0-only.
-GPL-2.0-only code must not be copied.
+you copy any code, make sure its license can be used with AGPL-3.0-only. Do
+not copy GPL-2.0-only code.
 
-To add an entry, give it a link, what to learn from it, and how we differ.
+To add an entry, give a link, what to learn from it, and how we are
+different.
 
 ## Earlier attempts at the same vision
 
 Others have tried to give every person their own server. Learn why none of
-them reached ordinary people.
+them got to ordinary people.
 
-- **[FreedomBox](https://freedombox.org/)**: a personal server on Debian,
-  started after Eben Moglen's talk "Freedom in the Cloud". Shows what is
+- **[FreedomBox](https://freedombox.org/)**: a personal server on Debian. It
+  started after Eben Moglen's talk "Freedom in the Cloud". It shows what is
   hard about running a server at home.
-- **[Solid](https://solidproject.org/)**: personal data pods with apps that
-  ask for access. Learn from its data model, access control and slow
-  adoption.
-- **[Sandstorm](https://sandstorm.io/)**: grains, capability-based sharing and
-  sandboxed apps. Learn from its design and from why it was hard to sustain.
-- **[Cozy Cloud](https://github.com/cozy)**: a personal cloud with apps that
-  share one data store.
+- **[Solid](https://solidproject.org/)**: personal data pods, with apps that
+  ask for access. Learn from its data model, its access control and why it
+  spread so slowly.
+- **[Sandstorm](https://sandstorm.io/)**: grains, sharing based on
+  capabilities, and apps in a sandbox. Learn from its design, and from why it
+  was hard to keep going.
+- **[Cozy Cloud](https://github.com/cozy)**: a personal cloud whose apps all
+  use one data store.
 - **[Urbit](https://urbit.org/)**: a personal server with its own identity
-  system and networking. Learn from its scope and the complexity that came
-  with it. _We differ:_ no scarce identities and no tokens.
-- **[Upspin](https://upspin.io/)**: a global namespace for personal files,
+  system and networking. Learn from how much it tried to do, and how complex
+  that made it. _We differ:_ no scarce identities and no tokens.
+- **[Upspin](https://upspin.io/)**: one global namespace for personal files,
   from the Go team at Google.
-- **[Mail-in-a-Box](https://mailinabox.email/)**: a self-hosted mail server you
-  can set up without being an expert.
-- **Helm**: a personal email server sold as hardware, which shut down in 2022.
-  Shows the risks of a business built on hardware.
-- **Synology DSM** and **Apple iCloud**: closed, but they set the usability
-  that ordinary people expect.
+- **[Mail-in-a-Box](https://mailinabox.email/)**: a self-hosted mail server
+  that you can set up without being an expert.
+- **Helm**: a personal email server sold as hardware. It shut down in 2022.
+  It shows the risks of a business built on hardware.
+- **Synology DSM** and **Apple iCloud**: closed, but they set how easy to use
+  ordinary people expect things to be.
 
 ## Ideas and writing
 
 - **[Local-first software](https://www.inkandswitch.com/local-first/)** (Ink &
-  Switch): a clear statement of principles we share.
+  Switch): a clear statement of principles that we share.
 - **[Freedom in the Cloud](https://www.softwarefreedom.org/events/2010/isoc-ny/)**
-  (Eben Moglen, 2010): the argument for personal servers.
-- **_Tools for Conviviality_** (Ivan Illich): tools that serve people rather
-  than make them dependent.
+  (Eben Moglen, 2010): the case for personal servers.
+- **_Tools for Conviviality_** (Ivan Illich): tools that serve people, and do
+  not make people dependent on them.
 - **_Governing the Commons_** (Elinor Ostrom): how communities manage shared
-  resources without a central authority or a market. Background for mutual
-  aid.
+  resources without a central authority and without a market. Background for
+  mutual aid.
 - **[Calm technology](https://calmtech.com/)**: technology that stays in the
-  background until it is needed.
-- **_A Pattern Language_** (Christopher Alexander): design as a shared
-  vocabulary that people can use for themselves.
-- **[IndieWeb](https://indieweb.org/)**: own your data, publish on your own
-  site and syndicate elsewhere (POSSE). Also Webmention and Micropub.
+  background until you need it.
+- **_A Pattern Language_** (Christopher Alexander): design as a shared set of
+  words that people can use for themselves.
+- **[IndieWeb](https://indieweb.org/)**: own your data, put it out on your
+  own site and send copies to other places (POSSE). Also Webmention and
+  Micropub.
 - **[Small Technology](https://small-tech.org/)**: technology for one person,
   not for scale.
 - **[Data Transfer Initiative](https://dtinit.org/)**: moving personal data
@@ -66,39 +70,39 @@ them reached ordinary people.
 ## Networking and NAT traversal
 
 - **[iroh](https://github.com/n0-computer/iroh)**: dial a public key, not an
-  IP address. We decided to write our own networking instead of depending on
-  it, but it is the closest match to what `hs-net` needs, so study it in
-  depth:
-  - Hole punching, and falling back to a relay when a direct path fails.
+  IP address. We decided to write our own networking and not depend on it.
+  But it is the nearest match to what `hs-net` needs, so study it in depth:
+  - Hole punching, and going back to a relay when a direct path does not
+    work.
   - The relay protocol over HTTPS and WebSocket, for networks that block UDP.
-  - Network probing (`net_report`) and path selection across many paths.
-  - Address lookup with signed DNS records (pkarr).
+  - Network probing (`net_report`), and picking one of many paths.
+  - Finding addresses through signed DNS records (pkarr).
   - Access control for a relay (the `AccessControl` trait).
 
-  _We differ:_ no default dependency on a company's relays or DNS, and a
-  smaller dependency tree. A test build pulled in 231 crates.
+  _We differ:_ by default we do not depend on a company's relays or DNS, and
+  our dependency tree is smaller. A test build pulled in 231 crates.
 
 - **[Tailscale](https://github.com/tailscale/tailscale)**: DERP relays,
   `magicsock`, and the essay
   [How NAT traversal works](https://tailscale.com/blog/how-nat-traversal-works),
-  a good introduction to the topic. _We differ:_ no central coordination
+  a good first reading on the subject. _We differ:_ no central coordination
   server.
-- **[quinn](https://github.com/quinn-rs/quinn)**: QUIC in Rust. Read it for
-  how the protocol state machine is kept separate from I/O (`quinn-proto`).
+- **[quinn](https://github.com/quinn-rs/quinn)**: QUIC in Rust. Read it to see
+  how the protocol state machine is kept apart from I/O (`quinn-proto`).
 - **[WireGuard](https://www.wireguard.com/papers/wireguard.pdf)**: a protocol
-  you can read in an afternoon. Shows how much a small, fixed set of choices
-  (Noise, no cipher negotiation) can do.
+  you can read in an afternoon. It shows how much a small, fixed set of
+  choices can do (Noise, no cipher negotiation).
 - **[Noise Protocol Framework](https://noiseprotocol.org/noise.html)**:
   handshake patterns for authenticated encryption between keys.
-- **[libp2p](https://libp2p.io/)**: circuit relay v2, DCUtR hole punching,
-  and the costs of a very general modular stack. _We differ:_ fewer
-  options and less abstraction.
-- **[Syncthing](https://syncthing.net/)**: a community relay pool, global and
-  local discovery, and device IDs derived from keys. Many years of
+- **[libp2p](https://libp2p.io/)**: circuit relay v2, DCUtR hole punching, and
+  the costs of a very general, modular stack. _We differ:_ fewer options and
+  less abstraction.
+- **[Syncthing](https://syncthing.net/)**: a relay pool run by the community,
+  global and local discovery, and device IDs made from keys. Many years of
   experience with peer-to-peer software that ordinary people use.
 - **[Yggdrasil](https://yggdrasil-network.github.io/)** and
   **[cjdns](https://github.com/cjdelisle/cjdns)**: mesh networks where an
-  address is derived from a public key.
+  address is made from a public key.
 - **[Reticulum](https://reticulum.network/)** and
   **[Meshtastic](https://meshtastic.org/)**: networking over radio and other
   slow links, with no internet at all.
@@ -120,34 +124,34 @@ them.
   [CardDAV](https://www.rfc-editor.org/rfc/rfc6352).
 - **Sign-in**: [WebAuthn](https://www.w3.org/TR/webauthn-3/) (passkeys),
   [OpenID Connect](https://openid.net/developers/specs/) and
-  [OAuth 2.1](https://oauth.net/2.1/): the protocols homeserver implements as
-  an identity provider.
+  [OAuth 2.1](https://oauth.net/2.1/). homeserver implements these protocols
+  as an identity provider.
 
 ## Identity and trust
 
 - **[pkarr](https://github.com/pubky/pkarr)**: DNS records signed by an
-  Ed25519 key and published on the Mainline DHT. Lets a key be found without
-  owning a domain.
-- **[Keybase](https://book.keybase.io/docs/teams/sigchain)**: per-device keys,
-  sigchains and social proofs. Shows how a person's identity can outlive any
-  one device.
+  Ed25519 key and put on the Mainline DHT. Others can find a key this way,
+  without the owner having a domain.
+- **[Keybase](https://book.keybase.io/docs/teams/sigchain)**: a key for each
+  device, sigchains and social proofs. It shows how a person's identity can
+  live longer than any one device.
 - **[Matrix cross-signing](https://spec.matrix.org/latest/client-server-api/#cross-signing)**:
-  verifying devices and people, and how hard it is to make that usable.
+  checking devices and people, and how hard it is to make that easy to use.
 - **[Secure Scuttlebutt](https://ssbc.github.io/scuttlebutt-protocol-guide/)**:
   identity is a key, and social links decide what you store and relay for
-  others. The closest earlier version of "neighbors help each other". Also
+  others. It is the nearest earlier form of "neighbors help each other". Also
   learn from its limits: append-only logs that cannot be pruned, and new
-  users struggling to join.
-- **[Dark Crystal](https://darkcrystal.pw/)**: recovering a lost key with the
-  help of trusted friends (Shamir's secret sharing).
-- **[Passkeys](https://passkeys.dev/)**: signing in without passwords, which
-  ordinary people now use.
+  users who have a hard time joining.
+- **[Dark Crystal](https://darkcrystal.pw/)**: getting back a lost key with
+  the help of trusted friends (Shamir's secret sharing).
+- **[Passkeys](https://passkeys.dev/)**: signing in without passwords. Ordinary
+  people use them now.
 - **[Kanidm](https://kanidm.com/)**: an identity management server in Rust,
   with OpenID Connect and passkeys.
 - **[Authelia](https://www.authelia.com/)** and
   **[Authentik](https://goauthentik.io/)**: authentication gateways that
-  self-hosters currently run and maintain separately. homeserver's built-in identity provider
-  is meant to replace them.
+  self-hosters now run and keep up to date on their own. homeserver's built-in
+  identity provider is meant to take their place.
 - **[IndieAuth](https://indieauth.spec.indieweb.org/)**: signing in to other
   sites with your own URL as your identity.
 
@@ -158,54 +162,54 @@ them.
 - **[OpenMLS](https://github.com/openmls/openmls)**: MLS in Rust, for
   encrypted groups such as families.
 - **[age](https://age-encryption.org/)**: simple file encryption with small,
-  explicit keys.
+  clear keys.
 - **[Magic Wormhole](https://magic-wormhole.readthedocs.io/)**: pairing with a
-  short code using a PAKE. A model for adding a friend or a new device.
-- **[CryptPad](https://cryptpad.org/)**: collaborative documents the server
-  cannot read.
+  short code, using a PAKE. A model for adding a friend or a new device.
+- **[CryptPad](https://cryptpad.org/)**: documents that people edit together
+  and that the server cannot read.
 
 ## Federation and social protocols
 
-Existing federated protocols share one lesson: federation alone does not give
-everyone a server of their own. Most people still gather on a few large
-servers. See "Why federation alone is not enough" in the README for the
-reasons and our answers.
+The federated protocols we have today teach one lesson: federation alone does
+not give everyone a server of their own. Most people still come together on a
+few large servers. See "Why federation alone is not enough" in the README for
+the reasons and our answers.
 
 - **[Matrix](https://spec.matrix.org/)**: room state resolution across
-  servers. Despite federation, most users sit on a few large servers. Study
-  why: identity is tied to the server's domain; every server in a room must
-  replicate and resolve that room's whole state, so a small server joining a
-  large room pays a lot; and running a server takes ongoing effort. Its peer-to-peer
-  experiments (Pinecone) are worth reading too. Note that "homeserver" is also
-  a Matrix term.
-- **[ActivityPub](https://www.w3.org/TR/activitypub/)** and Mastodon: the most
-  widely used federation, built around servers rather than people. Identity
-  is tied to an instance and moving loses your old posts. Small instances are
-  quiet, and moderation and spam fall on the admin, so people gather on large
-  ones.
+  servers. Matrix is federated, but most users are on a few large servers.
+  Study why. Identity is tied to the server's domain. Every server in a room
+  must copy and resolve that room's whole state, so a small server that joins
+  a large room pays a lot. And running a server takes work that does not end.
+  Its peer-to-peer experiments (Pinecone) are also worth reading. Note that
+  "homeserver" is also a Matrix term.
+- **[ActivityPub](https://www.w3.org/TR/activitypub/)** and Mastodon: the
+  federation that most people use. It is built around servers, not people.
+  Identity is tied to an instance, and when you move you lose your old posts.
+  Small instances are quiet, and the admin has to deal with moderation and
+  spam. So people come together on large instances.
 - **[AT Protocol](https://atproto.com/)**: the Personal Data Server, signed
-  repositories (a Merkle search tree) and moving between hosts. A PDS can be
-  self-hosted, but most people's data sits on the official ones, and the relay
-  and AppView are mostly run by one company. _We differ:_ no global relay or
-  indexer is required.
-- **[Nostr](https://github.com/nostr-protocol/nips)**: keys plus simple relays,
-  and how far a minimal protocol can go. Identity belongs to no server, as in
-  homeserver.
+  repositories (a Merkle search tree), and moving between hosts. You can host
+  a PDS yourself, but most people's data is on the official ones. One company
+  runs most of the relay and AppView. _We differ:_ no global relay or indexer
+  is needed.
+- **[Nostr](https://github.com/nostr-protocol/nips)**: keys plus simple
+  relays, and how far a very small protocol can go. Identity belongs to no
+  server, as in homeserver.
 - **[Briar](https://briarproject.org/)** and its
-  [Mailbox](https://briarproject.org/download-briar-mailbox/): holding messages
-  for offline contacts, which is our "mailbox" role.
+  [Mailbox](https://briarproject.org/download-briar-mailbox/): keeping
+  messages for contacts who are offline. This is our "mailbox" role.
 - **[Spritely Goblins](https://spritely.institute/goblins/)** and
   [OCapN](https://ocapn.org/): object capabilities across a network.
-- **[ForgeFed](https://forgefed.org/)**: federation for code hosting, being
-  built into Forgejo.
+- **[ForgeFed](https://forgefed.org/)**: federation for code hosting. It is
+  being built into Forgejo.
 
 ## Sync and local-first data
 
 - **[Automerge](https://automerge.org/)**, **[Yjs](https://yjs.dev/)** and
-  **[Loro](https://loro.dev/)**: CRDTs for collaborative documents. Compare
-  their data formats, performance and compile cost.
-- **[Willow](https://willowprotocol.org/)**: a sync protocol with capabilities
-  and real deletion built in, from the Earthstar team.
+  **[Loro](https://loro.dev/)**: CRDTs for documents that people edit
+  together. Compare their data formats, speed and compile cost.
+- **[Willow](https://willowprotocol.org/)**: a sync protocol from the
+  Earthstar team, with capabilities and real deletion built in.
 - **[cr-sqlite](https://github.com/vlcn-io/cr-sqlite)**: CRDTs inside SQLite.
 - **[Git](https://git-scm.com/book/en/v2/Git-Internals-Plumbing-and-Porcelain)**:
   content-addressed history that millions of people sync every day.
@@ -213,7 +217,7 @@ reasons and our answers.
 ## Storage, databases and search
 
 - **[SQLite](https://www.sqlite.org/)**: a small, fast and reliable embedded
-  database, with FTS5 and R*Tree, and a file format meant to stay readable
+  database, with FTS5 and R*Tree. Its file format is meant to stay readable
   until 2050. Our derived index uses it. Read
   [how it is tested](https://www.sqlite.org/testing.html).
 - **[redb](https://github.com/cberner/redb)** and
@@ -222,48 +226,49 @@ reasons and our answers.
 - **[Tantivy](https://github.com/quickwit-oss/tantivy)** and
   [SQLite FTS5](https://www.sqlite.org/fts5.html): full-text search for every
   kind of data.
-- **[Perkeep](https://perkeep.org/)**: content-addressed personal storage
-  meant to last a lifetime. Very close to our goals.
-- **[Tahoe-LAFS](https://tahoe-lafs.org/)**: storage among friends where the
+- **[Perkeep](https://perkeep.org/)**: content-addressed personal storage,
+  made to last a lifetime. Very near to our goals.
+- **[Tahoe-LAFS](https://tahoe-lafs.org/)**: storage among friends, where the
   storage providers cannot read the data. The model for encrypted mutual
   backup.
-- **[Garage](https://garagehq.deuxfleurs.fr/)**: lightweight S3 storage in
-  Rust, made to be self-hosted across a few sites run by friends.
+- **[Garage](https://garagehq.deuxfleurs.fr/)**: light S3 storage in Rust,
+  made to be self-hosted across a few sites that friends run.
 - **[restic](https://restic.net/)** and **[BorgBackup](https://www.borgbackup.org/)**:
   deduplication, encryption and repository formats for backups.
 - **[BLAKE3](https://github.com/BLAKE3-team/BLAKE3)** and
-  **[Bao](https://github.com/oconnor663/bao)**: fast hashing and verified
+  **[Bao](https://github.com/oconnor663/bao)**: fast hashing, and verified
   streaming of content-addressed data.
 - **[Litestream](https://litestream.io/)**: streaming SQLite replication.
 - **[DuckDB](https://duckdb.org/)** and **[DuckLake](https://ducklake.select/)**:
-  an embedded analytical database, and tables kept as Parquet files in object
-  storage with snapshots and time travel. We measured them and chose SQLite;
-  see the architecture page.
+  an embedded database for analysis, and tables kept as Parquet files in
+  object storage, with snapshots and time travel. We measured them and chose
+  SQLite; see the architecture page.
 - **[duckdb-tantivy](https://github.com/alitrack/duckdb-tantivy)**: BM25 search
-  with Chinese segmentation as SQL functions in DuckDB, written in Rust.
-- **[Turso](https://github.com/tursodatabase/turso)**: SQLite rewritten in
+  with Chinese word splitting, as SQL functions in DuckDB, written in Rust.
+- **[Turso](https://github.com/tursodatabase/turso)**: SQLite written again in
   Rust. We measured it; see the architecture page.
 
 ## The Web platform
 
 - **[Solid](https://solidproject.org/)**: personal data stores on Web
-  standards, from the Web's inventor. Close to our goals; we differ in using
-  an ordered log per space and keys instead of WebIDs on domains.
+  standards, from the person who made the Web. Near to our goals. We differ:
+  we use an ordered log for each space, and keys in place of WebIDs on
+  domains.
 - **[HTTP Message Signatures (RFC 9421)](https://www.rfc-editor.org/rfc/rfc9421)**
   and **[Web Push (RFC 8030)](https://www.rfc-editor.org/rfc/rfc8030)**:
   standards we use between servers and for notifications.
 - **[WebTransport](https://developer.mozilla.org/en-US/docs/Web/API/WebTransport)**:
-  QUIC for browsers, which lets a browser reach a node by certificate hash.
+  QUIC for browsers. It lets a browser get to a node by certificate hash.
 - **[WinterTC](https://wintertc.org/)** and
   **[wasi:http](https://github.com/WebAssembly/wasi-http)**: one request and
-  response API on servers and in browsers, the model for our plugin
+  response API on servers and in browsers. It is the model for our plugin
   interface.
 
 ## Peer-to-peer sharing and incentives
 
 - **[BitTorrent](https://www.bittorrent.org/beps/bep_0003.html)**: tit-for-tat,
-  where peers reward those who give back. A simple local rule with
-  network-wide effects.
+  where peers give more to those who give back. A simple local rule that has
+  effects across the whole network.
 - **[IPFS](https://docs.ipfs.tech/)**: content addressing at scale, and the
   lesson that nobody keeps data unless someone chooses to pin it. _We differ:_
   no token economy (Filecoin).
@@ -274,24 +279,25 @@ reasons and our answers.
 
 - **[Umbrel](https://umbrel.com/)**, **[YunoHost](https://yunohost.org/)** and
   **[Cloudron](https://www.cloudron.io/)**: app stores for self-hosting, and
-  what goes wrong when updates break.
-- **[Home Assistant](https://www.home-assistant.io/)**: a large ecosystem of
+  what goes wrong when updates break things.
+- **[Home Assistant](https://www.home-assistant.io/)**: a large set of
   integrations, and upgrades that ordinary people can live with. Home
-  automation itself is a specialist need, connected through a plugin.
-- **[Caddy](https://caddyserver.com/)**: automatic TLS certificates.
+  automation itself is a specialist need; it connects through a plugin.
+- **[Caddy](https://caddyserver.com/)**: TLS certificates that it gets and
+  renews by itself.
 - **[NixOS](https://nixos.org/)** and **[OSTree](https://ostreedev.github.io/ostree/)**:
   atomic upgrades and rollback.
 - **[Android A/B updates](https://source.android.com/docs/core/ota/ab)**,
   **[RAUC](https://rauc.io/)** and **[Mender](https://mender.io/)**: updating
-  unattended devices without leaving them unable to boot.
-- **[PocketBase](https://pocketbase.io/)**: a whole backend in one file plus
+  devices that nobody is watching, without leaving them unable to boot.
+- **[PocketBase](https://pocketbase.io/)**: a whole backend in one file, plus
   SQLite.
 
 ## Reliability and testing
 
 - **[FoundationDB simulation testing](https://apple.github.io/foundationdb/testing.html)**:
-  run the whole distributed system deterministically in one process and
-  replay any failure.
+  run the whole distributed system in one process, the same way every time,
+  and replay any failure.
 - **[TigerBeetle](https://github.com/tigerbeetle/tigerbeetle)** and
   [TigerStyle](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md):
   deterministic simulation, assertions everywhere, and few dependencies.
@@ -305,9 +311,9 @@ reasons and our answers.
 - **[Fast Rust Builds](https://matklad.github.io/2021/09/04/fast-rust-builds.html)**
   (matklad): practical ways to keep compile times low.
 - **[rust-analyzer](https://github.com/rust-lang/rust-analyzer)**: a large Rust
-  workspace organized for fast builds and clear boundaries.
+  workspace, organized for fast builds and clear boundaries.
 - **[tokio](https://tokio.rs/)** and **[smol](https://github.com/smol-rs/smol)**:
-  two approaches to async runtimes, large and small.
+  two ways to make an async runtime, one large and one small.
 - **[hyper](https://hyper.rs/)**, **[axum](https://github.com/tokio-rs/axum)**
   and **[rustls](https://github.com/rustls/rustls)**: HTTP and TLS in Rust.
 
@@ -315,14 +321,14 @@ reasons and our answers.
 
 - **[Wasmtime](https://wasmtime.dev/)** and the
   [Component Model](https://component-model.bytecodealliance.org/) (WIT):
-  sandboxed extensions with typed interfaces.
+  extensions in a sandbox, with typed interfaces.
 - **[Extism](https://extism.org/)**: a plugin system built on WebAssembly.
 - **[Zed extensions](https://zed.dev/docs/extensions)**: a Rust application
-  hosting WebAssembly extensions.
+  that runs WebAssembly extensions.
 - **[OpenBSD pledge and unveil](https://man.openbsd.org/pledge.2)**,
   **[Linux Landlock](https://landlock.io/)** and
   **[Capsicum](https://www.cl.cam.ac.uk/research/security/capsicum/)**: a
-  program giving up permissions it does not need.
+  program gives up the permissions it does not need.
 - **[Fuchsia components](https://fuchsia.dev/fuchsia-src/concepts/components/v2)**:
   an operating system built on capabilities from the start.
 
@@ -332,9 +338,9 @@ reasons and our answers.
   push notifications to phones without depending on Google or Apple.
 - **[Fluent](https://projectfluent.org/)** and
   **[ICU4X](https://github.com/unicode-org/icu4x)**: translation and
-  localization, both available in Rust.
+  localization. Both can be used from Rust.
 - **[WCAG](https://www.w3.org/WAI/standards-guidelines/wcag/)**: accessibility
-  for everyone in the family, including the elderly and the disabled.
+  for everyone in the family, old people and disabled people too.
 
 ## Local AI
 
@@ -346,19 +352,19 @@ reasons and our answers.
 
 ## Applications in scope
 
-Projects that already serve one part of what homeserver covers. Study their
+These projects already do one part of what homeserver does. Study their
 features and data models, not their architecture.
 
-Only everyday needs that 80% of people share belong here. Specialist needs
-such as media libraries, home automation and code hosting stay out of the
-core; see the next section.
+Only everyday needs that 80% of people have go here. Specialist needs, such
+as media libraries, home automation and code hosting, stay out of the core;
+see the next section.
 
 - **[Immich](https://immich.app/)** and **[PhotoPrism](https://www.photoprism.app/)**:
   photos and videos.
-- **[Nextcloud](https://nextcloud.com/)**: files, calendar and contacts. Also
-  shows what happens when apps are not isolated from each other.
-- **[Stalwart](https://stalw.art/)**: an all-in-one mail server in Rust (IMAP,
-  JMAP, SMTP).
+- **[Nextcloud](https://nextcloud.com/)**: files, calendar and contacts. It
+  also shows what happens when apps are not kept apart from each other.
+- **[Stalwart](https://stalw.art/)**: a mail server in Rust that does it all
+  (IMAP, JMAP, SMTP).
 - **[Radicale](https://radicale.org/)**: a small calendar and contacts server.
 - **[Vaultwarden](https://github.com/dani-garcia/vaultwarden)**: passwords, in
   Rust.
@@ -367,30 +373,30 @@ core; see the next section.
   finance.
 - **[OwnTracks](https://owntracks.org/)**: private location history.
 - **[Obsidian](https://obsidian.md/)** and **[Logseq](https://logseq.com/)**:
-  notes kept as plain files you own.
+  notes kept as plain files that you own.
 - **[Datasette](https://datasette.io/)** and
-  **[Dogsheep](https://dogsheep.github.io/)**: turning your personal data from
-  many services into one place you can explore.
-- **[Conduit](https://conduit.rs/)**: a lightweight Matrix server in Rust.
+  **[Dogsheep](https://dogsheep.github.io/)**: putting your personal data from
+  many services in one place where you can look through it.
+- **[Conduit](https://conduit.rs/)**: a light Matrix server in Rust.
 
 ## Specialist software connected through plugins
 
 Specialist needs stay out of the core and connect through plugins. Study the
-APIs and integration points of these projects to learn what the plugin
-interface must offer: identity, permissions, events and data access.
+APIs and integration points of these projects. They show what the plugin
+interface must give: identity, permissions, events and data access.
 
 - **[Jellyfin](https://jellyfin.org/)**: media libraries and transcoding.
 - **[Home Assistant](https://www.home-assistant.io/)**: home automation.
 - **[Forgejo](https://forgejo.org/)**: code hosting.
-- **[Miniflux](https://miniflux.app/)**: feed reading.
+- **[Miniflux](https://miniflux.app/)**: reading feeds.
 
 ## Community and sustainability
 
 - **[Debian Social Contract](https://www.debian.org/social_contract)**: a
   project's promises to its users, in writing.
 - **[Rust RFCs](https://rust-lang.github.io/rfcs/)** and
-  **[Python PEPs](https://peps.python.org/)**: deciding in the open.
-- **[NLnet](https://nlnet.nl/)**: public funding for open internet software.
+  **[Python PEPs](https://peps.python.org/)**: making decisions in the open.
+- **[NLnet](https://nlnet.nl/)**: public money for open internet software.
 - **[Software Freedom Conservancy](https://sfconservancy.org/)** and the
   **[Signal Foundation](https://signalfoundation.org/)**: nonprofit homes for
   free software.

@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! A small HTTP client for talking to other nodes and push services. One connection per request, HTTP/1.1, TLS through rustls with
-//! the ring backend and the Mozilla root certificates.
+//! A small HTTP client for talking to other nodes and push services.
 //!
-//! Nodes are authenticated by their signatures (requests are signed with
-//! HTTP Message Signatures and log entries are signed), not by their TLS
-//! certificates, so a node's own self-signed certificate is accepted when
-//! the client is built with [`Client::accepting_self_signed`].
+//! It uses one connection per request and HTTP/1.1. TLS goes through rustls,
+//! with the ring backend and the Mozilla root certificates.
+//!
+//! Nodes prove who they are with signatures, not with their TLS
+//! certificates: requests are signed with HTTP Message Signatures, and log
+//! entries are signed too. So a client made with
+//! [`Client::accepting_self_signed`] accepts a node's own self-signed
+//! certificate.
 
 use std::backtrace::Backtrace;
 use std::fmt;
@@ -20,12 +23,13 @@ use hyper_util::rt::TokioIo;
 use rustls::pki_types::ServerName;
 use tokio::net::TcpStream;
 
-/// The largest response body accepted by the non-streaming transport.
+/// The largest response body that the non-streaming transport accepts.
 ///
-/// Sized for the server's maximum object size, including federation reads.
+/// It is as large as the biggest object the server keeps, so federation
+/// reads fit too.
 pub const MAX_RESPONSE: usize = 256 * 1024 * 1024;
 
-/// A transport failure and its original cause.
+/// A transport error and the error that first caused it.
 #[derive(Debug)]
 pub struct Error {
     message: String,
@@ -51,7 +55,7 @@ impl Error {
         error
     }
 
-    /// The backtrace captured at the transport boundary.
+    /// The backtrace taken where the transport error was made.
     pub fn backtrace(&self) -> &Backtrace {
         &self.backtrace
     }
@@ -119,7 +123,8 @@ impl Client {
     ///
     /// # Panics
     ///
-    /// Panics if the TLS provider cannot configure the supported protocol versions.
+    /// Panics if the TLS provider cannot set up the supported protocol
+    /// versions.
     pub fn new() -> Client {
         let roots = rustls::RootCertStore {
             roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
@@ -133,12 +138,14 @@ impl Client {
         Client::with_config(config)
     }
 
-    /// A client that accepts any certificate. Use only where the peer is
-    /// authenticated some other way (signed requests and signed entries).
+    /// A client that accepts any certificate. Use it only where the peer
+    /// proves who it is in some other way (signed requests and signed
+    /// entries).
     ///
     /// # Panics
     ///
-    /// Panics if the TLS provider cannot configure the supported protocol versions.
+    /// Panics if the TLS provider cannot set up the supported protocol
+    /// versions.
     pub fn accepting_self_signed() -> Client {
         let config = rustls::ClientConfig::builder_with_provider(provider())
             .with_safe_default_protocol_versions()
@@ -161,7 +168,8 @@ impl Client {
     ///
     /// # Errors
     ///
-    /// Returns an error for an unsupported URL, network or TLS failure, timeout or oversized body.
+    /// Returns an error for an unsupported URL, a network or TLS error, a
+    /// timeout, or a body that is too large.
     pub async fn send(
         &self,
         req: http::Request<Vec<u8>>,
@@ -178,14 +186,14 @@ impl Client {
         .await?
     }
 
-    /// Send a request and return as soon as the response headers arrive;
-    /// the body is read as it comes, with no size or time limit (exports,
+    /// Send a request and return as soon as the response headers come. The
+    /// body is read as it comes, with no size or time limit (for exports,
     /// downloads and event streams).
     ///
     /// # Errors
     ///
-    /// Returns an error for an unsupported URL, or a network or TLS failure
-    /// or timeout before the headers arrive.
+    /// Returns an error for an unsupported URL, or for a network or TLS error
+    /// or timeout before the headers come.
     pub async fn send_streaming(
         &self,
         req: http::Request<Vec<u8>>,
@@ -220,7 +228,7 @@ impl Client {
                 parts.headers.insert(http::header::HOST, v);
             }
         }
-        // HTTP/1.1 wants origin-form on the wire.
+        // HTTP/1.1 needs the origin-form on the wire.
         let path = uri.path_and_query().map_or("/", |p| p.as_str());
         parts.uri = path
             .parse()
@@ -255,12 +263,12 @@ where
     Ok(sender.send_request(req).await?)
 }
 
-/// A response body read as it arrives.
+/// A response body, read as it comes in.
 #[derive(Debug)]
 pub struct Streaming(Incoming);
 
 impl Streaming {
-    /// The next piece of the body; `None` at its end.
+    /// The next part of the body, or `None` at its end.
     ///
     /// # Errors
     ///
@@ -283,7 +291,8 @@ impl Streaming {
     ///
     /// # Errors
     ///
-    /// Returns an error if the connection fails or the body is longer.
+    /// Returns an error if the connection fails or the body is longer than
+    /// `limit`.
     pub async fn read_to_end(&mut self, limit: usize) -> Result<Vec<u8>, Error> {
         let mut out = Vec::new();
         while let Some(data) = self.chunk().await? {

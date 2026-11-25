@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Commands that work on a node's content: on the data directory when the
-//! node is stopped, else through the API of a running node.
+//! Commands that work on a node's content. They use the data directory when
+//! the node is stopped, else the API of a running node.
 
 use std::collections::BTreeMap;
 use std::io::{IsTerminal, Read, Write};
@@ -40,9 +40,10 @@ pub enum Target {
 }
 
 impl Global {
-    /// `--server` means that server and `--dir` that directory. Otherwise
-    /// the default data directory, unless a running node holds it (or there
-    /// is none) and a sign-in is saved.
+    /// `--server` means that server, and `--dir` means that directory.
+    /// Without them, this is the default data directory. But if a running
+    /// node holds that directory (or there is none) and a sign-in is saved,
+    /// it is the signed-in server.
     pub async fn target(&self) -> Res<Target> {
         if self.server.is_some() {
             return Ok(Target::Remote(remote::required(self.server.as_deref())?));
@@ -90,7 +91,7 @@ pub enum SpaceCommand {
     },
     /// Create a space
     Create { name: String },
-    /// Join a space kept on another node (its owner adds this node first)
+    /// Join a space kept on another node (its owner must add this node first)
     Join {
         /// The URL of the node that keeps the space
         #[arg(long, value_name = "URL")]
@@ -107,7 +108,7 @@ pub enum SpaceCommand {
         space: String,
         node: String,
     },
-    /// Pull changes now from the node that keeps the space
+    /// Get changes now from the node that keeps the space
     Sync {
         #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
         space: String,
@@ -116,7 +117,7 @@ pub enum SpaceCommand {
 
 #[derive(Subcommand)]
 pub enum MemberCommand {
-    /// Add a node, by its URL (it is asked who it is) or by its keys
+    /// Add a node, by its URL (the node says who it is) or by its keys
     Add {
         #[arg(add = ArgValueCandidates::new(crate::complete::spaces))]
         space: String,
@@ -341,7 +342,7 @@ pub enum TokenCommand {
         /// Limit the token to these resource types [default: all]
         #[arg(long = "type", value_name = "TYPE")]
         types: Vec<String>,
-        /// Expire after this long: 90m, 12h, 30d, 4w
+        /// End the token after this long: 90m, 12h, 30d, 4w
         #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
         expires_in: Option<u64>,
     },
@@ -369,7 +370,7 @@ pub(crate) async fn grants(t: &Target) -> Res<Vec<t::Grant>> {
     })
 }
 
-/// `90m`, `12h`, `30d` and the like, in milliseconds.
+/// A time such as `90m`, `12h` or `30d`, in milliseconds.
 fn parse_duration(s: &str) -> Result<u64, String> {
     let split = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
     let (n, unit) = s.split_at(split);
@@ -479,12 +480,12 @@ pub async fn identity(g: &Global) -> Res {
 pub async fn export(g: &Global) -> Res {
     let out = std::io::stdout();
     if out.is_terminal() {
-        return Err("redirect the archive to a file: hs ctl export > backup.tar".into());
+        return Err("send the archive to a file: hs ctl export > backup.tar".into());
     }
     match g.target().await? {
         Target::Local(node) => {
             let dir = node.dir().to_path_buf();
-            // The archive reads the files; the node only holds the lock.
+            // The archive reads the files. The node only holds the lock.
             let mut out = std::io::BufWriter::new(out.lock());
             let r = hs_api::export::archive(&dir, &mut out)
                 .map_err(|e| e.to_string())
@@ -742,7 +743,7 @@ fn read_input(file: Option<&Path>) -> Res<Vec<u8>> {
         _ => {
             let stdin = std::io::stdin();
             if stdin.is_terminal() {
-                return Err("give a FILE, or pipe the content in".into());
+                return Err("give a FILE, or send the content on stdin".into());
             }
             let mut b = Vec::new();
             stdin
@@ -766,10 +767,10 @@ pub struct PutArgs {
     /// The media type [default: from the file name, or JSON]
     #[arg(long, value_name = "TYPE")]
     media_type: Option<String>,
-    /// Fail if it already exists
+    /// Stop with an error if it already exists
     #[arg(long, conflicts_with = "if_match")]
     new: bool,
-    /// Fail unless it is still this version (an `ETag`)
+    /// Stop with an error if it is no longer this version (an `ETag`)
     #[arg(long, value_name = "ETAG")]
     if_match: Option<String>,
 }
@@ -796,7 +797,7 @@ pub async fn put(g: &Global, a: PutArgs) -> Res {
     written(g, &a.target, &r)
 }
 
-/// An `ETag` as given, or in quotes if it came without.
+/// An `ETag` as given. If it has no quotes, add them.
 fn quoted(tag: &str) -> String {
     if tag.starts_with('"') || tag.starts_with("W/") || tag == "*" {
         tag.to_string()
@@ -902,7 +903,7 @@ fn run_editor(path: &Path) -> Res {
         .filter_map(|k| std::env::var(k).ok())
         .find(|e| !e.trim().is_empty())
         .unwrap_or_else(|| "vi".into());
-    // Through the shell, so `EDITOR="code --wait"` works.
+    // Run by the shell, so `EDITOR="code --wait"` works.
     #[cfg(unix)]
     let status = std::process::Command::new("sh")
         .arg("-c")
@@ -984,8 +985,8 @@ pub struct UploadArgs {
     files: Vec<PathBuf>,
 }
 
-/// Each file goes up as a blob, then a `file/…` resource names it. The ID
-/// comes from the content, so uploading the same file again changes
+/// Send each file as a blob, then make a `file/…` resource that names it.
+/// The ID comes from the content, so the same file uploaded again changes
 /// nothing.
 pub async fn upload(g: &Global, a: UploadArgs) -> Res {
     let s = g.server()?;
@@ -1032,7 +1033,7 @@ pub async fn upload(g: &Global, a: UploadArgs) -> Res {
 
 // Finding things
 
-/// Rows from search, the timeline and the like.
+/// Print rows from search, the timeline and other lists.
 async fn print_rows(g: &Global, s: &Server, rows: &[t::Row]) -> Res {
     if g.json {
         print_json(rows);
@@ -1166,7 +1167,7 @@ pub enum BlobCommand {
         #[arg(long, value_name = "TYPE")]
         media_type: Option<String>,
     },
-    /// Fetch bytes by their hash
+    /// Get bytes by their hash
     Get {
         hash: String,
         /// Write them to this file
@@ -1204,7 +1205,7 @@ pub async fn blob(g: &Global, cmd: BlobCommand) -> Res {
             }
             let out = std::io::stdout();
             if out.is_terminal() {
-                return Err("redirect it to a file, or give -o FILE".into());
+                return Err("send it to a file, or give -o FILE".into());
             }
             s.download(&path, &mut tokio::io::stdout()).await?;
             Ok(())
@@ -1212,7 +1213,7 @@ pub async fn blob(g: &Global, cmd: BlobCommand) -> Res {
     }
 }
 
-/// Print changes as they happen, one line each, until interrupted.
+/// Print changes as they happen, one line each, until the user stops it.
 pub async fn watch(g: &Global) -> Res {
     let s = g.server()?;
     let names = remote_names(&s).await;

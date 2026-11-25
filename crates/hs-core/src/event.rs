@@ -2,12 +2,12 @@
 
 //! The log formats: proposals, entries and heads.
 //!
-//! An author (a node acting for a person) signs a [`Proposal`]: an operation
-//! on one resource, naming the payload only by its hash. The primary of the
-//! space orders proposals into [`Entry`] values, each carrying the sequence
-//! number and the hash of the previous entry, and signs them. Because the
-//! chain covers the payload's hash and not the payload, payloads can later be
-//! erased while the chain still verifies.
+//! An author (a node working for a person) signs a [`Proposal`]: an operation
+//! on one resource. It names the payload only by its hash. The primary of the
+//! space puts proposals in order as [`Entry`] values and signs them. Each entry
+//! has the sequence number and the hash of the entry before it. The chain
+//! covers the payload's hash, not the payload. So payloads can be erased
+//! later, and the chain can still be checked.
 
 use crate::cbor::{Value, map};
 use crate::{FormatError, Hash, PublicKey};
@@ -27,11 +27,11 @@ pub enum Kind {
     Grant,
     /// Revokes a grant; the target is `grant/<id>`.
     Revoke,
-    /// Asks every follower to erase the payloads of a resource's history.
+    /// Asks every follower to erase the payloads in a resource's history.
     Erase,
-    /// An opaque MLS message (commit or proposal) for the space's group.
+    /// An opaque MLS message (commit or proposal) for the group of the space.
     Mls,
-    /// Hands the space over to a new primary (JSON payload).
+    /// Gives the space to a new primary (JSON payload).
     Handover,
 }
 
@@ -83,11 +83,11 @@ pub struct Proposal {
     pub media_type: String,
     /// Milliseconds since the Unix epoch, by the author's clock.
     pub time: u64,
-    /// A random value chosen by the author; retries reuse it (idempotency).
+    /// A random value the author picks. Retries use it again (idempotency).
     pub nonce: Vec<u8>,
-    /// The grant under which the author wrote this, if any.
+    /// The grant that let the author write this, if there is one.
     pub grant: Option<String>,
-    /// The original API request's fingerprint for idempotent writes.
+    /// The fingerprint of the first API request, for idempotent writes.
     pub request: Option<Hash>,
 }
 
@@ -118,8 +118,8 @@ impl Proposal {
     ///
     /// # Errors
     ///
-    /// Returns an error if a required proposal field is absent, malformed or inconsistent with its
-    /// kind.
+    /// Returns an error if a needed proposal field is missing or badly formed, or does not agree
+    /// with its kind.
     pub fn decode(bytes: &[u8]) -> Result<Proposal, FormatError> {
         let v = Value::decode(bytes)?;
         let err = |f: &str| FormatError(format!("proposal: bad field {f}"));
@@ -204,7 +204,7 @@ impl Entry {
     ///
     /// # Errors
     ///
-    /// Returns an error if an entry field is absent or malformed.
+    /// Returns an error if an entry field is missing or badly formed.
     pub fn decode(bytes: &[u8]) -> Result<Entry, FormatError> {
         let v = Value::decode(bytes)?;
         let err = |f: &str| FormatError(format!("entry: bad field {f}"));
@@ -228,7 +228,7 @@ impl Entry {
     }
 }
 
-/// The mutable pointer to the end of a log, signed by the primary.
+/// The pointer to the end of a log. It changes over time; the primary signs it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Head {
     /// The space.
@@ -268,7 +268,7 @@ impl Head {
     ///
     /// # Errors
     ///
-    /// Returns an error if the head fields or segment hashes are malformed.
+    /// Returns an error if the head fields or the segment hashes are badly formed.
     pub fn decode(bytes: &[u8]) -> Result<Head, FormatError> {
         let v = Value::decode(bytes)?;
         let err = |f: &str| FormatError(format!("head: bad field {f}"));
@@ -297,8 +297,8 @@ impl Head {
     }
 }
 
-/// A sealed segment: a run of consecutive signed entries, each prefixed by
-/// its length as a CBOR unsigned integer. Its name is the hash of its bytes.
+/// A sealed segment: signed entries one after another, each with its length
+/// before it as a CBOR unsigned integer. Its name is the hash of its bytes.
 pub fn encode_segment(entries: &[Vec<u8>]) -> Vec<u8> {
     let mut out = Vec::new();
     for e in entries {
@@ -312,7 +312,7 @@ pub fn encode_segment(entries: &[Vec<u8>]) -> Vec<u8> {
 ///
 /// # Errors
 ///
-/// Returns an error if the segment is malformed or contains a non-byte-string item.
+/// Returns an error if the segment is badly formed or has an item that is not a byte string.
 pub fn decode_segment(mut bytes: &[u8]) -> Result<Vec<Vec<u8>>, FormatError> {
     let mut out = Vec::new();
     while !bytes.is_empty() {

@@ -4,9 +4,9 @@
 //!
 //! Supported: unsigned and negative integers, byte strings, text strings,
 //! arrays, maps, `false`, `true` and `null`. No floats, tags or indefinite
-//! lengths. Encoding is always deterministic: shortest integer forms and map
-//! keys sorted by their encoded bytes. Decoding rejects anything that is not
-//! in that form, so every value has exactly one encoding.
+//! lengths. Encoding is always deterministic: the shortest integer forms, and
+//! map keys in order of their encoded bytes. Decoding says no to anything that
+//! is not in that form, so every value has exactly one encoding.
 
 use std::fmt;
 
@@ -23,7 +23,7 @@ pub enum Value {
     Text(String),
     /// An array.
     Array(Vec<Value>),
-    /// A map. Keys are unique; order is canonicalized on encoding.
+    /// A map. Keys are unique. Encoding puts them in canonical order.
     Map(Vec<(Value, Value)>),
     /// A boolean.
     Bool(bool),
@@ -103,7 +103,8 @@ impl Value {
     ///
     /// # Errors
     ///
-    /// Returns an error for malformed, noncanonical or unsupported CBOR, or trailing bytes.
+    /// Returns an error for CBOR that is badly formed, not canonical or not supported, or for
+    /// bytes left over at the end.
     pub fn decode(bytes: &[u8]) -> Result<Value, Error> {
         let mut pos = 0;
         let value = decode_at(bytes, &mut pos, 0)?;
@@ -113,11 +114,11 @@ impl Value {
         Ok(value)
     }
 
-    /// Decode one value from the start of `bytes`, returning it and its length.
+    /// Decode one value from the start of `bytes`. Returns the value and its length.
     ///
     /// # Errors
     ///
-    /// Returns an error for truncated, noncanonical or unsupported CBOR.
+    /// Returns an error for CBOR that is cut short, not canonical or not supported.
     pub fn decode_prefix(bytes: &[u8]) -> Result<(Value, usize), Error> {
         let mut pos = 0;
         let value = decode_at(bytes, &mut pos, 0)?;
@@ -330,7 +331,7 @@ mod tests {
         ]);
         let bytes = v.encode();
         let back = Value::decode(&bytes).unwrap();
-        // Keys come back sorted: 1, 10, "b".
+        // Keys come back in order: 1, 10, "b".
         assert_eq!(back.get(1), v.get(1));
         assert_eq!(back.encode(), bytes);
         assert_eq!(bytes[1], 0x01);

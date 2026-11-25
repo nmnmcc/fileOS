@@ -181,7 +181,7 @@ struct Subscribed {
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
 struct TestNotification {
-    /// The server attempted to send the notification.
+    /// The server tried to send the notification.
     ok: bool,
 }
 
@@ -189,7 +189,7 @@ struct TestNotification {
 #[utoipa::path(get, path = "/api/push/key", tag = "push",
     responses(
         (status = 200, body = PushKey),
-        (status = 503, description = "The push key is unavailable"),
+        (status = 503, description = "There is no push key"),
     ))]
 fn key(api: &Api) -> Result {
     let v =

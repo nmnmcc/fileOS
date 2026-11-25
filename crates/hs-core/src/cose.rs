@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! `COSE_Sign1` (RFC 9052) with `EdDSA`, the signature envelope of every log
-//! entry. We use the untagged form; the context always says what it is.
+//! `COSE_Sign1` (RFC 9052) with `EdDSA`: the signature envelope of every log
+//! entry. We use the untagged form, because the context always says what it is.
 
 use crate::cbor::{Error, Value};
 
@@ -50,7 +50,7 @@ impl Sign1 {
     ///
     /// # Errors
     ///
-    /// Returns an error if the CBOR, signature structure or algorithm is invalid.
+    /// Returns an error if the CBOR, the signature structure or the algorithm is not valid.
     pub fn decode(bytes: &[u8]) -> Result<Sign1, Error> {
         let value = Value::decode(bytes)?;
         let items = value

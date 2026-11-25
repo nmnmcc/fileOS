@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Objects in a local directory: the data directory itself, or a replica on
-//! an external disk. Writes go to a temporary file, are synced, then renamed,
-//! so a crash never leaves a half-written object under its real name.
+//! an external disk. A write goes to a temporary file, which is synced and
+//! then renamed. So a crash never leaves a half-written object under its real
+//! name.
 
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -40,7 +41,7 @@ impl Dir {
     ///
     /// # Errors
     ///
-    /// Returns an I/O error if the directory cannot be created or accessed.
+    /// Returns an I/O error if the directory cannot be created or opened.
     pub fn open(root: impl AsRef<Path>) -> io::Result<Dir> {
         fs::create_dir_all(root.as_ref())?;
         Ok(Dir {
@@ -62,7 +63,7 @@ impl Dir {
     ///
     /// # Errors
     ///
-    /// Returns an error if the name is invalid or the file cannot be read.
+    /// Returns an error if the name is not valid or the file cannot be read.
     pub fn get(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
         match fs::read(self.path(name)?) {
             Ok(b) => Ok(Some(b)),
@@ -75,7 +76,7 @@ impl Dir {
     ///
     /// # Errors
     ///
-    /// Returns an error if the name is invalid or opening the file fails.
+    /// Returns an error if the name is not valid or the file does not open.
     pub fn open_file(&self, name: &str) -> io::Result<Option<fs::File>> {
         match fs::File::open(self.path(name)?) {
             Ok(file) => Ok(Some(file)),
@@ -88,7 +89,8 @@ impl Dir {
     ///
     /// # Errors
     ///
-    /// Returns an error if the name, range or file is invalid or the range cannot be read in full.
+    /// Returns an error if the name, range or file is not valid, or the range cannot be read in
+    /// full.
     pub fn get_range(&self, name: &str, start: u64, end: u64) -> io::Result<Vec<u8>> {
         let mut f = fs::File::open(self.path(name)?)?;
         let file_len = f.metadata()?.len();
@@ -107,7 +109,7 @@ impl Dir {
     ///
     /// # Errors
     ///
-    /// Returns an error if the name is invalid or metadata cannot be read.
+    /// Returns an error if the name is not valid or metadata cannot be read.
     pub fn len(&self, name: &str) -> io::Result<Option<u64>> {
         match fs::metadata(self.path(name)?) {
             Ok(m) => Ok(Some(m.len())),
@@ -120,7 +122,8 @@ impl Dir {
     ///
     /// # Errors
     ///
-    /// Returns an error if the name is invalid or the object cannot be staged, synced or renamed.
+    /// Returns an error if the name is not valid, or the object cannot be written to a temporary
+    /// file, synced or renamed.
     pub fn put(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
         let path = self.path(name)?;
         let parent = path.parent().unwrap_or(&self.root);
@@ -134,11 +137,11 @@ impl Dir {
         Ok(())
     }
 
-    /// Publish an object and flush its directory entries to storage on Unix.
+    /// Publish an object, and on Unix flush its directory entries to storage.
     ///
     /// # Errors
     ///
-    /// Returns an error if the object or its containing directories cannot be synced.
+    /// Returns an error if the object or the directories it is in cannot be synced.
     pub fn put_durable(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
         self.put(name, bytes)?;
         #[cfg(unix)]
@@ -154,14 +157,15 @@ impl Dir {
         Ok(())
     }
 
-    /// Write only if the current content hashes to `expected` (or the object
-    /// does not exist, when `expected` is `None`). Returns whether it wrote.
+    /// Write only if the hash of the current content is `expected` (or, when
+    /// `expected` is `None`, the object does not exist). Returns whether it
+    /// wrote.
     ///
     /// # Errors
     ///
-    /// Returns an error if the name is invalid, the directory cannot be locked, or I/O fails.
+    /// Returns an error if the name is not valid, the directory cannot be locked, or I/O fails.
     pub fn put_if(&self, name: &str, bytes: &[u8], expected: Option<Hash>) -> io::Result<bool> {
-        // A separate descriptor per caller also serializes independent processes.
+        // Each caller has its own descriptor, so separate processes also go one at a time.
         let lock = fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -180,7 +184,7 @@ impl Dir {
     ///
     /// # Errors
     ///
-    /// Returns an error if the name is invalid or the operating system rejects the deletion.
+    /// Returns an error if the name is not valid or the operating system does not let it delete.
     pub fn delete(&self, name: &str) -> io::Result<()> {
         match fs::remove_file(self.path(name)?) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
@@ -192,7 +196,7 @@ impl Dir {
     ///
     /// # Errors
     ///
-    /// Returns an error if the prefix is invalid or directory iteration fails.
+    /// Returns an error if the prefix is not valid or reading the directory fails.
     pub fn list(&self, prefix: &str) -> io::Result<Vec<String>> {
         let mut out = Vec::new();
         let start = if prefix.is_empty() {
@@ -223,8 +227,8 @@ impl Dir {
     }
 }
 
-/// Where a blob lives in a directory: `ab/cdef…`, two levels to keep
-/// directories small.
+/// Where a blob is in a directory: `ab/cdef…`. Two levels keep directories
+/// small.
 pub fn blob_name(hash: &Hash) -> String {
     let hex = hash.to_hex();
     format!("{}/{}", &hex[..2], &hex[2..])

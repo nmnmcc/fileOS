@@ -452,7 +452,7 @@ pub async fn handle(api: &Api, req: &Request, segs: &[&str]) -> Result {
                 "send-verification-email",
             ],
         ) => {
-            // No mail here: hand the token straight back, as the apps allow.
+            // No mail here: give the token back at once, as the apps allow.
             return Ok(json_ok(&Json::String(b64url(&random::<16>()))));
         }
         (

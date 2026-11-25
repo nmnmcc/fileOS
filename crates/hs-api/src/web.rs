@@ -2,7 +2,7 @@
 
 //! The web app, built into the executable (see `build.rs` for where it comes
 //! from). `/` and any other top-level path without a dot get `index.html`.
-//! Files named by their content are cached for good; the rest are checked
+//! Files named by their content are cached for a year; the rest are checked
 //! each time. A brotli copy goes to clients that take it.
 
 use std::sync::OnceLock;
@@ -27,7 +27,7 @@ const FILES: &[File] = include!(concat!(env!("OUT_DIR"), "/web_files.rs"));
 /// images.
 const CSP: &str = "default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
-/// `ETag`s, worked out once per file.
+/// `ETag`s, made once for each file.
 fn etag(index: usize) -> &'static str {
     static TAGS: OnceLock<Vec<OnceLock<String>>> = OnceLock::new();
     let tags = TAGS.get_or_init(|| FILES.iter().map(|_| OnceLock::new()).collect());

@@ -3,11 +3,11 @@
 //! Grants: the one permission model.
 //!
 //! A grant is a resource in the private space, written by an owner. It names
-//! the spaces it covers, the role it gives and, for bearer tokens, the
-//! BLAKE3 hash of the token (the token itself is shown once and never
-//! stored). Revoking a grant is a `revoke` entry. Every request runs with an
-//! [`Access`]: the owner, a grant, another node (by its key, as a member of
-//! a space) or nobody.
+//! the spaces it covers and the role it gives. For bearer tokens, it also
+//! has the BLAKE3 hash of the token. The token itself is shown once and
+//! never stored. A `revoke` entry revokes a grant. Every request runs with
+//! an [`Access`]: the owner, a grant, another node (by its key, as a member
+//! of a space) or nobody.
 
 use hs_core::event::Kind;
 use hs_core::{Hash, PublicKey};
@@ -19,9 +19,9 @@ use crate::{Error, Node, Result, now_ms, random};
 /// Who is asking.
 #[derive(Clone, Debug)]
 pub enum Access {
-    /// Anyone, unauthenticated.
+    /// Anyone, not authenticated.
     Public,
-    /// A bearer of a grant.
+    /// Someone with a grant's token.
     Grant {
         /// The grant ID.
         id: String,
@@ -29,10 +29,10 @@ pub enum Access {
         role: Role,
         /// The spaces it covers (`None`: all).
         spaces: Option<Vec<Hash>>,
-        /// Resource types it is limited to (`None`: all).
+        /// The resource types it is limited to (`None`: all).
         types: Option<Vec<String>>,
     },
-    /// Another node, authenticated by its key.
+    /// Another node, which proved who it is with its key.
     Node {
         /// The node key.
         key: PublicKey,
@@ -79,11 +79,13 @@ impl Access {
         )
     }
 
-    /// Fail unless the caller has at least `needed` in `space` for `target`.
+    /// Return an error if the caller does not have at least `needed` in
+    /// `space` for `target`.
     ///
     /// # Errors
     ///
-    /// Returns a permission error if the grant does not cover the role, space or resource type.
+    /// Returns a permission error if the grant does not cover the role, space
+    /// or resource type.
     pub fn require(&self, space: &Hash, needed: Role, target: &str) -> Result<()> {
         let role = self
             .role(space)
@@ -104,7 +106,7 @@ impl Access {
     }
 }
 
-/// Hash a bearer token for storage and lookup.
+/// Hash a bearer token, to store it and look it up.
 pub fn token_hash(token: &str) -> String {
     data_encoding::HEXLOWER.encode(&blake3::derive_key(
         "homeserver 2025 token v1",
@@ -155,7 +157,8 @@ impl Node {
     ///
     /// # Errors
     ///
-    /// Returns an error if the resulting grant cannot be written to the private space.
+    /// Returns an error if the new grant cannot be written to the private
+    /// space.
     pub async fn create_token(
         &self,
         role: Role,
@@ -188,7 +191,8 @@ impl Node {
     ///
     /// # Errors
     ///
-    /// Returns an error if the grant lacks an ID or cannot be written to the private space.
+    /// Returns an error if the grant has no ID or cannot be written to the
+    /// private space.
     pub async fn add_grant(&self, body: Json) -> Result<()> {
         let private = self.config().private;
         let bytes = serde_json::to_vec(&body).unwrap_or_default();
@@ -225,7 +229,8 @@ impl Node {
     ///
     /// # Errors
     ///
-    /// Returns an error if the revocation cannot be written to the private space.
+    /// Returns an error if the revocation cannot be written to the private
+    /// space.
     pub async fn revoke(&self, id: &str) -> Result<()> {
         let private = self.config().private;
         self.write(

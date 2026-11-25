@@ -1,15 +1,15 @@
 ---
 title: Running a node
-description: Serve the node, behind a reverse proxy, with port mapping and as a system service.
+description: Run the node behind a reverse proxy, with port mapping, and as a system service.
 ---
 
 ```sh
 hs ctl serve
 ```
 
-serves plain HTTP on `127.0.0.1:8080`, reachable only from this machine. Logs
-go to standard error. Stop it with Ctrl-C or `SIGINT`; it finishes what it is
-writing first.
+serves plain HTTP on `127.0.0.1:8080`. Only this machine can get to it. Logs
+go to standard error. Stop it with Ctrl-C or `SIGINT`; it first ends what it
+is writing.
 
 ## Reachable from your network or the Internet
 
@@ -20,20 +20,20 @@ writing first.
 | A domain pointing at a public address | `hs ctl serve` behind [a reverse proxy](#https-on-a-public-domain) |
 | A home router in the way              | add `--map-port`                                                   |
 
-**`--tls self-signed`** makes a certificate once and keeps it in
-`keys/self-signed.pem`. Apps will warn about it; `hs login --insecure`
-accepts it.
+**`--tls self-signed`** makes a certificate one time and keeps it in
+`keys/self-signed.pem`. Apps will give a warning about it;
+`hs login --insecure` lets it through.
 
-**`--map-port`** asks the home router to forward the ports (NAT-PMP or PCP)
-and keeps renewing the mapping. Routers that only speak UPnP are not
-supported in 0.1.0; forward the ports by hand there.
+**`--map-port`** asks the home router to forward the port (NAT-PMP or PCP),
+and keeps renewing the mapping. 0.1.0 does not support routers that only
+talk UPnP; on those, forward the port by hand.
 
 ## HTTPS on a public domain
 
-homeserver is built for reaching nodes directly, peer to peer. It does not
-get certificates for public domains itself. If you want a public HTTPS
-address, run a reverse proxy such as Caddy or nginx in front of
-`hs ctl serve`, and set `url` in the config to the public address.
+homeserver is made for nodes that talk to each other directly, peer to peer.
+It does not get certificates for public domains itself. If you want a public
+HTTPS address, run a reverse proxy such as Caddy or nginx in front of
+`hs ctl serve`. Then set `url` in the config to the public address.
 
 With Caddy, which gets and renews the certificate:
 
@@ -43,7 +43,7 @@ home.example.org {
 }
 ```
 
-With nginx, given a certificate you manage:
+With nginx, and a certificate that you take care of:
 
 ```nginx
 server {
@@ -64,11 +64,11 @@ server {
 }
 ```
 
-Keep `hs` on `127.0.0.1` so that only the proxy reaches it.
+Keep `hs` on `127.0.0.1`, so that only the proxy can get to it.
 
 ## As a system service
 
-An example systemd unit, for a user called `hs` whose data lives in
+An example systemd unit, for a user named `hs` whose data is in
 `/var/lib/homeserver`:
 
 ```ini
@@ -90,14 +90,14 @@ StateDirectory=homeserver
 WantedBy=multi-user.target
 ```
 
-Create the node first as that user, with the same directory:
+First make the node as that user, with the same directory:
 `sudo -u hs HS_DIR=/var/lib/homeserver hs ctl init --name … --url …`.
-Then `systemctl enable --now homeserver`, and read the logs with
+Then run `systemctl enable --now homeserver`, and read the logs with
 `journalctl -u homeserver`.
 
 ## One process at a time
 
 The running node holds `node.lock`. While it runs, commands that can
-(tokens, export, replicas) go through its API instead of the files. A few
-commands need the node stopped: `hs ctl config set`, `hs ctl restore` and
+(tokens, export, replicas) go through its API, not the files. A few commands
+need the node to be stopped: `hs ctl config set`, `hs ctl restore` and
 `hs ctl rebuild-index`.

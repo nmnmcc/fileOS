@@ -3,11 +3,12 @@ title: Backups and restore
 description: Plain exports, encrypted replicas, restoring a node and rebuilding the index.
 ---
 
-There are two kinds of backup, and you want both:
+There are two kinds of backup, and you need both:
 
-- an **export**: your data in plain form, readable without homeserver;
-- an **encrypted replica**: a copy of the whole node, kept up to date,
-  that brings it back with only the recovery code.
+- an **export**: your data in plain form, which you can read without
+  homeserver;
+- an **encrypted replica**: a copy of the whole node, kept up to date. With
+  only the recovery code, it brings the node back.
 
 ## Export
 
@@ -15,16 +16,16 @@ There are two kinds of backup, and you want both:
 hs ctl export > homeserver-2026-11-25.tar
 ```
 
-A plain tar archive of the logs, blobs, identity and configuration. It does
-not contain the keys, but it does contain your data unencrypted: keep it
-somewhere safe. It works while the node runs.
+This is a plain tar archive of the logs, blobs, identity and configuration.
+It does not have the keys in it, but it does have your data, not encrypted;
+keep it in a safe place. It works while the node runs.
 
 ## Encrypted replicas
 
 A replica is an encrypted copy of the data directory (without the index and
-the access log). Each file is encrypted before it leaves, with a key derived
-from the recovery code, and stored under a name that reveals nothing. The
-holder sees only ciphertext.
+the access log). Each file is encrypted before it goes out, with a key made
+from the recovery code. It is stored under a name that gives nothing away.
+The holder sees only encrypted data.
 
 Add one or more places, with the node stopped:
 
@@ -41,8 +42,8 @@ hs ctl config set replicas '["/mnt/usb/homeserver", "s3://KEY:SECRET@s3.example.
 Add `?http=1` for a store without TLS. Characters such as `/` in a secret
 must be percent-encoded (`%2F`).
 
-The running node syncs every replica each hour. Only changed files are sent.
-To sync now and see the result:
+The running node syncs every replica each hour. It sends only the files that
+changed. To sync now and see the result:
 
 ```sh
 hs ctl replica sync
@@ -57,31 +58,33 @@ On a new machine, with an empty data directory and only the recovery code:
 hs ctl restore --from /mnt/usb/homeserver
 ```
 
-`hs` asks for the recovery code (or reads `$HS_RECOVERY_CODE`), fetches and
-decrypts every file, and rebuilds the index. Then start it with
+`hs` asks for the recovery code (or reads `$HS_RECOVERY_CODE`). It gets and
+decrypts every file, then builds the index again. Then start the node with
 `hs ctl serve`. Tokens and shared spaces work as before.
 
 ## Hold a friend's replica
 
 Your node can keep a friend's encrypted replica, and they can keep yours.
-Give each friend a key that reaches one bucket:
+Give each friend a key that gets to one bucket:
 
 ```sh
 hs ctl config set s3_keys '[{"access_key": "bea", "secret_key": "a long random secret", "bucket": "bea"}]'
 ```
 
-Their files go to `buckets/bea/` in your data directory, already encrypted
-by them. Your friend then adds
+Their files go to `buckets/bea/` in your data directory; your friend has
+already encrypted them. Your friend then adds
 `hs://bea:SECRET@your-node.example/bea` to their own `replicas`. Other S3
 tools, such as `rclone`, can use the same endpoint at `/s3`.
 
 ## Rebuild the index
 
-The index (`index.db`) holds search, the timeline and places, all derived
-from the logs. If it seems wrong, rebuild it with the node stopped:
+The index (`index.db`) has search, the timeline and places in it. All of
+them are made from the logs. If it seems wrong, build it again with the node
+stopped:
 
 ```sh
 hs ctl rebuild-index
 ```
 
-Deleting `index.db` has the same effect at the next start.
+If you delete `index.db`, the node builds it again at the next start; the
+effect is the same.

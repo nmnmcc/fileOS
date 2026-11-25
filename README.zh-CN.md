@@ -143,6 +143,6 @@ homeserver 是自由软件，采用 [GNU Affero 通用公共许可证 3.0 only](
 
 与自由软件基金会（FSF）的许可证一样，目的是保护软件使用者的自由。AGPL 要求任何为他人运行 homeserver 的人（包括以托管服务形式）向这些用户公开自己的修改，因此我们和其他任何人都不能把它变成封闭平台。
 
-只通过插件接口与 homeserver 交互的插件可以使用任何许可证，详见 [homeserver 插件例外](PLUGIN-EXCEPTION.md)。插件开发包 `hs-plugin-api` 采用 MIT OR Apache-2.0 授权。
+只通过插件接口与 homeserver 交互的插件可以使用任何许可证，详见 [homeserver 插件例外](PLUGIN-EXCEPTION.zh-CN.md)。插件开发包 `hs-plugin-api` 采用 MIT OR Apache-2.0 授权。
 
 本软件部分基于 Independent JPEG Group 的工作（通过生成缩略图所用的 `jpeg-encoder`）。

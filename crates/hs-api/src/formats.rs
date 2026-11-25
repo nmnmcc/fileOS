@@ -6,9 +6,9 @@
 //! A contact: `{name, given, family, emails, phones, org, title, note,
 //! birthday, address, url, uid, extra}`. An event: `{title, start, end,
 //! all_day, location, description, rrule, uid, time, extra}`. Properties
-//! not understood are kept as lines in `extra` and written back, so a
-//! round trip through a `CardDAV` or `CalDAV` client loses nothing it cares
-//! about.
+//! not understood are kept as lines in `extra` and written back. So when
+//! data goes to a `CardDAV` or `CalDAV` client and comes back, nothing the
+//! client cares about is lost.
 
 #[cfg(test)]
 use serde_json::json;

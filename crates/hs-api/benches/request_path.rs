@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Measure small-request throughput and concurrent blob and log-write latency.
+//! Measure how many small requests are handled per second, and the latency
+//! of blob reads and log writes that run at the same time.
 
 use std::hint::black_box;
 use std::net::{Ipv4Addr, SocketAddr};

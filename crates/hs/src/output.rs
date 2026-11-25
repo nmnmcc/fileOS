@@ -9,8 +9,8 @@ pub fn print_json<T: serde::Serialize + ?Sized>(v: &T) {
     println!("{}", serde_json::to_string_pretty(v).unwrap_or_default());
 }
 
-/// Columns padded to the widest cell (counting wide characters as two),
-/// with a header row. Cells lose their line breaks.
+/// Print columns, each as wide as its widest cell (a wide character counts
+/// as two), with a header row. Line breaks in cells become spaces.
 pub fn table(headers: &[&str], rows: &[Vec<String>]) {
     print!("{}", render(headers, rows));
 }
@@ -61,7 +61,7 @@ pub fn time(ms: u64) -> String {
         .unwrap_or_default()
 }
 
-/// `1.5 MB` and the like.
+/// A size such as `1.5 MB`.
 pub fn size(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
     let mut n = bytes as f64;
@@ -78,7 +78,7 @@ pub fn size(bytes: u64) -> String {
 }
 
 /// The first `n` characters of a long ID, so tables stay narrow. Commands
-/// take any unique prefix.
+/// take any start of an ID that fits only one.
 pub fn short(id: &str, n: usize) -> String {
     id.chars().take(n).collect()
 }

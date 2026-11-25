@@ -2,7 +2,7 @@
 
 [package]
 name = "hs-plugin-host"
-description = "Sandboxed WebAssembly plugin runtime"
+description = "WebAssembly plugin runtime, with each plugin in a sandbox"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

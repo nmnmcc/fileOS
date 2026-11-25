@@ -9,25 +9,27 @@ homeserver.
 
 ## Building on homeserver
 
-Everything a node does is reachable over HTTP, with the same permission
-model for every client.
+You can get to everything a node does over HTTP. Every client has the same
+permission model.
 
 - [REST API](api/): the typed REST API, its OpenAPI document and the Rust
   client.
-- Standard protocols, for apps that already speak them: CardDAV and CalDAV,
+- Standard protocols, for apps that already use them: CardDAV and CalDAV,
   the Bitwarden API, Model Context Protocol, OpenID Connect and forward
   auth, Web Push, and an S3 subset. See
   [Apps and assistants](../user/apps/) and
   [Sign-in for other apps](../admin/sign-in/).
-- Plugins (WebAssembly components) are designed but not in 0.1.0.
+- Plugins (WebAssembly components) have a design, but they are not in
+  0.1.0.
 
 ## Working on homeserver
 
-- [Contributing](contributing/): set up, the rules a change must follow,
-  and how to send it.
+- [Contributing](contributing/): how to set up, the rules a change must
+  keep, and how to send it.
 - [Architecture](architecture/): how homeserver is built, the technology we
-  chose and why.
-- [Prior art](prior-art/): projects we study, and what we take from each.
+  picked and why.
+- [Projects to learn from](prior-art/): projects we study, and what we take
+  from each.
 
-Principles come first. The README in the repository lists them in order of
-priority, and every change is judged against them.
+Principles come first. The README in the repository lists them, the most
+important first. We judge every change by them.

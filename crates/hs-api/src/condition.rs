@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Resource version conditions evaluated by the primary before appending.
+//! Conditions on a resource version, which the primary checks before it
+//! appends an entry.
 
 use hs_core::{Hash, cbor::Value};
 use hs_net::server::Request;
