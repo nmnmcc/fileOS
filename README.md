@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-fileOS is a replicated file system for people and the small groups they are part of. Its state is kept by a number of nodes, and a node keeps only the folders it has agreed to keep. There is no global consensus and no global DHT.
+fileOS is a replicated file system for people and the small groups they are part of. Its state is kept by a number of nodes, and a node keeps only the folders it has agreed to keep. There is no global consensus and no global content DHT.
 
 > [!NOTE]
 > A prototype. Formats will change.
