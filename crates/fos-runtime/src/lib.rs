@@ -21,6 +21,8 @@ use serde::Deserialize;
 use wasmtime::component::{Component, HasSelf, Linker};
 use wasmtime::{Config, Store, StoreLimits, StoreLimitsBuilder};
 
+mod pack;
+
 mod bindings {
     pub mod engine {
         wasmtime::component::bindgen!({ path: "../../wit", world: "engine" });

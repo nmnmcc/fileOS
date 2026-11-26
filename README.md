@@ -53,7 +53,7 @@ To share `/photos` with another node: `fos folder grant /photos <its node key> a
   - [x] One engine for each node, chosen by its owner, with no limits
   - [x] The default engine: capabilities, given on with less power, taken back with everything that came from them
 - [ ] **Apps**
-  - [x] Apps are `.app` folders with a manifest, and they sync like any folder
+  - [x] Apps come as `.app` files (a zip with no compression: the manifest, and the rest in `tar.zst`), and sync like any folder once installed
   - [x] Each app has its own key, gets only what its manifest asks for, and runs with limits on fuel and memory
   - [x] The photos app: image sizes into an index on the node
   - [ ] Apps that answer HTTP (`handle-http`), extensions for file types, web interfaces

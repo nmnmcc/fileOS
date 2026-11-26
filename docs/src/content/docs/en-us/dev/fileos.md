@@ -481,19 +481,19 @@ CBOR.
 
 ### What we take from macOS, and what we change
 
-| macOS                               | fileOS                                                                                                                    | Why                                                                |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Code for more than one CPU          | **Not needed.** WASM runs everywhere. Each node keeps compiled `.cwasm` in `/local/`                                      | A strong point of WASM                                             |
-| Reverse-DNS bundle ID               | **Publisher key and a name**                                                                                              | No domain is needed                                                |
-| Notarization by Apple               | **No center.** The engine may ask for signatures from reviewers the user trusts, or not                                   | The user makes the rules                                           |
-| Gatekeeper                          | **The engine**                                                                                                            | The same reason                                                    |
-| Launch Services                     | The core looks at `/apps/` and keeps an index in `/local/`. It can be made again any time                                 | Derived data is not state                                          |
-| `~/Library/Containers/<id>/`        | `appdata/<id>/` (syncs) and `/local/<id>/` (cache). Both go when the app goes                                             | Cleaner than macOS                                                 |
-| User files are outside the app      | **The same.** Photos are in `/photos/`, not in the app                                                                    | Data lives longer than apps                                        |
-| `.appex` extensions                 | **The same, and more important.** Thumbnails, search text, previews, sharing and MCP tools are extensions for a file type | A new file type needs one extension, and every app can then use it |
-| Asking the first time (TCC)         | Asking the first time a path is used. The engine keeps the answer                                                         |                                                                    |
-| Open panel gives access to one file | The same: opening a file with an app gives that app the path for a time                                                   | Access by choosing                                                 |
-| `.dmg` or `.zip`                    | Share the folder. For moving it offline, export a `.tar`                                                                  | The box for moving is not the app                                  |
+| macOS                               | fileOS                                                                                                                                                             | Why                                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Code for more than one CPU          | **Not needed.** WASM runs everywhere. Each node keeps compiled `.cwasm` in `/local/`                                                                               | A strong point of WASM                                                        |
+| Reverse-DNS bundle ID               | **Publisher key and a name**                                                                                                                                       | No domain is needed                                                           |
+| Notarization by Apple               | **No center.** The engine may ask for signatures from reviewers the user trusts, or not                                                                            | The user makes the rules                                                      |
+| Gatekeeper                          | **The engine**                                                                                                                                                     | The same reason                                                               |
+| Launch Services                     | The core looks at `/apps/` and keeps an index in `/local/`. It can be made again any time                                                                          | Derived data is not state                                                     |
+| `~/Library/Containers/<id>/`        | `appdata/<id>/` (syncs) and `/local/<id>/` (cache). Both go when the app goes                                                                                      | Cleaner than macOS                                                            |
+| User files are outside the app      | **The same.** Photos are in `/photos/`, not in the app                                                                                                             | Data lives longer than apps                                                   |
+| `.appex` extensions                 | **The same, and more important.** Thumbnails, search text, previews, sharing and MCP tools are extensions for a file type                                          | A new file type needs one extension, and every app can then use it            |
+| Asking the first time (TCC)         | Asking the first time a path is used. The engine keeps the answer                                                                                                  |                                                                               |
+| Open panel gives access to one file | The same: opening a file with an app gives that app the path for a time                                                                                            | Access by choosing                                                            |
+| `.dmg` or `.zip`                    | Share the folder. To move it as one file, `fos app pack` makes an `.app` file: a zip with no compression, the manifest as it is, and the rest in `payload.tar.zst` | The box for moving is not the app; the metadata can be read with no unpacking |
 
 The most important thing to take is **extensions**. Spotlight and Quick Look
 work with any file type, because each type has a small extension. Here the
@@ -585,7 +585,7 @@ crates/
   fos            the program; only joins the parts together
   fos-node       puts the core together into one node
   fos-gateway    the gateway
-  fos-runtime    the app runtime (wasmtime): .app folders, engines, apps
+  fos-runtime    the app runtime (wasmtime): .app files and folders, engines, apps
   fos-net        libp2p
   fos-store      disk: the node key, blobs, logs, local key-value stores
   fos-sync       the sync protocol (sans-IO, portable)

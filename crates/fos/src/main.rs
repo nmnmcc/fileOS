@@ -4,9 +4,14 @@
 //!
 //! The commands are in groups: `node`, `fs`, `folder`, `identity` and `app`.
 //! They are about the kernel only: what an app or a plugin does is not here,
-//! but installing them is. `fos node init` and `fos node run` work on the
-//! data directory. The other commands talk to a running node through its
-//! gateway on this machine.
+//! but packing and installing them is. `fos node init` and `fos node run`
+//! work on the data directory, and `fos app pack` on the files it is given.
+//! The other commands talk to a running node through its gateway on this
+//! machine.
+//!
+//! The command line keeps no state: it saves nothing of its own, and there
+//! is no login. It reads the address and the token of the gateway from the
+//! data directory of the node.
 
 use std::io::{Read as _, Write as _};
 use std::net::TcpStream;
@@ -56,7 +61,7 @@ enum Command {
         #[command(subcommand)]
         command: Option<IdentityCommand>,
     },
-    /// Apps: install them.
+    /// Apps: pack them, install them.
     App {
         #[command(subcommand)]
         command: AppCommand,
@@ -66,7 +71,7 @@ enum Command {
 #[derive(Subcommand)]
 enum NodeCommand {
     /// Make a new node, with the authorization plugin (the engine) in an
-    /// .app directory.
+    /// .app file (or an .app folder).
     Init {
         #[arg(long)]
         engine: PathBuf,
@@ -137,8 +142,15 @@ enum IdentityCommand {
 
 #[derive(Subcommand)]
 enum AppCommand {
-    /// Install an app from an .app directory.
+    /// Install an app from an .app file (or an .app folder, while you make it).
     Install { app: PathBuf },
+    /// Pack an .app folder into an .app file. Works with no running node.
+    Pack {
+        /// The .app folder.
+        folder: PathBuf,
+        /// The .app file to make. It must not be there yet.
+        file: PathBuf,
+    },
 }
 
 fn default_dir() -> PathBuf {
@@ -182,6 +194,21 @@ fn run(cli: Cli) -> Result<(), Error> {
         Command::Fs { command } => fs(&Client::new(&dir)?, command),
         Command::Folder { command } => folder(&Client::new(&dir)?, command),
         Command::Identity { command } => identity(&Client::new(&dir)?, command, &dir),
+        Command::App {
+            command: AppCommand::Pack { folder, file },
+        } => {
+            let data = fos_node::pack_app(&folder)?;
+            // Writes only the file that was asked for, and never over another one.
+            let mut out = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&file)
+                .map_err(|e| Error(format!("{}: {e}", file.display())))?;
+            out.write_all(&data)
+                .map_err(|e| Error(format!("{}: {e}", file.display())))?;
+            println!("packed {} ({} bytes)", file.display(), data.len());
+            Ok(())
+        }
         Command::App {
             command: AppCommand::Install { app },
         } => {

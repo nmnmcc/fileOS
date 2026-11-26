@@ -1,6 +1,6 @@
 ---
 title: Writing apps and engines
-description: The interfaces, the SDK, the .app folder and the manifest.
+description: The interfaces, the SDK, .app files and the manifest.
 ---
 
 Apps and engines are WebAssembly components. The core runs them with
@@ -70,7 +70,9 @@ The core puts no limits on the engine. But two nodes with different engines
 can come to different answers about the same entry. Then their copies of a
 folder fork. See [Architecture](../fileos/#a-shared-folder).
 
-## The .app folder
+## .app files
+
+You make an app as an `.app` folder:
 
 ```text
 Photos.app/
@@ -97,7 +99,20 @@ reason = "reason.photos"  # a key in resources/locales/
 path = "/photos"
 ```
 
-When an app is installed, its `.app` folder becomes a fileOS folder at
+To give the app to others, pack the folder into an `.app` file:
+`fos app pack Photos.app/ out/Photos.app`. It needs no running node. An
+`.app` file is a zip with no compression in the zip itself:
+
+| Entry             | What it is                                                     |
+| ----------------- | -------------------------------------------------------------- |
+| `manifest.toml`   | The metadata, as it is, so tools can read it with no unpacking |
+| `payload.tar.zst` | Every other file, in a tar, compressed with zstd               |
+
+The same folder always gives the same file: the tar has no times or owners.
+`fos node init --engine` and `fos app install` take an `.app` file, or an
+`.app` folder while you make it.
+
+When an app is installed, its files become a fileOS folder at
 `/apps/<name>.app`, so it syncs to your other nodes like any other folder.
 
 ## Building
@@ -106,3 +121,4 @@ Put the crate in `apps/`, with a `<Name>.app/` folder next to its
 `Cargo.toml`. Then run `apps` (`scripts/apps.py`). It builds every crate in
 `apps/` for `wasm32-unknown-unknown`, makes a component of it with
 `wasm-tools component new`, and puts the `.app` folder in `target/apps/`.
+`fos app pack` makes an `.app` file of it.

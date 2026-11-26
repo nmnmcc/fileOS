@@ -85,7 +85,7 @@ give to other people. Only the node that holds the signing key can add nodes
 
 ## Apps
 
-An app is a folder with a `.app` name, such as `Photos.app`. Install one with
+An app comes as an `.app` file, such as `Photos.app`. Install one with
 `fos app install Photos.app`. When you install it, your node gives the app only
 the access that its manifest asks for. The photos app reads the photos in
 `/photos` and keeps an index on your node. The `fos` command is for the

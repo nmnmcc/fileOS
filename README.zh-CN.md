@@ -53,7 +53,7 @@ fos node status
   - [x] 每个节点一个引擎，由节点主人选择，不加限制
   - [x] 默认引擎：capability，转授时只能变小，收回时连同由它而来的一起收回
 - [ ] **App**
-  - [x] App 是带 manifest 的 `.app` 文件夹，像其他文件夹一样同步
+  - [x] App 以 `.app` 文件提供（本身不压缩的 zip：manifest，加上 `tar.zst` 里的其余文件），安装后像其他文件夹一样同步
   - [x] 每个 App 有自己的密钥，只得到 manifest 申请的权限，运行时有 fuel 和内存限制
   - [x] 照片 App：把图片尺寸写入节点上的索引
   - [ ] 响应 HTTP 的 App（`handle-http`）、按文件类型的扩展、网页界面

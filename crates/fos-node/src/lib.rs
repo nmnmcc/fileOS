@@ -133,20 +133,6 @@ fn join(mount: &str, inner: &str) -> String {
     }
 }
 
-fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(to)?;
-    for entry in std::fs::read_dir(from)? {
-        let entry = entry?;
-        let target = to.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_dir(&entry.path(), &target)?;
-        } else {
-            std::fs::copy(entry.path(), target)?;
-        }
-    }
-    Ok(())
-}
-
 /// The abilities that a permission in a manifest asks for.
 fn abilities(access: &str) -> Result<Vec<Ability>, Error> {
     Ok(match access {
@@ -156,6 +142,17 @@ fn abilities(access: &str) -> Result<Vec<Ability>, Error> {
         "read-write" => vec![Ability::Read, Ability::Write, Ability::Append],
         _ => return Err(Error(format!("not an access: {access:?}"))),
     })
+}
+
+/// Packs the `.app` folder `dir` into the bytes of an `.app` file: a zip
+/// with no compression, with `manifest.toml` as it is and the other files in
+/// `payload.tar.zst`.
+///
+/// # Errors
+///
+/// When the folder is not a good bundle.
+pub fn pack_app(dir: &Path) -> Result<Vec<u8>, Error> {
+    Bundle::read_dir(dir)?.pack()
 }
 
 /// The token that local clients give to the gateway of the node in `dir`.
@@ -207,7 +204,8 @@ pub fn parse_abilities(list: &str) -> Result<Vec<Ability>, Error> {
 }
 
 impl Node {
-    /// Makes a new node in `dir`, with the engine in the `.app` folder `engine`.
+    /// Makes a new node in `dir`, with the engine in `engine`: an `.app`
+    /// file, or an `.app` folder.
     ///
     /// # Errors
     ///
@@ -217,12 +215,11 @@ impl Node {
         if store.root()?.is_some() {
             return Err(Error(format!("{} already has a node", dir.display())));
         }
-        let bundle = Bundle::read_dir(engine)?;
+        let bundle = Bundle::read(engine)?;
         if bundle.manifest.kind != Kind::Engine {
             return Err(Error(format!("{} is not an engine", engine.display())));
         }
-        copy_dir(engine, &store.engine_dir())
-            .map_err(|e| Error(format!("cannot copy the engine: {e}")))?;
+        bundle.write_dir(&store.engine_dir())?;
         let key = store.key()?;
         let mut authz = Runtime::new()?.engine(&bundle)?;
         let mut replica = Replica::new(key.clone(), 0);
@@ -417,7 +414,7 @@ impl Node {
             .grant(path, to, abilities, &self.shared.changed)
     }
 
-    /// Installs an app from an `.app` directory: puts it into a folder at
+    /// Installs an app from an `.app` file (or an `.app` folder): puts it into a folder at
     /// `/apps/<name>`, gives its key the permissions in its manifest, and
     /// starts it. Gives the app's key.
     ///
@@ -426,7 +423,7 @@ impl Node {
     /// When the bundle is not an app, a permission cannot be given, or the app
     /// does not start.
     pub fn install(&self, dir: &Path) -> Result<PublicKey, Error> {
-        let bundle = Bundle::read_dir(dir)?;
+        let bundle = Bundle::read(dir)?;
         if bundle.manifest.kind != Kind::App {
             return Err(Error(format!("{} is not an app", dir.display())));
         }

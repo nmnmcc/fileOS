@@ -68,6 +68,6 @@ App 做了什么不在 `fos` 里，要在 App 里看。`fos help <组>` 会进�
 
 ## App
 
-App 是一个以 `.app` 结尾的文件夹，比如 `Photos.app`。用 `fos app install Photos.app` 安装。安装时，节点只给 App 它的 manifest 里申请的权限。照片 App 会读取 `/photos` 里的照片，并在你的节点上建立索引。`fos` 命令只用于内核：App 做了什么，要在 App 里看。
+App 以 `.app` 文件的形式提供，比如 `Photos.app`。用 `fos app install Photos.app` 安装。安装时，节点只给 App 它的 manifest 里申请的权限。照片 App 会读取 `/photos` 里的照片，并在你的节点上建立索引。`fos` 命令只用于内核：App 做了什么，要在 App 里看。
 
 如何运行节点，见[管理手册](../admin/)。

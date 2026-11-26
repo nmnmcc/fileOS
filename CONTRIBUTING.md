@@ -59,7 +59,7 @@ The budgets are for a laptop with 4 cores and 8 GB of RAM. We will change the bu
 1. **We review every new external dependency.** Say in the PR why it is needed and how much time it adds to the clean build (compare `cargo build --timings` before and after). Judge it by build time, binary size and what it brings with it (a second cryptography library or HTTP stack, a banned crate, heavy procedural macros, build scripts, C or C++). Do not judge it by its number of crates: a library in many small crates can cost less than one large crate.
 2. Put it once in the root `Cargo.toml` under `[workspace.dependencies]`, with `default-features = false`. Switch on only the features you use.
 3. One version of each crate. `cargo deny check` does not let two versions in, because each copy gets compiled by itself. When an upstream crate brings a second version that we cannot take out, put it under `skip` in `deny.toml`, with the reason.
-4. No C or C++ that needs cmake. Small C code that the `cc` crate compiles is allowed, such as the code in `ring`. For TLS, use rustls with the `ring` backend. `fos` comes as one executable; it loads only the `.app` folders that the user gives it.
+4. No C or C++ that needs cmake. Small C code that the `cc` crate compiles is allowed, such as the code in `ring`. For TLS, use rustls with the `ring` backend. `fos` comes as one executable; it loads only the `.app` files that the user gives it.
 5. Keep heavy dependencies inside the crate that needs them, so changes in other places do not rebuild them: wasmtime is only in `fos-runtime`, and libp2p is only in `fos-net`.
 
 ### Writing code that compiles fast
@@ -91,7 +91,7 @@ crates/
   fos             the program: wires the components together, nothing else
   fos-node        assembles the components into one node
   fos-gateway     the local HTTP API for clients
-  fos-runtime     wasmtime: .app folders, engines and apps
+  fos-runtime     wasmtime: .app files and folders, engines and apps
   fos-net         libp2p: carries sync messages between nodes
   fos-store       the data directory: node key, blobs, folder logs, local key-value stores
   fos-sync        sync between nodes (sans-IO, portable)
@@ -114,6 +114,10 @@ The documentation site is in `docs/`. It is built with [Astro Starlight](https:/
 For production builds, set `DOCS_SITE_URL` to the public origin of the site. Then the build makes canonical URLs, `hreflang` links and the sitemap. The page at `/` only sends you to a language; it is not indexed and is not in the sitemap.
 
 Dependencies only go down. `fos-core` depends on no other fileOS crate. Apps and engines depend only on `fos-app`. `fos` stays thin, so that it rebuilds in seconds.
+
+## The command line
+
+`fos` is for the kernel. Its commands are in groups (`node`, `fs`, `folder`, `identity`, `app`). What an app or a plugin does is not in it; packing and installing them is. The command line keeps no state: it saves nothing of its own, and there is no login or other command that changes what later commands do. It reads the address and the token of the gateway from the data directory of the node.
 
 ## Mechanism, not policy
 

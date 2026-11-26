@@ -13,6 +13,9 @@ publish.workspace = true
 fos-core.workspace = true
 fos-fs.workspace = true
 serde.workspace = true
+rawzip.workspace = true
+tar.workspace = true
+ruzstd.workspace = true
 toml.workspace = true
 wasmtime.workspace = true
 
