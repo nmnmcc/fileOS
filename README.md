@@ -2,12 +2,22 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-A file system that your computers and the computers of people you know keep together. Everything else (photos, chat, passwords, and even the rules for who may do what) is a WebAssembly app on top of it.
-
-**How it works:** a folder is a signed log of changes, and files are blobs named by their hash. A shared folder is a folder that a number of nodes each agree to keep. Each node has its own rules (an engine), and each app sees only the folders you give it.
+fileOS is a replicated file system for people and the small groups they are part of. Its state is kept by a number of nodes, and a node keeps only the folders it has agreed to keep. There is no global consensus and no global content DHT.
 
 > [!NOTE]
 > A prototype. Formats will change.
+
+## System model
+
+**Principals.** People, devices, nodes and apps are named by ed25519 public keys.
+
+**Folders.** A folder is the unit of replication, ordering and authorization. Its state is fully given by one signed, append-only log, and its ID is the hash of the first record in it. The records are `put`, `delete`, `append`, `mount` and `policy`. File contents are blobs addressed by their BLAKE3 hash. A folder may mount other folders at paths, which gives a tree of names.
+
+**Order.** Every folder has one ordering node, and the total order that it gives is the main line of the folder. The ordering node may give the job to another node. A write to a file takes the place of the earlier version, which stays in the history. Appends to a stream commute, so they never conflict.
+
+**Authorization.** The kernel checks facts: signatures and hashes. The decisions are made by the engine of each node, which its owner chooses. Because nodes make their decisions independently, replicas may fork when their policies are different. The system does not force agreement.
+
+**Layers.** The kernel is the file system, sync over libp2p and the app runtime (wasmtime). Apps are WebAssembly components that use the file system through WIT interfaces. Each app runs in a sandbox with its own key and sees only the paths given to it. Kernel plugins are WebAssembly components that do a part of the kernel's work. The only one today is the engine.
 
 ## Try it
 
@@ -30,7 +40,7 @@ fos kv photos                                        # what the photos app found
 fos status
 ```
 
-To share `/photos` with another node: `fos grant /photos <its node key> all` here, then `fos mount <folder ID> /photos` there. See the [user manual](docs/src/content/docs/en-us/user/index.md) and the [administration manual](docs/src/content/docs/en-us/admin/index.md).
+To share `/photos` with another node: `fos grant /photos <its node key> all` here, then `fos mount <folder ID> /photos` there.
 
 ## What is there
 
@@ -39,7 +49,7 @@ To share `/photos` with another node: `fos grant /photos <its node key> all` her
   - [x] File contents as blobs named by their hash
   - [x] One ordering node for each folder; it can give the job to another node
   - [x] A copy forks, and says why, when its node's rules do not take an entry
-- [x] **Rules: the engine is a WebAssembly app**
+- [x] **Kernel plugins: the rules for access (the engine)**
   - [x] One engine for each node, chosen by its owner, with no limits
   - [x] The default engine: capabilities, given on with less power, taken back with everything that came from them
 - [ ] **Apps**
@@ -59,7 +69,7 @@ To share `/photos` with another node: `fos grant /photos <its node key> all` her
 
 ## Documentation
 
-[User manual](docs/src/content/docs/en-us/user/index.md) · [Running a node](docs/src/content/docs/en-us/admin/index.md) · [Architecture](docs/src/content/docs/en-us/dev/fileos.md) · [Writing apps and engines](docs/src/content/docs/en-us/dev/apps.md) · [Manifesto](MANIFESTO.md) · [Contributing](CONTRIBUTING.md)
+[User manual](docs/src/content/docs/en-us/user/index.md) · [Running a node](docs/src/content/docs/en-us/admin/index.md) · [Architecture](docs/src/content/docs/en-us/dev/fileos.md) · [Writing apps and engines](docs/src/content/docs/en-us/dev/apps.md) · [Contributing](CONTRIBUTING.md)
 
 ## License
 

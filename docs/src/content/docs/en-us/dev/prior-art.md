@@ -172,8 +172,7 @@ them.
 
 The federated protocols we have today teach one lesson: federation alone does
 not give everyone a server of their own. Most people still come together on a
-few large servers. See "Why federation alone is not enough" in the [manifesto](https://github.com/nmnmcc/fileOS/blob/main/MANIFESTO.md) for
-the reasons and our answers.
+few large servers.
 
 - **[Matrix](https://spec.matrix.org/)**: room state resolution across
   servers. Matrix is federated, but most users are on a few large servers.

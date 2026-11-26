@@ -4,7 +4,7 @@
 
 Talk is as welcome as code. Open an issue to question a principle, a design decision or anything in this file.
 
-Read the [manifesto](MANIFESTO.md) first. We judge contributions by its principles.
+Read "System model" in the [README](README.md) first. We judge contributions by it and by the rules in this file.
 
 ## Language: Basic English
 
@@ -117,6 +117,19 @@ Dependencies only go down. `fos-core` depends on no other fileOS crate. Apps and
 ## Mechanism, not policy
 
 We give mechanisms and sensible defaults; each person makes the rules. When code says _what is to happen_ (whom to help, what to share, what to keep), make it a policy with a default that people can change. Do not make it a fixed rule in the code.
+
+## Kernel, apps and kernel plugins
+
+fileOS is a kernel and apps, and the kernel can take kernel plugins. See "System model" in the [README](README.md).
+
+- **Do not break user space.** Apps and other nodes are user space. The app interface (`wit/fos.wit`) and the formats and protocol between nodes only get new things. Old behavior stays, even when it is wrong, because someone may depend on it. A breaking change is a new version of the interface, and the old version still works.
+- **Apps are not plugins.** An app uses the kernel. It does not change the kernel.
+- **A kernel plugin does not change what apps or other nodes see.** It only picks between results that the contract already has, for example `denied`.
+- **The kernel checks what a kernel plugin gives back**, with hashes, signatures or AEAD. When a kernel plugin is wrong, the worst result is an error, never a wrong file.
+- **The kernel asks; the kernel plugin answers.** The kernel keeps the control and the state. A kernel plugin gets a small input and gives back a value. It does not get into the middle of the work, does not change requests, and does not call other plugins. No hooks with `next()`, no registries, no event buses, no dependency injection.
+- **The cost is only for the person who made the choice.** A choice that can do damage to other people (such as the encryption of shared folders) goes in the protocol, not in a kernel plugin.
+- **Defaults are in the code.** With no kernel plugins and no config, fileOS is complete. `fos-node` puts the parts together in plain code.
+- **A new kind of kernel plugin needs a real reason:** a second way of doing the work that people want now. Until then, a `dyn Trait` inside the crate is enough.
 
 ## Licensing
 

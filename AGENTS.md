@@ -5,7 +5,7 @@ This file is for AI coding agents working on fileOS. `CLAUDE.md` is a link to it
 ## Language
 
 - All English that the project puts out is in **Basic English**: docs, README, CONTRIBUTING, CLI help, error messages, code comments, commit messages, pull requests, change files and release notes. Use short sentences and common words. Names of things (Rust, SQLite, OpenID Connect) stay as they are.
-- Docs are in English and Simplified Chinese with the same file names: `docs/src/content/docs/en-us/` and `docs/src/content/docs/zh-cn/`. A change to one is also made to the other. The same is true of `README.md` / `README.zh-CN.md`, `MANIFESTO.md` / `MANIFESTO.zh-CN.md`, `CONTRIBUTING.md` / `CONTRIBUTING.zh-CN.md` and `SECURITY.md` / `SECURITY.zh-CN.md`.
+- Docs are in English and Simplified Chinese with the same file names: `docs/src/content/docs/en-us/` and `docs/src/content/docs/zh-cn/`. A change to one is also made to the other. The same is true of `README.md` / `README.zh-CN.md`, `CONTRIBUTING.md` / `CONTRIBUTING.zh-CN.md` and `SECURITY.md` / `SECURITY.zh-CN.md`.
 
 ## Commands
 
@@ -53,4 +53,5 @@ When the work is done (the pull request is merged or closed, or the work is drop
 - Crates with `portable = true` in `[package.metadata.fos]` must build for `wasm32-unknown-unknown`: no threads, files, sockets or clocks in them.
 - Protocol logic is sans-IO, so it runs in the simulation in `fos-sim`.
 - Mechanism, not policy: when code decides what should happen (whom to help, what to share, what to keep), make it a policy that can be replaced, with a default.
+- Kernel, apps and kernel plugins: do not break user space. Apps and other nodes are user space; the app interface (`wit/fos.wit`) and the formats and protocol between nodes only get new things. Apps are not plugins. A kernel plugin (today only the engine) only picks between results the contract already has, and the kernel checks what it gives back (hashes, signatures, AEAD). The kernel asks, the plugin answers: no hooks with `next()`, registries, event buses or dependency injection. Defaults are in the code. A new kind of kernel plugin needs a second way of doing the work that people want now.
 - Every source file starts with an SPDX header: `// SPDX-License-Identifier: AGPL-3.0-only`, or `MIT OR Apache-2.0` in `apps/fos-app` and `wit/`.
