@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "fos-sync"
+description = "fileOS sync between nodes (sans-IO)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[package.metadata.hs]
+portable = true
+
+[dependencies]
+fos-core.workspace = true
+fos-fs.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

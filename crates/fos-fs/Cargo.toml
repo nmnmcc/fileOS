@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "fos-fs"
+description = "fileOS folders: the signed log, order, forks and paths (sans-IO)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[package.metadata.hs]
+portable = true
+
+[dependencies]
+fos-core.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true
