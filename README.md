@@ -2,20 +2,18 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-A file system that your computers and the computers of people you know keep together. Everything you use on it (photos, chat, passwords) is an app.
+A file system that your computers and your friends' computers keep together.
 
 > [!NOTE]
 > A prototype. Formats will change.
 
 ## How it is made
 
-fileOS has two parts: the **kernel** and **apps**. The kernel can take **kernel plugins**.
+- **Kernel:** files that mean the same on every node. A folder is a signed log, and files are blobs named by their hash.
+- **Apps:** everything people use. WebAssembly, in a sandbox, with only the folders you give them.
+- **Kernel plugins:** change how the kernel works, never what apps see. Today: the rules for access (the engine).
 
-- **The kernel** gives one thing: files that mean the same on every node. A folder is a signed log of changes, and files are blobs named by their hash. A shared folder is a folder that a number of nodes each agree to keep.
-- **Apps** are user space. People use fileOS only through apps. An app is a WebAssembly component. It runs in a sandbox, has its own key, and sees only the folders you give it.
-- **Kernel plugins** change how the kernel does its work, not what apps see. The first one is the rules for access (in the code, the _engine_). Places to keep data and the encryption of data on disk may come next.
-
-Over all of this is one rule: **do not break user space.** The kernel keeps two contracts: with apps (the `app` world in [`wit/fos.wit`](wit/fos.wit)) and with other nodes (the formats and the protocol). We only add to them. We do not change or take away what is in them. A kernel plugin may only pick between results that the contract already has: it may say "no" to a write, but it may not change what a write is. The same app, with the same data and the same rules, does the same thing on every node, with any kernel plugins.
+One rule: **do not break user space.**
 
 ## Try it
 
@@ -38,7 +36,7 @@ fos kv photos                                        # what the photos app found
 fos status
 ```
 
-To share `/photos` with another node: `fos grant /photos <its node key> all` here, then `fos mount <folder ID> /photos` there. See the [user manual](docs/src/content/docs/en-us/user/index.md) and the [administration manual](docs/src/content/docs/en-us/admin/index.md).
+To share `/photos` with another node: `fos grant /photos <its node key> all` here, then `fos mount <folder ID> /photos` there.
 
 ## What is there
 
@@ -71,4 +69,4 @@ To share `/photos` with another node: `fos grant /photos <its node key> all` her
 
 ## License
 
-[AGPL-3.0-only](LICENSE), with a [Plugin Exception](PLUGIN-EXCEPTION.md): apps and kernel plugins that use only the Plugin Interface may be under any license. The app SDK (`apps/fos-app`) and the interfaces in `wit/` are MIT OR Apache-2.0.
+[AGPL-3.0-only](LICENSE), with a [Plugin Exception](PLUGIN-EXCEPTION.md). The app SDK (`apps/fos-app`) and the interfaces in `wit/` are MIT OR Apache-2.0.
