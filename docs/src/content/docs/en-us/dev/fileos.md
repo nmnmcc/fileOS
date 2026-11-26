@@ -604,24 +604,23 @@ Dependencies still go down only. Apps and engines depend only on `fos-app`.
 Only `fos-runtime` uses wasmtime, and only `fos-net` uses libp2p, so the rest
 of the code still builds fast.
 
-## How it fits the manifesto
+## What the design gives
 
-| Principle               | How this design does it                                                                                        |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| 01 Yours alone          | Your data is your folders, your identity is your key, your rules are your engine                               |
-| 02 Centered on people   | The base has no data types. Apps such as people put things in order by person, across all folders              |
-| 03 Zero operations      | The core is small and does not change much. When a feature has a problem, change one app                       |
-| 04 Long-lived           | Only two formats, logs and blobs. When an app is gone, the data is still there                                 |
-| 05 In control           | Every access is a record in the engine. You can see it and take it back                                        |
-| 06 Memory you own       | The memory of an AI is a folder too. You can see it, change it and delete it                                   |
-| 08 Person to person     | No server at the center, only nodes and the relations between them                                             |
-| 09 Personal tools       | A small tool made from a sentence is an app, and it runs in the sandbox                                        |
-| 10 Open and replaceable | Even the rules for access can be changed. Nothing is locked                                                    |
-| 11 Mutual aid           | Keeping, relaying and backups are all "my node agrees to keep this for you"                                    |
-| Mechanism, not policy   | The core is only mechanism. The default engine and the apps that come with it are defaults that can be changed |
+| Principle             | How this design does it                                                                                        |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Yours alone           | Your data is your folders, your identity is your key, your rules are your engine                               |
+| Centered on people    | The base has no data types. Apps such as people put things in order by person, across all folders              |
+| Zero operations       | The core is small and does not change much. When a feature has a problem, change one app                       |
+| Long-lived            | Only two formats, logs and blobs. When an app is gone, the data is still there                                 |
+| In control            | Every access is a record in the engine. You can see it and take it back                                        |
+| Memory you own        | The memory of an AI is a folder too. You can see it, change it and delete it                                   |
+| Person to person      | No server at the center, only nodes and the relations between them                                             |
+| Personal tools        | A small tool made from a sentence is an app, and it runs in the sandbox                                        |
+| Open and replaceable  | Even the rules for access can be changed. Nothing is locked                                                    |
+| Mutual aid            | Keeping, relaying and backups are all "my node agrees to keep this for you"                                    |
+| Mechanism, not policy | The core is only mechanism. The default engine and the apps that come with it are defaults that can be changed |
 
-It also answers the table "Why federation alone is not enough" in the
-manifesto. Identity is not fixed to a domain, because identity is a key. Cost
+It also answers why federation alone is not enough. Identity is not fixed to a domain, because identity is a key. Cost
 does not get bigger with the network, because a node syncs only its own
 folders. No admin is needed, because each person's engine is their own rules.
 

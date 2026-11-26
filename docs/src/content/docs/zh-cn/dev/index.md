@@ -18,4 +18,4 @@ description: 面向开发 fileOS 或在 fileOS 之上开发的人。
 - [架构](fileos/)：fileOS 是怎样构建的，以及为什么。
 - [值得学习的项目](prior-art/)：我们研究的项目，以及从每个项目学到什么。
 
-原则优先。[宣言](https://github.com/nmnmcc/fileOS/blob/main/MANIFESTO.md)按重要性列出了这些原则，我们用它们评判每一个改动。
+原则优先。见 [README](https://github.com/nmnmcc/fileOS/blob/main/README.zh-CN.md) 的“怎样构成”：内核守住它的契约，App 是用户空间，内核插件绝不改变 App 看到的东西。我们用它评判每一个改动。
