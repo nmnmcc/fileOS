@@ -225,12 +225,21 @@ fn run(cli: Cli) -> Result<(), Error> {
         } => {
             let app = std::fs::canonicalize(&app)
                 .map_err(|e| Error(format!("{}: {e}", app.display())))?;
-            let key = Client::new(&dir)?.call(
+            let client = Client::new(&dir)?;
+            let answer = client.call(
                 "POST",
                 &format!("/v0/install?dir={}", enc(&app.to_string_lossy())),
                 &[],
             )?;
-            print(&[b"installed; app key ", key.as_slice()].concat())
+            let answer = String::from_utf8_lossy(&answer);
+            let mut lines = answer.lines();
+            let (key, id) = (
+                lines.next().unwrap_or_default(),
+                lines.next().unwrap_or_default(),
+            );
+            let port = client.addr.rsplit(':').next().unwrap_or_default();
+            println!("installed\napp key {key}\nopen    http://{id}.localhost:{port}/");
+            Ok(())
         }
     }
 }

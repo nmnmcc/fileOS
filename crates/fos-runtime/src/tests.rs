@@ -125,3 +125,54 @@ fn the_photos_app_indexes_a_photo() {
     app.on_change("/photos/b.png").unwrap();
     assert_eq!(host.kv_keys("photos", "photo:"), ["photo:/photos/a.png"]);
 }
+
+/// A request with no body, for tests.
+fn get(
+    path: &str,
+    user: Option<&str>,
+) -> hyper::Request<
+    impl hyper::body::Body<Data = bytes::Bytes, Error = wasmtime_wasi_http::Error> + Send + 'static,
+> {
+    use http_body_util::BodyExt as _;
+    let mut request = hyper::Request::builder()
+        .uri(format!("http://photos-test.localhost{path}"))
+        .header("host", "photos-test.localhost");
+    if let Some(user) = user {
+        request = request.header("fos-user", user);
+    }
+    let body = http_body_util::Full::new(bytes::Bytes::new())
+        .map_err(|never: std::convert::Infallible| -> wasmtime_wasi_http::Error { match never {} });
+    request.body(body).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_photos_app_answers_http() {
+    use http_body_util::BodyExt as _;
+    let runtime = Runtime::new().unwrap();
+    let host = Arc::new(Host::default());
+    host.kv_set("photos", "photo:/photos/a.png", b"64x32".to_vec());
+    let app = runtime
+        .http_app(&bundle("Photos.app"), Arc::<Host>::clone(&host))
+        .unwrap();
+
+    let response = app.handle(get("/", Some("did:fos:abc"))).await.unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.headers()["content-type"],
+        "text/html; charset=utf-8"
+    );
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let page = String::from_utf8_lossy(&body);
+    assert!(page.contains("/photos/a.png"), "{page}");
+    assert!(page.contains("64x32"), "{page}");
+    assert!(page.contains("did:fos:abc"), "{page}");
+
+    // Each request has a new instance; a second one works the same.
+    let response = app.handle(get("/nothing", None)).await.unwrap();
+    assert_eq!(response.status(), 404);
+
+    // An engine is not an app.
+    runtime
+        .http_app(&bundle("Capability.app"), Arc::new(Host::default()))
+        .unwrap_err();
+}

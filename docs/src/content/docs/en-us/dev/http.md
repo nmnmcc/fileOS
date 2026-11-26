@@ -4,8 +4,8 @@ description: How apps and plugins give their services over HTTP, each with an or
 ---
 
 :::note[Status: design, partly built]
-The gateway (step 1 of the [plan](#plan)) is built. The rest is not built
-yet.
+The gateway and apps as HTTP servers (steps 1 and 2 of the [plan](#plan))
+are built. The rest is not built yet.
 :::
 
 ## The goal

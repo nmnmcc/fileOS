@@ -15,9 +15,10 @@ App 是 `app` world 的组件。
 | `kv`             | 只在本节点的键值存储，用来放索引                             |
 | `log`            | 写入节点状态和日志的消息                                     |
 
-| App 提供（导出）   | 内核什么时候调用         |
-| ------------------ | ------------------------ |
-| `events.on-change` | App 监听的路径发生变化时 |
+| App 提供（导出）                    | 内核什么时候调用                        |
+| ----------------------------------- | --------------------------------------- |
+| `events.on-change`                  | App 监听的路径发生变化时                |
+| `wasi:http/incoming-handler.handle` | 有发给这个 App 的 origin 的 HTTP 请求时 |
 
 每次调用 `fs` 都使用 **App 自己的密钥**，这个密钥由节点从自己的密钥派生出来。引擎会检查每一次调用。App 只能使用安装时用户给它的路径。每次调用 App 都有 fuel 和内存的限制。
 
@@ -41,6 +42,28 @@ impl Guest for Sizes {
 
 fos_app::app::export_app!(Sizes);
 ```
+
+### HTTP
+
+每个 App 都用标准的 `wasi:http`（WASI 0.2）为自己的 origin `http://<app-id>.localhost:7341/` 提供 HTTP 服务，`fos app install` 会打印这个地址。每个请求都使用一个新的 App 实例，有 fuel、内存和时间（30 秒）的限制。内核会删掉请求里的 `cookie`、`authorization` 和 `fos-user` 头，有人登录时加上带有这个人 DID 的 `fos-user`，并删掉回应里的 `set-cookie`。App 没有自己的文件、socket 或外发 HTTP，只有 `fs`、`kv` 和 `log`。
+
+SDK 会替你读取请求、写出回应：
+
+```rust
+use fos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
+use fos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
+use fos_app::http::Response;
+
+impl Http for Sizes {
+    fn handle(request: IncomingRequest, out: ResponseOutparam) {
+        fos_app::http::serve(request, out, |req| {
+            Response::text(200, format!("hello, {}", req.user().unwrap_or("no one")))
+        });
+    }
+}
+```
+
+理由见架构中的 “HTTP 与浏览器”。
 
 ## 引擎
 

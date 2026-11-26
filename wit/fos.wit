@@ -3,7 +3,8 @@
 /// The interfaces between the fileOS core and WebAssembly components.
 ///
 /// An authorization engine is a component of the `engine` world. An app is a
-/// component of the `app` world. Both come in `.app` files.
+/// component of the `app` world. Both come in `.app` files. The WASI
+/// interfaces that the `app` world uses are in `deps/`.
 package fos:app@0.1.0;
 
 interface types {
@@ -118,9 +119,15 @@ world engine {
   export authz;
 }
 
+/// An app. It may also give a service over HTTP: the kernel gives it the
+/// requests for its own origin, `<app-id>.localhost`, as `wasi:http`. The
+/// kernel signs people in, and puts the person in the `fos-user` header.
+/// Requests have no `cookie` or `authorization` header, and an app may set
+/// no cookies.
 world app {
   import fs;
   import kv;
   import log;
   export events;
+  export wasi:http/incoming-handler@0.2.12;
 }

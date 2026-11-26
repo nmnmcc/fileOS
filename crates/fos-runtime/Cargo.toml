@@ -18,6 +18,14 @@ tar.workspace = true
 ruzstd.workspace = true
 toml.workspace = true
 wasmtime.workspace = true
+wasmtime-wasi.workspace = true
+wasmtime-wasi-http.workspace = true
+hyper.workspace = true
+bytes.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+http-body-util.workspace = true
 
 [lints]
 workspace = true

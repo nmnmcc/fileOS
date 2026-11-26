@@ -10,6 +10,10 @@
 //! - An [`AppInstance`] runs an app component. Every call it makes goes to an
 //!   [`AppHost`], which asks the engine. Each call into an app has limits on
 //!   fuel and memory.
+//! - An [`HttpApp`] gives an app the HTTP requests for its origin, with
+//!   `wasi:http`. Each request gets a new instance, with limits on fuel,
+//!   memory and time. Apps get only the WASI interfaces of `wasi:http/proxy`:
+//!   no files, no sockets, and no HTTP requests of their own.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -18,17 +22,31 @@ use std::sync::Arc;
 use fos_core::{Error, Hash, PublicKey};
 use fos_fs::{Ability, Authz, Decision};
 use serde::Deserialize;
-use wasmtime::component::{Component, HasSelf, Linker};
+use wasmtime::component::{Component, HasSelf, Linker, ResourceTable};
 use wasmtime::{Config, Store, StoreLimits, StoreLimitsBuilder};
+use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
+use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 
+mod http;
 mod pack;
+
+pub use http::HttpApp;
 
 mod bindings {
     pub mod engine {
         wasmtime::component::bindgen!({ path: "../../wit", world: "engine" });
     }
     pub mod app {
-        wasmtime::component::bindgen!({ path: "../../wit", world: "app" });
+        wasmtime::component::bindgen!({
+            path: "../../wit",
+            world: "app",
+            require_store_data_send: true,
+            with: {
+                "wasi:http": wasmtime_wasi_http::p2::bindings::http,
+                "wasi:io": wasmtime_wasi::p2::bindings::io,
+                "wasi:clocks": wasmtime_wasi::p2::bindings::clocks,
+            },
+        });
     }
 }
 
@@ -222,18 +240,12 @@ impl Runtime {
     /// When the bundle is not an app, or its component does not start.
     pub fn app(&self, bundle: &Bundle, host: Arc<dyn AppHost>) -> Result<AppInstance, Error> {
         let component = self.component(bundle, Kind::App)?;
-        let limits = StoreLimitsBuilder::new().memory_size(APP_MEMORY).build();
-        let ctx = AppCtx {
-            app: bundle.manifest.id.clone(),
-            host,
-            limits,
-        };
-        let mut store = Store::new(&self.engine, ctx);
+        let mut store = Store::new(&self.engine, AppCtx::new(&bundle.manifest.id, host));
         store.limiter(|ctx| &mut ctx.limits);
         store.set_fuel(APP_FUEL).map_err(wasm_error)?;
         let mut linker = Linker::new(&self.engine);
-        bindings::app::App::add_to_linker::<AppCtx, HasSelf<AppCtx>>(&mut linker, |ctx| ctx)
-            .map_err(wasm_error)?;
+        add_fos_to_linker(&mut linker)?;
+        wasmtime_wasi_http::p2::add_to_linker_sync(&mut linker).map_err(wasm_error)?;
         let bindings =
             bindings::app::App::instantiate(&mut store, &component, &linker).map_err(wasm_error)?;
         Ok(AppInstance {
@@ -391,6 +403,85 @@ struct AppCtx {
     app: String,
     host: Arc<dyn AppHost>,
     limits: StoreLimits,
+    table: ResourceTable,
+    wasi: WasiCtx,
+    http: WasiHttpCtx,
+    hooks: NoOutgoingHttp,
+}
+
+/// The `wasi:http` hooks of an app. An app may not send HTTP requests of its
+/// own, so `send_request` gives an error, as it does with no hooks at all.
+struct NoOutgoingHttp;
+
+impl wasmtime_wasi_http::WasiHttpHooks for NoOutgoingHttp {
+    fn send_request(
+        &mut self,
+        _request: hyper::Request<wasmtime_wasi_http::p2::body::HyperOutgoingBody>,
+        _options: Option<wasmtime_wasi_http::RequestOptions>,
+        _done: Box<dyn Future<Output = Result<(), wasmtime_wasi_http::Error>> + Send>,
+    ) -> Box<dyn Future<Output = OutgoingResult> + Send> {
+        Box::new(std::future::ready(Err(
+            wasmtime_wasi_http::Error::HttpRequestDenied,
+        )))
+    }
+}
+
+/// What a `send_request` gives back: a response, and a future for the end
+/// of its body.
+type OutgoingResult = Result<
+    (
+        hyper::Response<wasmtime_wasi_http::p2::body::HyperIncomingBody>,
+        Box<dyn Future<Output = Result<(), wasmtime_wasi_http::Error>> + Send>,
+    ),
+    wasmtime_wasi_http::Error,
+>;
+
+impl AppCtx {
+    fn new(app: &str, host: Arc<dyn AppHost>) -> Self {
+        Self {
+            app: app.to_string(),
+            host,
+            limits: StoreLimitsBuilder::new().memory_size(APP_MEMORY).build(),
+            table: ResourceTable::new(),
+            // No files, no environment, no network, and nothing on the
+            // standard streams of the node.
+            wasi: WasiCtx::builder()
+                .allow_tcp(false)
+                .allow_udp(false)
+                .allow_ip_name_lookup(false)
+                .build(),
+            http: WasiHttpCtx::new(),
+            hooks: NoOutgoingHttp,
+        }
+    }
+}
+
+impl WasiView for AppCtx {
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.wasi,
+            table: &mut self.table,
+        }
+    }
+}
+
+impl WasiHttpView for AppCtx {
+    fn http(&mut self) -> WasiHttpCtxView<'_> {
+        WasiHttpCtxView {
+            ctx: &mut self.http,
+            table: &mut self.table,
+            hooks: &mut self.hooks,
+        }
+    }
+}
+
+/// Adds the fileOS interfaces of the `app` world to a linker.
+fn add_fos_to_linker(linker: &mut Linker<AppCtx>) -> Result<(), Error> {
+    use bindings::app::fos::app;
+    app::fs::add_to_linker::<AppCtx, HasSelf<AppCtx>>(linker, |c| c).map_err(wasm_error)?;
+    app::kv::add_to_linker::<AppCtx, HasSelf<AppCtx>>(linker, |c| c).map_err(wasm_error)?;
+    app::log::add_to_linker::<AppCtx, HasSelf<AppCtx>>(linker, |c| c).map_err(wasm_error)?;
+    Ok(())
 }
 
 fn to_wit(e: FsError) -> wit_fs::Error {

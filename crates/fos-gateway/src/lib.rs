@@ -42,6 +42,7 @@ use std::path::PathBuf;
 use bytes::Bytes;
 use fos_core::Error;
 use fos_node::{Node, parse_abilities};
+use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt as _, Full};
 use hyper::body::Incoming;
 use hyper::header::{self, HeaderMap, HeaderValue};
@@ -50,7 +51,14 @@ use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
 use tokio::net::TcpListener;
 
-type Reply = Response<Full<Bytes>>;
+/// An error in the body of an answer.
+type BodyError = Box<dyn std::error::Error + Send + Sync>;
+
+/// The body of an answer: bytes that the gateway made, or the stream that an
+/// app gives.
+type Body = UnsyncBoxBody<Bytes, BodyError>;
+
+type Reply = Response<Body>;
 
 /// The port of the gateway when no other is given.
 pub const DEFAULT_PORT: u16 = 7341;
@@ -135,7 +143,10 @@ fn cross_site(headers: &HeaderMap) -> bool {
 }
 
 fn reply(status: StatusCode, body: impl Into<Bytes>) -> Reply {
-    let mut response = Response::new(Full::new(body.into()));
+    let body = Full::new(body.into())
+        .map_err(|never| match never {})
+        .boxed_unsync();
+    let mut response = Response::new(body);
     *response.status_mut() = status;
     response
 }
@@ -212,17 +223,40 @@ async fn serve(
     };
     let mut answer = match &target {
         Target::Kernel => kernel(node, token, req).await,
-        Target::App(id) => {
-            let mut answer = reply(
-                StatusCode::NOT_FOUND,
-                format!("no app {id:?} on this node\n"),
-            );
-            clean_app_headers(answer.headers_mut());
-            answer
-        }
+        Target::App(id) => app(&node, id, req).await,
     };
     safe_headers(answer.headers_mut(), &target);
     Ok(answer)
+}
+
+/// The headers that only the kernel may give an app. The kernel signs
+/// people in, so an app gets no cookies or credentials, and no person that
+/// the kernel did not say.
+const KERNEL_HEADERS: [&str; 3] = ["cookie", "authorization", "fos-user"];
+
+/// A request for an app.
+async fn app(node: &Node, id: &str, req: Request<Incoming>) -> Reply {
+    let Some(app) = node.http_app(id) else {
+        let mut answer = reply(
+            StatusCode::NOT_FOUND,
+            format!("no app {id:?} on this node\n"),
+        );
+        clean_app_headers(answer.headers_mut());
+        return answer;
+    };
+    let (mut parts, body) = req.into_parts();
+    for name in KERNEL_HEADERS {
+        parts.headers.remove(name);
+    }
+    let mut answer = match app.handle(Request::from_parts(parts, body)).await {
+        Ok(answer) => answer.map(|body| body.map_err(|e| Box::new(e) as BodyError).boxed_unsync()),
+        Err(e) => {
+            tracing::warn!("{e}");
+            reply(StatusCode::BAD_GATEWAY, format!("{e}\n"))
+        }
+    };
+    clean_app_headers(answer.headers_mut());
+    answer
 }
 
 /// A request for the kernel API.
@@ -339,7 +373,8 @@ fn route(
             ok(String::new())
         }
         (&Method::POST, "/v0/install") => {
-            ok(format!("{}\n", node.install(&PathBuf::from(arg("dir")?))?))
+            let app = node.install(&PathBuf::from(arg("dir")?))?;
+            ok(format!("{}\n{}\n", app.key, app.id))
         }
         (&Method::POST, "/v0/dial") => {
             node.dial(text(body)?.trim())?;
