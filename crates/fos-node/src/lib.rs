@@ -117,6 +117,28 @@ fn abilities(access: &str) -> Result<Vec<Ability>, Error> {
     })
 }
 
+/// The token that local clients give to the gateway of the node in `dir`.
+///
+/// # Errors
+///
+/// When the data directory cannot be read.
+pub fn token(dir: &Path) -> Result<String, Error> {
+    Store::open(dir)?.token()
+}
+
+/// Writes the address of the running gateway into `dir`, or takes it away.
+///
+/// # Errors
+///
+/// When the file cannot be written.
+pub fn write_gateway_addr(dir: &Path, addr: Option<std::net::SocketAddr>) -> Result<(), Error> {
+    let path = dir.join("gateway.addr");
+    match addr {
+        Some(addr) => fos_store::write_atomic(&path, addr.to_string().as_bytes()),
+        None => std::fs::remove_file(&path).or(Ok(())),
+    }
+}
+
 /// Reads ability names, for example `read,write,store`.
 ///
 /// # Errors
