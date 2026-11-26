@@ -217,6 +217,21 @@ impl Guest for Engine {
     fn storers(state: Vec<u8>) -> Vec<Vec<u8>> {
         State::load(&state).keys_with(Ability::Store)
     }
+
+    fn grant(to: Vec<u8>, abilities: Vec<WitAbility>, path: String) -> Vec<u8> {
+        let names: Vec<&str> = abilities
+            .into_iter()
+            .map(|a| match Ability::from(a) {
+                Ability::Read => "read",
+                Ability::Write => "write",
+                Ability::Append => "append",
+                Ability::Grant => "grant",
+                Ability::Store => "store",
+            })
+            .collect();
+        let key: String = to.iter().map(|b| format!("{b:02x}")).collect();
+        format!("grant {key} {} {path}", names.join(",")).into_bytes()
+    }
 }
 
 fos_app::engine::export_engine!(Engine);

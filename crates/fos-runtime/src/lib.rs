@@ -255,13 +255,7 @@ impl Authz for EngineInstance {
 
     fn check(&mut self, state: &[u8], principal: PublicKey, ability: Ability, folder: Hash, path: &str) -> Decision {
         let op = wit::Op {
-            ability: match ability {
-                Ability::Read => wit::Ability::Read,
-                Ability::Write => wit::Ability::Write,
-                Ability::Append => wit::Ability::Append,
-                Ability::Grant => wit::Ability::Grant,
-                Ability::Store => wit::Ability::Store,
-            },
+            ability: to_wit_ability(ability),
             folder: folder.to_string(),
             path: path.to_string(),
         };
@@ -281,6 +275,22 @@ impl Authz for EngineInstance {
     fn storers(&mut self, state: &[u8]) -> Vec<PublicKey> {
         let (store, authz) = self.authz();
         authz.call_storers(store, state).map(keys).unwrap_or_default()
+    }
+
+    fn grant(&mut self, to: PublicKey, abilities: &[Ability], path: &str) -> Vec<u8> {
+        let abilities: Vec<wit::Ability> = abilities.iter().map(|a| to_wit_ability(*a)).collect();
+        let (store, authz) = self.authz();
+        authz.call_grant(store, &to.0.to_vec(), &abilities, path).unwrap_or_default()
+    }
+}
+
+fn to_wit_ability(ability: Ability) -> wit::Ability {
+    match ability {
+        Ability::Read => wit::Ability::Read,
+        Ability::Write => wit::Ability::Write,
+        Ability::Append => wit::Ability::Append,
+        Ability::Grant => wit::Ability::Grant,
+        Ability::Store => wit::Ability::Store,
     }
 }
 

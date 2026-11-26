@@ -58,6 +58,8 @@ pub trait Authz {
     fn readers(&mut self, state: &[u8]) -> Vec<PublicKey>;
     /// The keys of the nodes that may keep a copy of the folder.
     fn storers(&mut self, state: &[u8]) -> Vec<PublicKey>;
+    /// The policy entry that gives `to` these abilities on `path`.
+    fn grant(&mut self, to: PublicKey, abilities: &[Ability], path: &str) -> Vec<u8>;
 }
 
 /// One operation on a folder.
@@ -329,6 +331,19 @@ impl Folder {
         }
     }
 
+    /// Every file that is there now, with its blob and size, by path.
+    pub fn files(&self) -> impl Iterator<Item = (&str, Hash, u64)> {
+        self.tree.keys().filter_map(|path| self.file(path).map(|(hash, size)| (path.as_str(), hash, size)))
+    }
+
+    /// The paths where other folders are mounted, with their IDs.
+    pub fn mounts(&self) -> impl Iterator<Item = (&str, Hash)> {
+        self.tree.iter().filter_map(|(path, node)| match node {
+            Node::Mount(id) => Some((path.as_str(), *id)),
+            _ => None,
+        })
+    }
+
     /// Every blob that the current state names.
     pub fn blobs(&self) -> Vec<Hash> {
         self.tree
@@ -569,6 +584,10 @@ impl Authz for Open {
 
     fn storers(&mut self, _state: &[u8]) -> Vec<PublicKey> {
         self.storers.clone()
+    }
+
+    fn grant(&mut self, _to: PublicKey, _abilities: &[Ability], _path: &str) -> Vec<u8> {
+        Vec::new()
     }
 }
 

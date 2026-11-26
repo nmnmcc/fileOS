@@ -46,7 +46,7 @@ interface types {
 /// these bytes and gives them back on each call. The core gives no meaning to
 /// them.
 interface authz {
-  use types.{key, op, decision};
+  use types.{key, ability, op, decision};
 
   /// The state of a new folder, made by `creator`.
   init: func(folder: string, creator: key) -> list<u8>;
@@ -63,6 +63,12 @@ interface authz {
 
   /// The keys of the nodes that may keep a copy of the folder.
   storers: func(state: list<u8>) -> list<key>;
+
+  /// The policy entry that gives `to` these abilities on `path` and the
+  /// paths under it. The core uses it when the user gives access to an app
+  /// or a person, so the core does not need to know the format of policy
+  /// entries.
+  grant: func(to: key, abilities: list<ability>, path: string) -> list<u8>;
 }
 
 /// The file system, as an app sees it. Paths start with "/". The first part

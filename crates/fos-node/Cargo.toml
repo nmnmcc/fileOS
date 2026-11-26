@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "fos-node"
+description = "One fileOS node: the store, the folders, the engine, the apps and the network"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+fos-core.workspace = true
+fos-fs.workspace = true
+fos-sync.workspace = true
+fos-store.workspace = true
+fos-runtime.workspace = true
+fos-net.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

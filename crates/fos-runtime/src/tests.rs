@@ -24,8 +24,9 @@ fn the_capability_engine_runs() {
     assert_eq!(engine.check(&state, alice, Ability::Write, folder, "/a"), Decision::Allow);
     assert!(matches!(engine.check(&state, bob, Ability::Read, folder, "/a"), Decision::Deny(_)));
 
-    let policy = format!("grant {bob} read,store /");
-    let state = engine.apply(&state, alice, policy.as_bytes()).unwrap();
+    let policy = engine.grant(bob, &[Ability::Read, Ability::Store], "/");
+    assert_eq!(String::from_utf8(policy.clone()).unwrap(), format!("grant {bob} read,store /"));
+    let state = engine.apply(&state, alice, &policy).unwrap();
     assert_eq!(engine.check(&state, bob, Ability::Read, folder, "/a"), Decision::Allow);
     assert_eq!(engine.storers(&state), vec![alice, bob]);
     assert!(engine.apply(&state, bob, b"nonsense").is_err());
