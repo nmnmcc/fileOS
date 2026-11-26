@@ -72,6 +72,9 @@ in
   treefmt = {
     enable = true;
     config = {
+      # The tree root is the nearest folder above the current one with a
+      # devenv.nix, not a fixed path, so treefmt formats the worktree you are in.
+      projectRootFile = "devenv.nix";
       # By default, lock files, LICENSE and .gitignore are left out.
       settings.global.excludes = [
         "crates/*/LICENSE-*"
@@ -167,11 +170,13 @@ in
   };
 
   # Every scripts/<name>.py is available as the command <name> (check, budget, docs, ...).
+  # The script comes from the checkout you are in, not from $DEVENV_ROOT, so the
+  # commands also work in a worktree from a shell started in the main folder.
   scripts =
     lib.mapAttrs'
       (file: _: {
         name = lib.removeSuffix ".py" file;
-        value.exec = ''"$DEVENV_ROOT/scripts/${file}" "$@"'';
+        value.exec = ''"$(git rev-parse --show-toplevel)/scripts/${file}" "$@"'';
       })
       (
         lib.filterAttrs (file: type: type == "regular" && lib.hasSuffix ".py" file) (
