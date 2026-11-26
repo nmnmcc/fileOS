@@ -3,6 +3,14 @@ title: Writing apps and engines
 description: The interfaces, the SDK, .app files and the manifest.
 ---
 
+:::caution[The design is changing]
+This page is about the prototype. In the new design there is no
+authorization engine, no `kv` and no streams (everything is a file), grants
+come at run time and apps do not see real paths (see
+[Access](../access/)), and apps are workers that wake up for `fetch` and
+`watch` events (see [Apps as workers](../workers/)).
+:::
+
 Apps and engines are WebAssembly components. The core runs them with
 [wasmtime](https://wasmtime.dev). They talk to the core only through the
 interfaces in [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit).

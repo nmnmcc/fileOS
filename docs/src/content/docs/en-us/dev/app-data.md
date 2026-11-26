@@ -5,7 +5,8 @@ description: How to put complex data into files so that it syncs and merges well
 
 :::note[Status: design]
 These patterns go with the new data design (see [Data](../data/)). Some of
-the building blocks named here (CRDT types, `cache`) are not built yet.
+the building blocks named here (CRDT files, cache files, volatile files) are not
+built yet.
 :::
 
 In fileOS everything is a file, and every key merges by itself. Writes to
@@ -33,10 +34,12 @@ has been one of the safest mail formats to sync for decades.
    CRDT document (a Loro map), or put each field in its own key
    (`/contacts/<id>/name`). A record that one person changes as a whole can be
    a plain file.
-4. **Events, feeds, chat and counts are append-only streams.** Records in a
-   stream never conflict. The state now is worked out from all the events
-   (event sourcing). A counter is a list of "+1" records, never `x = x + 1`,
-   which loses updates when two devices do it at the same time.
+4. **Events, feeds, chat and counts are directories of record files.** Each
+   record is one small file, named by a time-sorted ID and its author, so
+   names never meet and sort by time. Records never conflict. The state now is
+   worked out from all the records (event sourcing). A counter is a set of
+   "+1" files, never `x = x + 1`, which loses updates when two devices do it at
+   the same time.
 5. **A set is a directory of keys.** An album's photos are
    `/albums/<album>/items/<photo-id>`: the key is there or it is not. Adding
    and taking away are separate keys, so they merge. Not an array of IDs in
@@ -50,10 +53,10 @@ has been one of the safest mail formats to sync for decades.
 8. **Large binary data is its own file.** A record keeps its path or hash.
    Large files are cut into chunks that versions share. Never put images or
    video inside records.
-9. **Queries and indexes go into the `cache`, and SQLite is good there.** The
+9. **Queries and indexes go into cache files, and SQLite is good there.** The
    files are the truth: they sync, merge, keep versions and have access. An
    index is made from them, on each node only. An app can keep a SQLite
-   database in its `cache`, update it on change events, and use SQL for
+   database in its cache, update it on change events, and use SQL for
    queries. If it is lost, it is made again from the files. It never syncs, so
    it never conflicts. You get SQL without the problem that SQL databases do
    not merge.
@@ -74,9 +77,10 @@ has been one of the safest mail formats to sync for decades.
 - **Do not put data with different sharing in one file.** Access goes by path
   prefix, and half a file cannot be shared. Private notes and notes shared
   with the family go under different prefixes, or different folders.
-- **Do not keep short-lived state in files.** Cursor positions, "is typing" and
-  "is online" are messages, not stored. Otherwise they are data that grows
-  for nothing.
+- **Do not keep short-lived state in files that are kept.** Cursor positions,
+  "is typing" and "is online" go into **volatile files**: they sync at once but
+  are never stored, and they go after a short time, like `/run` on Unix.
+  Otherwise they are data that grows for nothing.
 - **Do not write the same key very often**, such as on every key press. Put
   frequent changes into a CRDT document (which packs operations together), or
   keep them in memory for a short time and then write.
@@ -87,31 +91,30 @@ has been one of the safest mail formats to sync for decades.
 | ---------------------------------------- | ----------------------------------------- | -------------------------- |
 | Records that do not depend on each other | One file each, named by ID                | Contacts, bookmarks, tasks |
 | Records that several people change       | A small CRDT document each                | Shared task cards          |
-| Events that are only added               | A stream                                  | Chat, feeds, logs, counts  |
+| Events that are only added               | A directory of record files               | Chat, feeds, logs, counts  |
 | A set                                    | Keys in a directory                       | Album members, tags        |
 | An ordered list                          | Fractional index keys, or a movable list  | Playlists, board columns   |
 | A tree that changes shape                | Parent fields, or a movable tree          | Outlines                   |
 | Rich text                                | A text CRDT, with history                 | Documents, note bodies     |
 | Large binary data                        | Its own chunked file, plus a small record | Photos, video              |
-| Data to search                           | A SQLite index in the `cache`             | Search, filters, totals    |
-| Short-lived state                        | Messages, not stored                      | Cursors, presence          |
+| Data to search                           | A SQLite index in cache files             | Search, filters, totals    |
+| Short-lived state                        | Volatile files                            | Cursors, presence          |
 
 ## Examples
 
 - **Contacts:** `/contacts/<id>.vcf`, one vCard file for each person; groups as
-  keys under `/contacts/groups/<group>/<id>`; search with SQLite in the
-  `cache`.
+  keys under `/contacts/groups/<group>/<id>`; search with SQLite in cache files.
 - **Notes:** `/notes/<id>.md` in Markdown. For notes that several people edit
   at the same time, the body is Loro text, written out as Markdown for export.
   Nesting uses a parent field.
 - **Tasks:** one file for each task; the order uses fractional indexes; "how
   many are done" is not stored, but worked out from the files.
-- **Chat:** one stream for each conversation; where each person has read up to
-  is a small file of their own; "is typing" is a message.
+- **Chat:** one directory for each conversation, one file for each message; where each person has read up to
+  is a small file of their own; "is typing" is a volatile file.
 
 ## Help from the SDK
 
 The `fos-app` SDK is to give these, so that each app does not make them
 again: records by ID (with new IDs, a schema version, and unknown fields
 kept), fractional indexes, Loro documents, and a helper that keeps a SQLite
-index in the `cache` up to date with files.
+index in cache files up to date with files.

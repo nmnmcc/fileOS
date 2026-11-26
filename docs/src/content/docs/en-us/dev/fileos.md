@@ -10,9 +10,11 @@ and which are not yet. The name "fileOS" is a working name.
 :::
 
 :::caution[The design is changing]
-Three parts of this page are old: one ordering node for each folder, MLS for
-encryption, and apps installed on each node. The new design is in
+These parts of this page are old: one ordering node for each folder, MLS for
+encryption, apps installed on each node, the authorization engine, and
+key-value stores and streams next to files. The new design is in
 [Data: sync, conflicts, storage and keys](../data/),
+[Access: grants, permissions and sharing](../access/),
 [Apps as workers](../workers/) and [HTTP and the browser](../http/).
 :::
 

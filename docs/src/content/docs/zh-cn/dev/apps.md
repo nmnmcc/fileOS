@@ -3,6 +3,10 @@ title: 编写 App 和引擎
 description: 接口、SDK、.app 文件和 manifest。
 ---
 
+:::caution[设计正在变化]
+本页描述的是原型。新设计中没有授权引擎，没有 `kv`，也没有流（一切皆文件）；授权在运行时进行，App 看不到真实路径（见[访问](../access/)）；App 是被 `fetch` 和 `watch` 事件唤醒的 Worker（见 [App 作为 Worker](../workers/)）。
+:::
+
 App 和引擎都是 WebAssembly 组件。内核用 [wasmtime](https://wasmtime.dev) 运行它们。它们只通过 [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit) 里的接口和内核通信。
 
 ## App
