@@ -197,3 +197,28 @@ fn a_manager_gives_on_and_take_back_cascades() {
     let s = world.space(ming, space).unwrap();
     assert!(!s.may(world.who(ann), FilesRead, &all()));
 }
+
+#[test]
+fn large_files_sync_in_chunks_and_a_new_version_sends_only_what_changed() {
+    let (mut world, ming, mom, space) = family();
+    let mut x: u64 = 7;
+    let big: Vec<u8> = (0..(2 << 20))
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x as u8
+        })
+        .collect();
+    let file = world.put(ming, space, "video.bin", &big).unwrap();
+    assert_eq!(world.read(mom, space, "video.bin"), std::slice::from_ref(&big));
+
+    let before = world.nodes[mom].contents.0.len();
+    let mut edited = big.clone();
+    edited[1 << 20] ^= 1;
+    world
+        .change(ming, space, file, "video.bin", Some(&edited))
+        .unwrap();
+    assert_eq!(world.read(mom, space, "video.bin"), [edited]);
+    assert!(world.nodes[mom].contents.0.len() - before <= 3);
+}

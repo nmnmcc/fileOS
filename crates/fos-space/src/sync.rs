@@ -25,7 +25,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
 
-use crate::entry::{Act, Content, Entry, Permission, Principal, Resource};
+use crate::content;
+use crate::entry::{Act, Entry, Permission, Principal, Resource};
 use crate::space::Space;
 
 /// A message between two nodes.
@@ -73,8 +74,10 @@ pub struct Node {
     /// Spaces to get, whose first entry this node does not have yet.
     wanted: BTreeSet<Hash>,
     peers: BTreeSet<PublicKey>,
-    /// Content asked for and not yet here.
+    /// Pieces of content asked for and not yet here.
     asked: BTreeSet<Hash>,
+    /// The ones of them that are lists of chunks.
+    lists: BTreeSet<Hash>,
     nonce: u64,
 }
 
@@ -88,6 +91,7 @@ impl Node {
             wanted: BTreeSet::new(),
             peers: BTreeSet::new(),
             asked: BTreeSet::new(),
+            lists: BTreeSet::new(),
             nonce,
         }
     }
@@ -263,7 +267,11 @@ impl Node {
             }
             Msg::WantContent(hash) => {
                 let allowed = self.spaces.values().any(|s| {
-                    Self::may_keep(s, from) && s.contents().iter().any(|c| c.hash == hash)
+                    Self::may_keep(s, from)
+                        && s.contents().iter().any(|c| {
+                            c.hash == hash
+                                || content::chunks(c, contents).is_some_and(|l| l.contains(&hash))
+                        })
                 });
                 if allowed && let Some(bytes) = contents.get(hash) {
                     step.out.push((from, Msg::Content(Bytes(bytes))));
@@ -272,6 +280,15 @@ impl Node {
             Msg::Content(bytes) => {
                 let hash = Hash::of(&bytes.0);
                 if self.asked.remove(&hash) {
+                    if self.lists.remove(&hash)
+                        && let Ok(list) = fos_core::decode::<Vec<(Hash, u64)>>(&bytes.0)
+                    {
+                        for (chunk, _) in list {
+                            if !contents.has(chunk) && self.asked.insert(chunk) {
+                                step.out.push((from, Msg::WantContent(chunk)));
+                            }
+                        }
+                    }
                     step.events.push(Event::Content(bytes.0));
                 }
             }
@@ -317,14 +334,18 @@ impl Node {
             .into_iter()
             .filter(|e| added.contains(&e.hash()))
             .collect();
-        let wanted: Vec<Content> = s
-            .contents()
-            .into_iter()
-            .filter(|c| !contents.has(c.hash))
-            .collect();
-        for c in wanted {
-            if self.asked.insert(c.hash) {
-                step.out.push((from, Msg::WantContent(c.hash)));
+        let mut wanted = Vec::new();
+        for c in s.contents() {
+            if let Some(hashes) = content::chunks(&c, contents) {
+                wanted.extend(hashes.into_iter().filter(|h| !contents.has(*h)));
+            } else {
+                self.lists.insert(c.hash);
+                wanted.push(c.hash);
+            }
+        }
+        for hash in wanted {
+            if self.asked.insert(hash) {
+                step.out.push((from, Msg::WantContent(hash)));
             }
         }
         self.send_on(space, &new, Some(from), step);

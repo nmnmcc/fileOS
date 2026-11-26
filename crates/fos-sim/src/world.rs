@@ -208,11 +208,8 @@ impl World {
     }
 
     fn keep(&mut self, node: usize, bytes: &[u8]) -> Content {
-        let content = Content::of(bytes);
-        self.nodes[node]
-            .contents
-            .0
-            .insert(content.hash, bytes.to_vec());
+        let (content, pieces) = fos_space::content::split(bytes);
+        self.nodes[node].contents.0.extend(pieces);
         content
     }
 
@@ -234,7 +231,7 @@ impl World {
             .into_iter()
             .flat_map(|f| f.versions)
             .filter_map(|v| v.content)
-            .filter_map(|c| self.nodes[node].contents.get(c.hash))
+            .filter_map(|c| fos_space::content::join(&c, &self.nodes[node].contents))
             .collect()
     }
 

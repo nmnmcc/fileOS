@@ -10,11 +10,13 @@
 //! and every node that has the same entries gets the same state.
 //!
 //! - [`entry`]: the signed entries and what they do ([`Act`]).
+//! - [`content`]: content in chunks, cut at points the content picks.
 //! - [`space`]: one space, and the state that comes from its entries.
 //! - [`sync`]: a node with many spaces, and the messages between nodes.
 //!
 //! This crate is portable: no threads, files, sockets or clocks.
 
+pub mod content;
 pub mod entry;
 pub mod space;
 pub mod sync;

@@ -78,20 +78,23 @@ pub enum Effect {
     Deny,
 }
 
-/// The bytes of a version, named by their BLAKE3 hash. The bytes themselves
-/// are kept apart, in the content store.
+/// The bytes of a version. The bytes themselves are kept apart, in the
+/// content store, in chunks (see [`crate::content`]).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct Content {
+    /// The hash of the bytes when there is one chunk; the hash of the list
+    /// of chunks when there are more.
     pub hash: Hash,
     pub size: u64,
+    /// True when `hash` names a list of chunks.
+    pub chunks: bool,
 }
 
 impl Content {
+    /// The content of `bytes`, cut into chunks as [`crate::content::split`]
+    /// does. The caller keeps the pieces that `split` gives.
     pub fn of(bytes: &[u8]) -> Self {
-        Self {
-            hash: Hash::of(bytes),
-            size: bytes.len() as u64,
-        }
+        crate::content::split(bytes).0
     }
 }
 
