@@ -243,9 +243,12 @@ impl Node {
     /// When there is no node in `dir`, or its data or engine is broken.
     pub fn open(dir: &Path) -> Result<Node, Error> {
         let store = Store::open(dir)?;
-        let root = store
-            .root()?
-            .ok_or_else(|| Error(format!("{} has no node: run `fos init`", dir.display())))?;
+        let root = store.root()?.ok_or_else(|| {
+            Error(format!(
+                "{} has no node: run `fos node init`",
+                dir.display()
+            ))
+        })?;
         let key = store.key()?;
         let rotation_key = store.identity_key("rotation")?;
         let signing_key = store.identity_key("signing")?;
@@ -1324,12 +1327,8 @@ impl fmt::Display for Status {
                 );
             }
         }
-        for app in &self.apps {
-            let _ = writeln!(out, "app      {app}");
-        }
-        for log in &self.logs {
-            let _ = writeln!(out, "log      {log}");
-        }
+        // Apps and their messages are not part of the status of the
+        // kernel. The app folders are in /apps, as any folder.
         f.write_str(&out)
     }
 }

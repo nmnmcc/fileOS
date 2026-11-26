@@ -24,23 +24,23 @@ fileOS is a replicated file system for people and the small groups they are part
 With the devenv shell (`direnv allow`):
 
 ```sh
-cargo build -p fos                                   # the program
-apps                                                 # the engine and apps, in target/apps/
-fos init --engine target/apps/Capability.app         # a node in ~/.fileos
-fos run                                              # the network, the apps and the gateway
+cargo build -p fos                                  # the program
+apps                                                # the engine and apps, in target/apps/
+fos node init --engine target/apps/Capability.app   # a node in ~/.fileos
+fos node run                                        # the network, the apps and the gateway
 ```
 
 In another terminal:
 
 ```sh
-fos new photos /photos                               # a folder, mounted at /photos
-fos install target/apps/Photos.app                   # the photos app
-fos put /photos/cat.png cat.png
-fos kv photos                                        # what the photos app found
-fos status
+fos folder new photos /photos                       # a folder, mounted at /photos
+fos app install target/apps/Photos.app              # the photos app
+fos fs put /photos/cat.png cat.png
+fos fs ls /photos
+fos node status
 ```
 
-To share `/photos` with another node: `fos grant /photos <its node key> all` here, then `fos mount <folder ID> /photos` there.
+To share `/photos` with another node: `fos folder grant /photos <its node key> all` here, then `fos folder mount <folder ID> /photos` there.
 
 ## What is there
 

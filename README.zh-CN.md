@@ -24,23 +24,23 @@ fileOS 是一个面向个人及其所属小群体的复制文件系统。系统�
 使用 devenv shell（`direnv allow`）：
 
 ```sh
-cargo build -p fos                                   # 程序
-apps                                                 # 引擎和 App，放在 target/apps/
-fos init --engine target/apps/Capability.app         # 在 ~/.fileos 创建节点
-fos run                                              # 网络、App 和网关
+cargo build -p fos                                  # 程序
+apps                                                # 引擎和 App，放在 target/apps/
+fos node init --engine target/apps/Capability.app   # 在 ~/.fileos 创建节点
+fos node run                                        # 网络、App 和网关
 ```
 
 在另一个终端里：
 
 ```sh
-fos new photos /photos                               # 创建文件夹，挂载到 /photos
-fos install target/apps/Photos.app                   # 安装照片 App
-fos put /photos/cat.png cat.png
-fos kv photos                                        # 照片 App 找到的信息
-fos status
+fos folder new photos /photos                       # 创建文件夹，挂载到 /photos
+fos app install target/apps/Photos.app              # 安装照片 App
+fos fs put /photos/cat.png cat.png
+fos fs ls /photos
+fos node status
 ```
 
-把 `/photos` 分享给另一个节点：在这里运行 `fos grant /photos <对方节点密钥> all`，在对方那里运行 `fos mount <文件夹 ID> /photos`。
+把 `/photos` 分享给另一个节点：在这里运行 `fos folder grant /photos <对方节点密钥> all`，在对方那里运行 `fos folder mount <文件夹 ID> /photos`。
 
 ## 已有功能
 
