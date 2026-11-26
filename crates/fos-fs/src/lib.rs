@@ -117,7 +117,12 @@ pub struct SignedWrite {
 impl SignedWrite {
     /// Signs a write. The author is the key that signs.
     pub fn sign(folder: Option<Hash>, nonce: u64, op: Op, key: &SecretKey) -> Self {
-        let write = Write { folder, author: key.public(), nonce, op };
+        let write = Write {
+            folder,
+            author: key.public(),
+            nonce,
+            op,
+        };
         let sig = key.sign(&encode(&write));
         Self { write, sig }
     }
@@ -144,14 +149,27 @@ pub struct Entry {
 }
 
 impl Entry {
-    fn message(folder: Hash, seq: u64, prev: Hash, write: &SignedWrite, orderer: PublicKey) -> Vec<u8> {
+    fn message(
+        folder: Hash,
+        seq: u64,
+        prev: Hash,
+        write: &SignedWrite,
+        orderer: PublicKey,
+    ) -> Vec<u8> {
         encode(&(folder, seq, prev, write.hash(), orderer))
     }
 
     fn sign(folder: Hash, seq: u64, prev: Hash, write: SignedWrite, key: &SecretKey) -> Self {
         let orderer = key.public();
         let sig = key.sign(&Self::message(folder, seq, prev, &write, orderer));
-        Self { folder, seq, prev, write, orderer, sig }
+        Self {
+            folder,
+            seq,
+            prev,
+            write,
+            orderer,
+            sig,
+        }
     }
 
     fn verify(&self) -> bool {
@@ -238,10 +256,15 @@ enum Change {
 
 impl Folder {
     /// Makes a new folder. Gives the folder and its genesis entry.
+    ///
+    /// # Panics
+    ///
+    /// Never: a genesis entry made here is always valid.
     pub fn create(name: &str, key: &SecretKey, authz: &mut dyn Authz) -> (Folder, Entry) {
         let write = SignedWrite::sign(None, 0, Op::Genesis { name: name.into() }, key);
         let entry = Entry::sign(write.hash(), 0, Hash::default(), write, key);
-        let folder = Self::from_genesis(entry.clone(), authz).expect("a new genesis entry is valid");
+        let folder =
+            Self::from_genesis(entry.clone(), authz).expect("a new genesis entry is valid");
         (folder, entry)
     }
 
@@ -300,8 +323,15 @@ impl Folder {
     }
 
     /// The hash of the last entry.
+    ///
+    /// # Panics
+    ///
+    /// Never: a folder always has its genesis entry.
     pub fn head(&self) -> Hash {
-        self.log.last().expect("a folder has a genesis entry").hash()
+        self.log
+            .last()
+            .expect("a folder has a genesis entry")
+            .hash()
     }
 
     /// Entries from `seq` on.
@@ -333,7 +363,10 @@ impl Folder {
 
     /// Every file that is there now, with its blob and size, by path.
     pub fn files(&self) -> impl Iterator<Item = (&str, Hash, u64)> {
-        self.tree.keys().filter_map(|path| self.file(path).map(|(hash, size)| (path.as_str(), hash, size)))
+        self.tree.keys().filter_map(|path| {
+            self.file(path)
+                .map(|(hash, size)| (path.as_str(), hash, size))
+        })
     }
 
     /// The paths where other folders are mounted, with their IDs.
@@ -354,10 +387,16 @@ impl Folder {
 
     /// The names directly under `dir`, without deleted files.
     pub fn list(&self, dir: &str) -> Vec<String> {
-        let prefix = if dir == "/" { "/".to_string() } else { format!("{dir}/") };
+        let prefix = if dir == "/" {
+            "/".to_string()
+        } else {
+            format!("{dir}/")
+        };
         let mut names: Vec<String> = Vec::new();
         for (path, node) in self.tree.range(prefix.clone()..) {
-            let Some(rest) = path.strip_prefix(&prefix) else { break };
+            let Some(rest) = path.strip_prefix(&prefix) else {
+                break;
+            };
             if matches!(node, Node::File(v) if v.last().is_some_and(|v| v.blob.is_none())) {
                 continue;
             }
@@ -370,7 +409,13 @@ impl Folder {
     }
 
     /// Asks the engine if `principal` may do `ability` on `path`.
-    pub fn check(&self, authz: &mut dyn Authz, principal: PublicKey, ability: Ability, path: &str) -> Decision {
+    pub fn check(
+        &self,
+        authz: &mut dyn Authz,
+        principal: PublicKey,
+        ability: Ability,
+        path: &str,
+    ) -> Decision {
         authz.check(&self.policy, principal, ability, self.id, path)
     }
 
@@ -388,7 +433,8 @@ impl Folder {
         if !write.verify() || write.write.folder != Some(self.id) {
             return Err("the write is not signed for this folder".into());
         }
-        self.validate(&write.write, self.next_seq(), authz).map(|_| ())
+        self.validate(&write.write, self.next_seq(), authz)
+            .map(|_| ())
     }
 
     /// Puts a write in order and takes it. Only the ordering node does this.
@@ -397,7 +443,12 @@ impl Folder {
     ///
     /// When `key` is not the ordering node, the write is not valid, or the
     /// engine says no.
-    pub fn order(&mut self, write: SignedWrite, key: &SecretKey, authz: &mut dyn Authz) -> Result<Entry, Error> {
+    pub fn order(
+        &mut self,
+        write: SignedWrite,
+        key: &SecretKey,
+        authz: &mut dyn Authz,
+    ) -> Result<Entry, Error> {
         if key.public() != self.orderer {
             return Err(Error("this node does not put this folder in order".into()));
         }
@@ -407,7 +458,9 @@ impl Folder {
         if self.fork.is_some() {
             return Err(Error("this copy has forked".into()));
         }
-        let change = self.validate(&write.write, self.next_seq(), authz).map_err(Error)?;
+        let change = self
+            .validate(&write.write, self.next_seq(), authz)
+            .map_err(Error)?;
         let entry = Entry::sign(self.id, self.next_seq(), self.head(), write, key);
         self.commit(entry.clone(), change);
         Ok(entry)
@@ -429,12 +482,17 @@ impl Folder {
             return Err(Reject::Old);
         }
         if entry.seq > self.next_seq() {
-            return Err(Reject::Gap { next: self.next_seq() });
+            return Err(Reject::Gap {
+                next: self.next_seq(),
+            });
         }
         if entry.prev != self.head() {
             return Err(Reject::Invalid("the entry does not follow the head".into()));
         }
-        if entry.orderer != self.orderer || !entry.verify() || entry.write.write.folder != Some(self.id) {
+        if entry.orderer != self.orderer
+            || !entry.verify()
+            || entry.write.write.folder != Some(self.id)
+        {
             return Err(Reject::Invalid("bad signature".into()));
         }
         match self.validate(&entry.write.write, entry.seq, authz) {
@@ -443,7 +501,10 @@ impl Folder {
                 Ok(())
             }
             Err(reason) => {
-                let fork = Fork { seq: entry.seq, reason };
+                let fork = Fork {
+                    seq: entry.seq,
+                    reason,
+                };
                 self.fork = Some(fork.clone());
                 Err(Reject::Fork(fork))
             }
@@ -465,12 +526,24 @@ impl Folder {
                 if matches!(self.tree.get(path), Some(Node::Stream(_) | Node::Mount(_))) {
                     return Err(format!("{path} is not a file"));
                 }
-                Change::Put(path.clone(), Version { seq, author, blob: Some((*blob, *size)) })
+                Change::Put(
+                    path.clone(),
+                    Version {
+                        seq,
+                        author,
+                        blob: Some((*blob, *size)),
+                    },
+                )
             }
             Op::Delete { path } => match self.tree.get(path) {
-                Some(Node::File(_)) if self.file(path).is_some() => {
-                    Change::Put(path.clone(), Version { seq, author, blob: None })
-                }
+                Some(Node::File(_)) if self.file(path).is_some() => Change::Put(
+                    path.clone(),
+                    Version {
+                        seq,
+                        author,
+                        blob: None,
+                    },
+                ),
                 Some(Node::Mount(_)) => Change::Unmount(path.clone()),
                 _ => return Err(format!("{path} is not there")),
             },
@@ -478,7 +551,14 @@ impl Folder {
                 if matches!(self.tree.get(path), Some(Node::File(_) | Node::Mount(_))) {
                     return Err(format!("{path} is not a stream"));
                 }
-                Change::Append(path.clone(), Record { seq, author, data: data.0.clone() })
+                Change::Append(
+                    path.clone(),
+                    Record {
+                        seq,
+                        author,
+                        data: data.0.clone(),
+                    },
+                )
             }
             Op::Mount { path, folder } => {
                 if !matches!(self.tree.get(path), None | Some(Node::Mount(_))) {
@@ -493,14 +573,18 @@ impl Folder {
 
     fn commit(&mut self, entry: Entry, change: Change) {
         match change {
-            Change::Put(path, version) => match self.tree.entry(path).or_insert(Node::File(Vec::new())) {
-                Node::File(versions) => versions.push(version),
-                _ => unreachable!("validate checked the kind of node"),
-            },
-            Change::Append(path, record) => match self.tree.entry(path).or_insert(Node::Stream(Vec::new())) {
-                Node::Stream(records) => records.push(record),
-                _ => unreachable!("validate checked the kind of node"),
-            },
+            Change::Put(path, version) => {
+                match self.tree.entry(path).or_insert(Node::File(Vec::new())) {
+                    Node::File(versions) => versions.push(version),
+                    _ => unreachable!("validate checked the kind of node"),
+                }
+            }
+            Change::Append(path, record) => {
+                match self.tree.entry(path).or_insert(Node::Stream(Vec::new())) {
+                    Node::Stream(records) => records.push(record),
+                    _ => unreachable!("validate checked the kind of node"),
+                }
+            }
             Change::Mount(path, folder) => {
                 self.tree.insert(path, Node::Mount(folder));
             }
@@ -524,9 +608,15 @@ pub fn check_path(path: &str) -> Result<(), String> {
         return Ok(());
     }
     let ok = path.starts_with('/')
-        && path[1..].split('/').all(|part| !part.is_empty() && part != "." && part != "..")
+        && path[1..]
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..")
         && !path.chars().any(char::is_control);
-    if ok { Ok(()) } else { Err(format!("not a valid path: {path:?}")) }
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("not a valid path: {path:?}"))
+    }
 }
 
 /// Follows mounts from the root folder. Gives the folder that has `path`,
@@ -544,7 +634,8 @@ pub fn resolve<'a>(
     let mut folder = root;
     let mut parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
     'outer: loop {
-        let current = lookup(folder).ok_or_else(|| Error(format!("folder {folder} is not on this node")))?;
+        let current =
+            lookup(folder).ok_or_else(|| Error(format!("folder {folder} is not on this node")))?;
         for i in 1..=parts.len() {
             let prefix = format!("/{}", parts[..i].join("/"));
             if let Some(Node::Mount(inner)) = current.get(&prefix) {
@@ -570,12 +661,25 @@ impl Authz for Open {
         Vec::new()
     }
 
-    fn apply(&mut self, state: &[u8], author: PublicKey, _policy: &[u8]) -> Result<Vec<u8>, String> {
-        if self.deny.contains(&author) { Err("denied".into()) } else { Ok(state.to_vec()) }
+    fn apply(
+        &mut self,
+        state: &[u8],
+        author: PublicKey,
+        _policy: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        if self.deny.contains(&author) {
+            Err("denied".into())
+        } else {
+            Ok(state.to_vec())
+        }
     }
 
     fn check(&mut self, _: &[u8], principal: PublicKey, _: Ability, _: Hash, _: &str) -> Decision {
-        if self.deny.contains(&principal) { Decision::Deny("denied".into()) } else { Decision::Allow }
+        if self.deny.contains(&principal) {
+            Decision::Deny("denied".into())
+        } else {
+            Decision::Allow
+        }
     }
 
     fn readers(&mut self, _state: &[u8]) -> Vec<PublicKey> {

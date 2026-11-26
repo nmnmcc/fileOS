@@ -53,7 +53,9 @@ def main() -> None:
                 shutil.rmtree(out)
             shutil.copytree(bundle, out)
             (out / "bin").mkdir(exist_ok=True)
-            run(["wasm-tools", "component", "new", str(module), "-o", str(out / "bin" / "app.wasm")])
+            run(
+                ["wasm-tools", "component", "new", str(module), "-o", str(out / "bin" / "app.wasm")]
+            )
             console.print(f"[green]built[/green] {out.relative_to(ROOT)}", highlight=False)
 
 

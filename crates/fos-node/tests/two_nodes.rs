@@ -10,7 +10,11 @@ use fos_node::{NetConfig, Node, parse_abilities};
 
 fn apps() -> PathBuf {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/apps");
-    assert!(dir.join("Capability.app").exists(), "{} is missing: run `apps` first", dir.display());
+    assert!(
+        dir.join("Capability.app").exists(),
+        "{} is missing: run `apps` first",
+        dir.display()
+    );
     dir
 }
 
@@ -35,7 +39,7 @@ fn png(width: u32, height: u32) -> Vec<u8> {
 fn start(dir: &Path) -> Node {
     let node = Node::open(dir).unwrap();
     node.start_net(NetConfig {
-        listen: vec!["/ip4/127.0.0.1/udp/0/quic-v1".parse().unwrap()],
+        listen: vec!["/ip4/127.0.0.1/tcp/0".parse().unwrap()],
         peers: Vec::new(),
         mdns: false,
     })
@@ -59,10 +63,16 @@ async fn two_nodes_share_a_photos_folder() {
 
     // Alice makes a folder and lets Bob's node use and keep it.
     let photos = alice.create("photos", "/photos").unwrap();
-    alice.grant("/photos", bob.key(), &parse_abilities("all").unwrap()).unwrap();
+    alice
+        .grant("/photos", bob.key(), &parse_abilities("all").unwrap())
+        .unwrap();
     bob.mount(photos, "/photos").unwrap();
     let entries = |node: &Node| {
-        node.status().folders.iter().find(|f| f.id == photos).map_or(0, |f| f.entries)
+        node.status()
+            .folders
+            .iter()
+            .find(|f| f.id == photos)
+            .map_or(0, |f| f.entries)
     };
     until("bob gets the folder", || entries(&bob) == entries(&alice)).await;
 
@@ -76,21 +86,30 @@ async fn two_nodes_share_a_photos_folder() {
     // A photo from Alice comes to Bob, and his photos app indexes it.
     alice.put("/photos/2026/a.png", &png(64, 32)).unwrap();
     until("bob's app indexes alice's photo", || {
-        bob.kv("photos").get("photo:/photos/2026/a.png").map(Vec::as_slice) == Some(b"64x32")
+        bob.kv("photos")
+            .get("photo:/photos/2026/a.png")
+            .map(Vec::as_slice)
+            == Some(b"64x32")
     })
     .await;
     assert_eq!(bob.read("/photos/2026/a.png").unwrap(), png(64, 32));
 
     // Bob writes too. The write goes to Alice, and comes back in the main line.
     bob.put("/photos/2026/b.png", &png(10, 20)).unwrap();
-    until("alice gets bob's photo", || alice.read("/photos/2026/b.png").is_ok()).await;
-    until("both copies are the same", || entries(&bob) == entries(&alice)).await;
+    until("alice gets bob's photo", || {
+        alice.read("/photos/2026/b.png").is_ok()
+    })
+    .await;
+    until("both copies are the same", || {
+        entries(&bob) == entries(&alice)
+    })
+    .await;
     assert_eq!(alice.list("/photos/2026").unwrap(), ["a.png", "b.png"]);
 
     // Alice has no photos app; the app is Bob's alone.
     assert!(alice.kv("photos").is_empty());
-    assert!(bob.read("/apps/Photos.app/manifest.toml").is_ok());
-    assert!(alice.read("/apps/Photos.app/manifest.toml").is_err());
+    bob.read("/apps/Photos.app/manifest.toml").unwrap();
+    alice.read("/apps/Photos.app/manifest.toml").unwrap_err();
 
     // Bob's node comes back after a restart, with its folders and its app.
     let before = entries(&bob);
@@ -118,7 +137,7 @@ async fn a_node_without_a_grant_gets_nothing() {
     eve.mount(secret, "/secret").unwrap();
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(eve.status().folders.iter().all(|f| f.id != secret));
-    assert!(eve.read("/secret/plan.txt").is_err());
+    eve.read("/secret/plan.txt").unwrap_err();
     // Without a grant, Eve cannot write into Alice's folder from her own node.
-    assert!(eve.put("/secret/x.txt", b"x").is_err());
+    eve.put("/secret/x.txt", b"x").unwrap_err();
 }

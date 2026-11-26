@@ -74,7 +74,10 @@ impl Sim {
     }
 
     fn index(&self, key: PublicKey) -> usize {
-        self.nodes.iter().position(|n| n.key.public() == key).expect("a known node")
+        self.nodes
+            .iter()
+            .position(|n| n.key.public() == key)
+            .expect("a known node")
     }
 
     pub fn connect(&mut self, a: usize, b: usize) {
@@ -119,7 +122,11 @@ impl Sim {
         let n = &mut self.nodes[node];
         let hash = Hash::of(data);
         n.blobs.0.insert(hash, data.to_vec());
-        let op = Op::Put { path: path.into(), blob: hash, size: data.len() as u64 };
+        let op = Op::Put {
+            path: path.into(),
+            blob: hash,
+            size: data.len() as u64,
+        };
         let key = n.key.clone();
         let step = n.replica.write(folder, op, &key, &mut n.engine)?;
         self.apply(node, step);
@@ -143,7 +150,10 @@ impl Sim {
         }
         for event in step.events {
             if let Event::Blob(data) = &event {
-                self.nodes[node].blobs.0.insert(Hash::of(data), data.clone());
+                self.nodes[node]
+                    .blobs
+                    .0
+                    .insert(Hash::of(data), data.clone());
             }
             self.nodes[node].events.push(event);
         }

@@ -32,12 +32,21 @@ pub enum Msg {
     /// The folders I have, each with the `seq` of my next entry.
     Have(Vec<(Hash, u64)>),
     /// Send me the entries of a folder, from `from` on.
-    Want { folder: Hash, from: u64 },
-    Entries { folder: Hash, entries: Vec<Entry> },
+    Want {
+        folder: Hash,
+        from: u64,
+    },
+    Entries {
+        folder: Hash,
+        entries: Vec<Entry>,
+    },
     /// A write for the ordering node.
     Submit(SignedWrite),
     /// The ordering node did not take a write.
-    Refused { write: Hash, reason: String },
+    Refused {
+        write: Hash,
+        reason: String,
+    },
     WantBlob(Hash),
     Blob(Bytes),
 }
@@ -143,7 +152,10 @@ impl Replica {
         self.folders.insert(id, folder);
         let mut step = Step::default();
         step.events.push(Event::Added(id));
-        step.events.push(Event::Entries { folder: id, entries: vec![genesis] });
+        step.events.push(Event::Entries {
+            folder: id,
+            entries: vec![genesis],
+        });
         (id, step)
     }
 
@@ -155,7 +167,13 @@ impl Replica {
         }
         self.wanted.insert(id);
         for peer in &self.peers {
-            step.send(*peer, Msg::Want { folder: id, from: 0 });
+            step.send(
+                *peer,
+                Msg::Want {
+                    folder: id,
+                    from: 0,
+                },
+            );
         }
         step
     }
@@ -165,10 +183,19 @@ impl Replica {
     /// # Errors
     ///
     /// When the folder is not here, or the engine of this node says no.
-    pub fn write(&mut self, folder: Hash, op: Op, author: &SecretKey, authz: &mut dyn Authz) -> Result<Step, Error> {
+    pub fn write(
+        &mut self,
+        folder: Hash,
+        op: Op,
+        author: &SecretKey,
+        authz: &mut dyn Authz,
+    ) -> Result<Step, Error> {
         self.nonce += 1;
         let write = SignedWrite::sign(Some(folder), self.nonce, op, author);
-        let f = self.folders.get_mut(&folder).ok_or_else(|| Error(format!("folder {folder} is not here")))?;
+        let f = self
+            .folders
+            .get_mut(&folder)
+            .ok_or_else(|| Error(format!("folder {folder} is not here")))?;
         // Our own engine checks the write first, so we do not send writes it
         // would not take back.
         f.try_write(&write, authz).map_err(Error)?;
@@ -193,10 +220,20 @@ impl Replica {
         let have = self.folders_for(peer, authz);
         step.send(peer, Msg::Have(have));
         for id in &self.wanted {
-            step.send(peer, Msg::Want { folder: *id, from: 0 });
+            step.send(
+                peer,
+                Msg::Want {
+                    folder: *id,
+                    from: 0,
+                },
+            );
         }
         for write in &self.pending {
-            let orderer = write.write.folder.and_then(|id| self.folders.get(&id)).map(Folder::orderer);
+            let orderer = write
+                .write
+                .folder
+                .and_then(|id| self.folders.get(&id))
+                .map(Folder::orderer);
             if orderer == Some(peer) {
                 step.send(peer, Msg::Submit(write.clone()));
             }
@@ -209,19 +246,31 @@ impl Replica {
     }
 
     /// Takes one message from a peer.
-    pub fn handle(&mut self, from: PublicKey, msg: Msg, authz: &mut dyn Authz, blobs: &dyn Blobs) -> Step {
+    pub fn handle(
+        &mut self,
+        from: PublicKey,
+        msg: Msg,
+        authz: &mut dyn Authz,
+        blobs: &dyn Blobs,
+    ) -> Step {
         let mut step = Step::default();
         match msg {
             Msg::Have(list) => {
                 for (id, next) in list {
+                    // A copy that forked takes no more entries, so it asks for none.
                     let ours = match self.folders.get(&id) {
                         Some(f) if f.fork().is_none() => f.next_seq(),
-                        Some(_) => continue,
                         None if self.wanted.contains(&id) => 0,
-                        None => continue,
+                        _ => continue,
                     };
                     if next > ours {
-                        step.send(from, Msg::Want { folder: id, from: ours });
+                        step.send(
+                            from,
+                            Msg::Want {
+                                folder: id,
+                                from: ours,
+                            },
+                        );
                     }
                 }
             }
@@ -235,7 +284,9 @@ impl Replica {
                     }
                 }
             }
-            Msg::Entries { folder, entries } => self.take(from, folder, entries, &mut step, authz, blobs),
+            Msg::Entries { folder, entries } => {
+                self.take(from, folder, entries, &mut step, authz, blobs);
+            }
             Msg::Submit(write) => self.submit(from, write, &mut step, authz, blobs),
             Msg::Refused { write, reason } => {
                 if self.pending.iter().any(|w| w.hash() == write) {
@@ -274,7 +325,11 @@ impl Replica {
         // The ordering node may get the blob of a write we sent it.
         let sent = self.pending.iter().any(|w| {
             matches!(w.write.op, Op::Put { blob, .. } if blob == hash)
-                && w.write.folder.and_then(|id| self.folders.get(&id)).map(Folder::orderer) == Some(peer)
+                && w.write
+                    .folder
+                    .and_then(|id| self.folders.get(&id))
+                    .map(Folder::orderer)
+                    == Some(peer)
         });
         sent || self
             .folders
@@ -296,13 +351,18 @@ impl Replica {
             if !self.wanted.contains(&id) {
                 return;
             }
-            let Some(genesis) = entries.next_if(|e| e.seq == 0) else { return };
+            let Some(genesis) = entries.next_if(|e| e.seq == 0) else {
+                return;
+            };
             match Folder::from_genesis(genesis.clone(), authz) {
                 Ok(folder) if folder.id() == id => {
                     self.wanted.remove(&id);
                     self.folders.insert(id, folder);
                     step.events.push(Event::Added(id));
-                    step.events.push(Event::Entries { folder: id, entries: vec![genesis] });
+                    step.events.push(Event::Entries {
+                        folder: id,
+                        entries: vec![genesis],
+                    });
                 }
                 _ => return,
             }
@@ -314,7 +374,13 @@ impl Replica {
                 Ok(()) => taken.push(entry),
                 Err(Reject::Old) => {}
                 Err(Reject::Gap { next }) => {
-                    step.send(from, Msg::Want { folder: id, from: next });
+                    step.send(
+                        from,
+                        Msg::Want {
+                            folder: id,
+                            from: next,
+                        },
+                    );
                     break;
                 }
                 Err(Reject::Fork(fork)) => {
@@ -336,18 +402,40 @@ impl Replica {
         }
         let done: BTreeSet<Hash> = taken.iter().map(|e| e.write.hash()).collect();
         self.pending.retain(|w| !done.contains(&w.hash()));
-        step.events.push(Event::Entries { folder: id, entries: taken });
+        step.events.push(Event::Entries {
+            folder: id,
+            entries: taken,
+        });
     }
 
-    fn submit(&mut self, from: PublicKey, write: SignedWrite, step: &mut Step, authz: &mut dyn Authz, blobs: &dyn Blobs) {
+    fn submit(
+        &mut self,
+        from: PublicKey,
+        write: SignedWrite,
+        step: &mut Step,
+        authz: &mut dyn Authz,
+        blobs: &dyn Blobs,
+    ) {
         let Some(id) = write.write.folder else { return };
-        let Some(folder) = self.folders.get_mut(&id) else { return };
+        let Some(folder) = self.folders.get_mut(&id) else {
+            return;
+        };
         let hash = write.hash();
         // A write that is already in the log came again: the sender did not
         // see the entry. Send it the entries.
-        if let Some(seq) = folder.entries_from(0).iter().position(|e| e.write.hash() == hash) {
+        if let Some(seq) = folder
+            .entries_from(0)
+            .iter()
+            .position(|e| e.write.hash() == hash)
+        {
             let entries = folder.entries_from(seq as u64).to_vec();
-            step.send(from, Msg::Entries { folder: id, entries });
+            step.send(
+                from,
+                Msg::Entries {
+                    folder: id,
+                    entries,
+                },
+            );
             return;
         }
         match folder.order(write, &self.key, authz) {
@@ -359,7 +447,13 @@ impl Replica {
                 }
                 self.publish(id, vec![entry], step, authz);
             }
-            Err(e) => step.send(from, Msg::Refused { write: hash, reason: e.0 }),
+            Err(e) => step.send(
+                from,
+                Msg::Refused {
+                    write: hash,
+                    reason: e.0,
+                },
+            ),
         }
     }
 
@@ -368,9 +462,18 @@ impl Replica {
         let folder = &self.folders[&id];
         for peer in folder.storers(authz) {
             if self.peers.contains(&peer) {
-                step.send(peer, Msg::Entries { folder: id, entries: entries.clone() });
+                step.send(
+                    peer,
+                    Msg::Entries {
+                        folder: id,
+                        entries: entries.clone(),
+                    },
+                );
             }
         }
-        step.events.push(Event::Entries { folder: id, entries });
+        step.events.push(Event::Entries {
+            folder: id,
+            entries,
+        });
     }
 }

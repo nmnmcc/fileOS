@@ -31,7 +31,13 @@ enum Ability {
     Store,
 }
 
-const ALL: [Ability; 5] = [Ability::Read, Ability::Write, Ability::Append, Ability::Grant, Ability::Store];
+const ALL: [Ability; 5] = [
+    Ability::Read,
+    Ability::Write,
+    Ability::Append,
+    Ability::Grant,
+    Ability::Store,
+];
 
 impl From<WitAbility> for Ability {
     fn from(a: WitAbility) -> Self {
@@ -97,9 +103,16 @@ impl State {
                     return Err(format!("no grant ability on {prefix}"));
                 }
                 if let Some(a) = abilities.iter().find(|a| !self.may(author, **a, prefix)) {
-                    return Err(format!("cannot give {a:?} on {prefix}: the author does not have it"));
+                    return Err(format!(
+                        "cannot give {a:?} on {prefix}: the author does not have it"
+                    ));
                 }
-                let grant = Grant { by: author.to_vec(), to, abilities, prefix: (*prefix).to_string() };
+                let grant = Grant {
+                    by: author.to_vec(),
+                    to,
+                    abilities,
+                    prefix: (*prefix).to_string(),
+                };
                 if !self.grants.contains(&grant) {
                     self.grants.push(grant);
                 }
@@ -111,7 +124,8 @@ impl State {
                 if !self.may(author, Ability::Grant, prefix) {
                     return Err(format!("no grant ability on {prefix}"));
                 }
-                self.grants.retain(|g| !(g.to == to && covers(prefix, &g.prefix)));
+                self.grants
+                    .retain(|g| !(g.to == to && covers(prefix, &g.prefix)));
                 self.drop_orphans();
                 Ok(())
             }
@@ -127,7 +141,9 @@ impl State {
             self.grants.retain(|g| {
                 g.by == snapshot.creator
                     || (snapshot.may_without(&g.by, Ability::Grant, &g.prefix, g)
-                        && g.abilities.iter().all(|a| snapshot.may_without(&g.by, *a, &g.prefix, g)))
+                        && g.abilities
+                            .iter()
+                            .all(|a| snapshot.may_without(&g.by, *a, &g.prefix, g)))
             });
             if self.grants.len() == before {
                 return;
@@ -138,7 +154,10 @@ impl State {
     fn may_without(&self, key: &[u8], ability: Ability, path: &str, skip: &Grant) -> bool {
         key == self.creator.as_slice()
             || self.grants.iter().any(|g| {
-                g != skip && g.to == key && g.abilities.contains(&ability) && covers(&g.prefix, path)
+                g != skip
+                    && g.to == key
+                    && g.abilities.contains(&ability)
+                    && covers(&g.prefix, path)
             })
     }
 }
@@ -147,7 +166,9 @@ impl State {
 fn covers(prefix: &str, path: &str) -> bool {
     prefix == "/"
         || path == prefix
-        || path.strip_prefix(prefix).is_some_and(|rest| rest.starts_with('/'))
+        || path
+            .strip_prefix(prefix)
+            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 fn check_prefix(prefix: &str) -> Result<(), String> {
@@ -189,7 +210,11 @@ struct Engine;
 
 impl Guest for Engine {
     fn init(_folder: String, creator: Vec<u8>) -> Vec<u8> {
-        State { creator, grants: Vec::new() }.save()
+        State {
+            creator,
+            grants: Vec::new(),
+        }
+        .save()
     }
 
     fn apply(state: Vec<u8>, author: Vec<u8>, policy: Vec<u8>) -> Result<Vec<u8>, String> {
@@ -250,31 +275,45 @@ mod tests {
 
     #[test]
     fn grants_and_revokes() {
-        let mut s = State { creator: A.to_vec(), grants: Vec::new() };
+        let mut s = State {
+            creator: A.to_vec(),
+            grants: Vec::new(),
+        };
         assert!(s.may(&A, Ability::Write, "/x"));
         assert!(!s.may(&B, Ability::Read, "/x"));
 
-        s.apply(&A, &format!("grant {} read,grant,store /photos", h(B))).unwrap();
+        s.apply(&A, &format!("grant {} read,grant,store /photos", h(B)))
+            .unwrap();
         assert!(s.may(&B, Ability::Read, "/photos/a.jpg"));
         assert!(!s.may(&B, Ability::Read, "/photosx"));
         assert!(!s.may(&B, Ability::Write, "/photos/a.jpg"));
 
         // B may give on only what it has.
-        s.apply(&B, &format!("grant {} read /photos/2026", h(C))).unwrap();
+        s.apply(&B, &format!("grant {} read /photos/2026", h(C)))
+            .unwrap();
         assert!(s.may(&C, Ability::Read, "/photos/2026/a.jpg"));
-        assert!(s.apply(&B, &format!("grant {} write /photos", h(C))).is_err());
-        assert!(s.apply(&C, &format!("grant {} read /photos", h(B))).is_err());
+        assert!(
+            s.apply(&B, &format!("grant {} write /photos", h(C)))
+                .is_err()
+        );
+        assert!(
+            s.apply(&C, &format!("grant {} read /photos", h(B)))
+                .is_err()
+        );
 
         // Taking B's grant back takes C's grant, which came from B, too.
         s.apply(&A, &format!("revoke {} /photos", h(B))).unwrap();
         assert!(!s.may(&B, Ability::Read, "/photos/a.jpg"));
         assert!(!s.may(&C, Ability::Read, "/photos/2026/a.jpg"));
-        assert!(s.grants.is_empty());
+        assert_eq!(s.grants.len(), 0);
     }
 
     #[test]
     fn storers_are_keys_with_store_on_everything() {
-        let mut s = State { creator: A.to_vec(), grants: Vec::new() };
+        let mut s = State {
+            creator: A.to_vec(),
+            grants: Vec::new(),
+        };
         s.apply(&A, &format!("grant {} store /", h(B))).unwrap();
         s.apply(&A, &format!("grant {} store /x", h(C))).unwrap();
         assert_eq!(s.keys_with(Ability::Store), vec![A.to_vec(), B.to_vec()]);

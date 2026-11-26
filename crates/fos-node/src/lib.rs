@@ -89,7 +89,11 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 fn join(mount: &str, inner: &str) -> String {
-    if inner == "/" { mount.to_string() } else { format!("{mount}{inner}") }
+    if inner == "/" {
+        mount.to_string()
+    } else {
+        format!("{mount}{inner}")
+    }
 }
 
 fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -152,7 +156,13 @@ pub fn parse_abilities(list: &str) -> Result<Vec<Ability>, Error> {
             "append" => Ok(vec![Ability::Append]),
             "grant" => Ok(vec![Ability::Grant]),
             "store" => Ok(vec![Ability::Store]),
-            "all" => Ok(vec![Ability::Read, Ability::Write, Ability::Append, Ability::Grant, Ability::Store]),
+            "all" => Ok(vec![
+                Ability::Read,
+                Ability::Write,
+                Ability::Append,
+                Ability::Grant,
+                Ability::Store,
+            ]),
             other => Err(Error(format!("not an ability: {other:?}"))),
         })
         .collect::<Result<Vec<_>, _>>()
@@ -174,7 +184,8 @@ impl Node {
         if bundle.manifest.kind != Kind::Engine {
             return Err(Error(format!("{} is not an engine", engine.display())));
         }
-        copy_dir(engine, &store.engine_dir()).map_err(|e| Error(format!("cannot copy the engine: {e}")))?;
+        copy_dir(engine, &store.engine_dir())
+            .map_err(|e| Error(format!("cannot copy the engine: {e}")))?;
         let key = store.key()?;
         let mut authz = Runtime::new()?.engine(&bundle)?;
         let mut replica = Replica::new(key.clone(), 0);
@@ -195,12 +206,17 @@ impl Node {
     /// When there is no node in `dir`, or its data or engine is broken.
     pub fn open(dir: &Path) -> Result<Node, Error> {
         let store = Store::open(dir)?;
-        let root = store.root()?.ok_or_else(|| Error(format!("{} has no node: run `fos init`", dir.display())))?;
+        let root = store
+            .root()?
+            .ok_or_else(|| Error(format!("{} has no node: run `fos init`", dir.display())))?;
         let key = store.key()?;
         let runtime = Runtime::new()?;
         let mut engine = runtime.engine(&Bundle::read_dir(&store.engine_dir())?)?;
         let seed = fos_store::random_seed()?;
-        let mut replica = Replica::new(key.clone(), u64::from_le_bytes(seed[..8].try_into().unwrap_or_default()));
+        let mut replica = Replica::new(
+            key.clone(),
+            u64::from_le_bytes(seed[..8].try_into().unwrap_or_default()),
+        );
         for folder in store.load_folders(&mut engine)? {
             replica.insert(folder);
         }
@@ -245,7 +261,9 @@ impl Node {
     /// When the mount is not allowed.
     pub fn create(&self, name: &str, at: &str) -> Result<Hash, Error> {
         let mut inner = self.inner();
-        let Inner { replica, engine, .. } = &mut *inner;
+        let Inner {
+            replica, engine, ..
+        } = &mut *inner;
         let (id, step) = replica.create(name, engine);
         inner.process(step, &self.shared.changed)?;
         inner.mount(id, at, &self.shared.changed)?;
@@ -281,7 +299,15 @@ impl Node {
     ///
     /// When the path is not valid, or the engine says no.
     pub fn append(&self, path: &str, data: &[u8]) -> Result<(), Error> {
-        let result = self.inner().write_at(None, path, |p| Op::Append { path: p, data: Bytes(data.to_vec()) }, &self.shared.changed);
+        let result = self.inner().write_at(
+            None,
+            path,
+            |p| Op::Append {
+                path: p,
+                data: Bytes(data.to_vec()),
+            },
+            &self.shared.changed,
+        );
         self.pump();
         result
     }
@@ -292,7 +318,9 @@ impl Node {
     ///
     /// When the path is not there, or the engine says no.
     pub fn delete(&self, path: &str) -> Result<(), Error> {
-        let result = self.inner().write_at(None, path, |p| Op::Delete { path: p }, &self.shared.changed);
+        let result =
+            self.inner()
+                .write_at(None, path, |p| Op::Delete { path: p }, &self.shared.changed);
         self.pump();
         result
     }
@@ -323,7 +351,12 @@ impl Node {
     ///
     /// When the engine does not take it.
     pub fn policy(&self, path: &str, policy: &[u8]) -> Result<(), Error> {
-        self.inner().write_at(None, path, |_| Op::Policy(Bytes(policy.to_vec())), &self.shared.changed)
+        self.inner().write_at(
+            None,
+            path,
+            |_| Op::Policy(Bytes(policy.to_vec())),
+            &self.shared.changed,
+        )
     }
 
     /// Gives `to` abilities on `path`, in the form the engine asks for.
@@ -332,7 +365,8 @@ impl Node {
     ///
     /// When the engine does not take it.
     pub fn grant(&self, path: &str, to: PublicKey, abilities: &[Ability]) -> Result<(), Error> {
-        self.inner().grant(path, to, abilities, &self.shared.changed)
+        self.inner()
+            .grant(path, to, abilities, &self.shared.changed)
     }
 
     /// Installs an app from an `.app` directory: puts it into a folder at
@@ -348,16 +382,24 @@ impl Node {
         if bundle.manifest.kind != Kind::App {
             return Err(Error(format!("{} is not an app", dir.display())));
         }
-        let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let at = format!("/apps/{name}");
         let app_key;
         {
             let mut inner = self.inner();
             app_key = inner.app_key(&bundle.manifest.id);
-            if inner.resolve(&at).is_ok_and(|(f, p)| p == "/" && f != inner.root) {
+            if inner
+                .resolve(&at)
+                .is_ok_and(|(f, p)| p == "/" && f != inner.root)
+            {
                 return Err(Error(format!("{at} is already there")));
             }
-            let Inner { replica, engine, .. } = &mut *inner;
+            let Inner {
+                replica, engine, ..
+            } = &mut *inner;
             let (id, step) = replica.create(&name, engine);
             inner.process(step, &self.shared.changed)?;
             inner.mount(id, &at, &self.shared.changed)?;
@@ -365,7 +407,12 @@ impl Node {
                 inner.put(None, &format!("{at}{path}"), data, &self.shared.changed)?;
             }
             for permission in &bundle.manifest.permissions {
-                inner.grant(&permission.path, app_key.public(), &abilities(&permission.access)?, &self.shared.changed)?;
+                inner.grant(
+                    &permission.path,
+                    app_key.public(),
+                    &abilities(&permission.access)?,
+                    &self.shared.changed,
+                )?;
             }
         }
         self.start_app(&bundle)?;
@@ -388,7 +435,10 @@ impl Node {
     }
 
     pub fn status(&self) -> Status {
-        let apps = lock(&self.shared.apps).iter().map(|a| a.manifest().id.clone()).collect();
+        let apps = lock(&self.shared.apps)
+            .iter()
+            .map(|a| a.manifest().id.clone())
+            .collect();
         let mut inner = self.inner();
         let root_mounts: Vec<(String, Hash)> = inner
             .replica
@@ -401,7 +451,11 @@ impl Node {
             .map(|f| FolderStatus {
                 id: f.id(),
                 name: f.name().to_string(),
-                mounted_at: root_mounts.iter().filter(|(_, id)| *id == f.id()).map(|(p, _)| p.clone()).collect(),
+                mounted_at: root_mounts
+                    .iter()
+                    .filter(|(_, id)| *id == f.id())
+                    .map(|(p, _)| p.clone())
+                    .collect(),
                 entries: f.next_seq(),
                 orderer: f.orderer(),
                 fork: f.fork().cloned(),
@@ -410,7 +464,16 @@ impl Node {
         let peers = inner.replica.peers().copied().collect();
         let pending = inner.replica.pending().len();
         let logs = inner.logs.drain(..).collect();
-        Status { key: self.key(), root: inner.root, listening: inner.listening.clone(), peers, pending, folders, apps, logs }
+        Status {
+            key: self.key(),
+            root: inner.root,
+            listening: inner.listening.clone(),
+            peers,
+            pending,
+            folders,
+            apps,
+            logs,
+        }
     }
 
     /// Starts the network. Call it inside a Tokio runtime.
@@ -437,19 +500,35 @@ impl Node {
     ///
     /// When the network is not started.
     pub fn dial(&self, addr: &str) -> Result<(), Error> {
-        let addr = addr.parse().map_err(|e| Error(format!("not a multiaddr: {e}")))?;
+        let addr = addr
+            .parse()
+            .map_err(|e| Error(format!("not a multiaddr: {e}")))?;
         let inner = self.inner();
-        let net = inner.net.as_ref().ok_or_else(|| Error("the network is not started".into()))?;
-        net.send(fos_net::Command::Dial(addr)).map_err(|_| Error("the network stopped".into()))
+        let net = inner
+            .net
+            .as_ref()
+            .ok_or_else(|| Error("the network is not started".into()))?;
+        net.send(fos_net::Command::Dial(addr))
+            .map_err(|e| Error(format!("the network stopped: {e}")))
     }
 
     fn on_net(&self, event: fos_net::Event) {
         {
             let mut inner = self.inner();
-            let Inner { replica, engine, store, .. } = &mut *inner;
+            let Inner {
+                replica,
+                engine,
+                store,
+                ..
+            } = &mut *inner;
             let step = match event {
                 fos_net::Event::Listening(addr) => {
-                    inner.listening.push(format!("{addr}/p2p/{}", fos_net::peer_id(self.key()).map(|p| p.to_string()).unwrap_or_default()));
+                    inner.listening.push(format!(
+                        "{addr}/p2p/{}",
+                        fos_net::peer_id(self.key())
+                            .map(|p| p.to_string())
+                            .unwrap_or_default()
+                    ));
                     return;
                 }
                 fos_net::Event::Connected(peer) => replica.connected(peer, engine),
@@ -457,7 +536,7 @@ impl Node {
                     replica.disconnected(peer);
                     return;
                 }
-                fos_net::Event::Message { from, msg } => replica.handle(from, msg, engine, store),
+                fos_net::Event::Message { from, msg } => replica.handle(from, *msg, engine, store),
             };
             if let Err(e) = inner.process(step, &self.shared.changed) {
                 tracing::warn!("{e}");
@@ -469,10 +548,18 @@ impl Node {
     fn start_apps(&self) {
         let bundles = {
             let inner = self.inner();
-            let Some(root) = inner.replica.folder(inner.root) else { return };
-            let mounts: Vec<Hash> =
-                root.mounts().filter(|(p, _)| p.starts_with("/apps/")).map(|(_, id)| id).collect();
-            mounts.into_iter().filter_map(|id| inner.bundle(id)).collect::<Vec<_>>()
+            let Some(root) = inner.replica.folder(inner.root) else {
+                return;
+            };
+            let mounts: Vec<Hash> = root
+                .mounts()
+                .filter(|(p, _)| p.starts_with("/apps/"))
+                .map(|(_, id)| id)
+                .collect();
+            mounts
+                .into_iter()
+                .filter_map(|id| inner.bundle(id))
+                .collect::<Vec<_>>()
         };
         for bundle in bundles {
             if let Err(e) = self.start_app(&bundle) {
@@ -482,7 +569,9 @@ impl Node {
     }
 
     fn start_app(&self, bundle: &Bundle) -> Result<(), Error> {
-        let host = Arc::new(Host { shared: Arc::downgrade(&self.shared) });
+        let host = Arc::new(Host {
+            shared: Arc::downgrade(&self.shared),
+        });
         let app = self.shared.runtime.app(bundle, host)?;
         lock(&self.shared.apps).push(app);
         Ok(())
@@ -496,7 +585,9 @@ impl Node {
 
 fn pump(shared: &Shared) {
     loop {
-        let Some(path) = lock(&shared.changed).pop_front() else { return };
+        let Some(path) = lock(&shared.changed).pop_front() else {
+            return;
+        };
         let mut apps = lock(&shared.apps);
         for app in apps.iter_mut().filter(|a| a.watches(&path)) {
             if let Err(e) = app.on_change(&path) {
@@ -523,9 +614,22 @@ impl Inner {
         resolve(self.root, path, |id| self.replica.folder(id))
     }
 
-    fn mount(&mut self, folder: Hash, at: &str, changed: &Mutex<VecDeque<String>>) -> Result<(), Error> {
+    fn mount(
+        &mut self,
+        folder: Hash,
+        at: &str,
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
         let key = self.key.clone();
-        let step = self.replica.write(self.root, Op::Mount { path: at.into(), folder }, &key, &mut self.engine)?;
+        let step = self.replica.write(
+            self.root,
+            Op::Mount {
+                path: at.into(),
+                folder,
+            },
+            &key,
+            &mut self.engine,
+        )?;
         self.process(step, changed)
     }
 
@@ -539,23 +643,42 @@ impl Inner {
     ) -> Result<(), Error> {
         let (folder, inner) = self.resolve(path)?;
         let author = author.cloned().unwrap_or_else(|| self.key.clone());
-        let step = self.replica.write(folder, op(inner), &author, &mut self.engine)?;
+        let step = self
+            .replica
+            .write(folder, op(inner), &author, &mut self.engine)?;
         self.process(step, changed)
     }
 
-    fn put(&mut self, author: Option<&SecretKey>, path: &str, data: &[u8], changed: &Mutex<VecDeque<String>>) -> Result<(), Error> {
+    fn put(
+        &mut self,
+        author: Option<&SecretKey>,
+        path: &str,
+        data: &[u8],
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
         let blob = self.store.put_blob(data)?;
         let size = data.len() as u64;
         self.write_at(author, path, |path| Op::Put { path, blob, size }, changed)
     }
 
-    fn grant(&mut self, path: &str, to: PublicKey, abilities: &[Ability], changed: &Mutex<VecDeque<String>>) -> Result<(), Error> {
+    fn grant(
+        &mut self,
+        path: &str,
+        to: PublicKey,
+        abilities: &[Ability],
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
         let (_, inner) = self.resolve(path)?;
         let policy = self.engine.grant(to, abilities, &inner);
         self.write_at(None, path, |_| Op::Policy(Bytes(policy)), changed)
     }
 
-    fn check(&mut self, principal: PublicKey, ability: Ability, path: &str) -> Result<(Hash, String), FsError> {
+    fn check(
+        &mut self,
+        principal: PublicKey,
+        ability: Ability,
+        path: &str,
+    ) -> Result<(Hash, String), FsError> {
         let (folder, inner) = self.resolve(path).map_err(|e| FsError::Invalid(e.0))?;
         let f = self.replica.folder(folder).ok_or(FsError::NotFound)?;
         match f.check(&mut self.engine, principal, ability, &inner) {
@@ -570,28 +693,47 @@ impl Inner {
         match f.get(&inner) {
             Some(FsNode::File(_)) => {
                 let (hash, _) = f.file(&inner).ok_or(FsError::NotFound)?;
-                self.store.get(hash).ok_or_else(|| FsError::Invalid("the file is not on this node yet".into()))
+                self.store
+                    .get(hash)
+                    .ok_or_else(|| FsError::Invalid("the file is not on this node yet".into()))
             }
-            Some(FsNode::Stream(records)) => Ok(records.iter().flat_map(|r| r.data.iter().copied()).collect()),
+            Some(FsNode::Stream(records)) => Ok(records
+                .iter()
+                .flat_map(|r| r.data.iter().copied())
+                .collect()),
             Some(FsNode::Mount(_)) | None => Err(FsError::NotFound),
         }
     }
 
     fn list(&mut self, principal: PublicKey, path: &str) -> Result<Vec<String>, FsError> {
         let (folder, inner) = self.check(principal, Ability::Read, path)?;
-        Ok(self.replica.folder(folder).ok_or(FsError::NotFound)?.list(&inner))
+        Ok(self
+            .replica
+            .folder(folder)
+            .ok_or(FsError::NotFound)?
+            .list(&inner))
     }
 
     fn kv(&mut self, app: &str) -> &mut BTreeMap<String, Vec<u8>> {
         let store = &self.store;
-        self.kv.entry(app.to_string()).or_insert_with(|| store.kv_load(app))
+        self.kv
+            .entry(app.to_string())
+            .or_insert_with(|| store.kv_load(app))
     }
 
     /// The node paths of every file under a node path.
     fn files_under(&self, path: &str) -> Vec<String> {
-        let Ok((folder, inner)) = self.resolve(path) else { return Vec::new() };
-        let Some(f) = self.replica.folder(folder) else { return Vec::new() };
-        let prefix = if inner == "/" { String::from("/") } else { format!("{inner}/") };
+        let Ok((folder, inner)) = self.resolve(path) else {
+            return Vec::new();
+        };
+        let Some(f) = self.replica.folder(folder) else {
+            return Vec::new();
+        };
+        let prefix = if inner == "/" {
+            String::from("/")
+        } else {
+            format!("{inner}/")
+        };
         f.files()
             .filter(|(p, _, _)| inner == "/" || *p == inner || p.starts_with(&prefix))
             .map(|(p, _, _)| join(path.trim_end_matches('/'), p))
@@ -603,14 +745,22 @@ impl Inner {
         if folder == self.root {
             return vec![path.to_string()];
         }
-        let Some(root) = self.replica.folder(self.root) else { return Vec::new() };
-        root.mounts().filter(|(_, id)| *id == folder).map(|(at, _)| join(at, path)).collect()
+        let Some(root) = self.replica.folder(self.root) else {
+            return Vec::new();
+        };
+        root.mounts()
+            .filter(|(_, id)| *id == folder)
+            .map(|(at, _)| join(at, path))
+            .collect()
     }
 
     /// The files of an app folder, as a bundle.
     fn bundle(&self, folder: Hash) -> Option<Bundle> {
         let f = self.replica.folder(folder)?;
-        let files = f.files().map(|(p, h, _)| Some((p.to_string(), self.store.get(h)?))).collect::<Option<_>>()?;
+        let files = f
+            .files()
+            .map(|(p, h, _)| Some((p.to_string(), self.store.get(h)?)))
+            .collect::<Option<_>>()?;
         Bundle::from_files(files).ok()
     }
 
@@ -618,7 +768,10 @@ impl Inner {
     fn process(&mut self, step: Step, changed: &Mutex<VecDeque<String>>) -> Result<(), Error> {
         if let Some(net) = &self.net {
             for out in step.out {
-                let _ = net.send(fos_net::Command::Send { to: out.to, msg: out.msg });
+                let _ = net.send(fos_net::Command::Send {
+                    to: out.to,
+                    msg: Box::new(out.msg),
+                });
             }
         }
         let mut paths = Vec::new();
@@ -635,13 +788,19 @@ impl Inner {
                         };
                         let at = self.node_paths(folder, path);
                         match blob {
-                            Some(blob) if !self.store.has(blob) => self.waiting.entry(blob).or_default().extend(at),
+                            Some(blob) if !self.store.has(blob) => {
+                                self.waiting.entry(blob).or_default().extend(at);
+                            }
                             _ => paths.extend(at),
                         }
                     }
                 }
                 Event::Forked { folder, fork } => {
-                    tracing::warn!("folder {folder} forked at entry {}: {}", fork.seq, fork.reason);
+                    tracing::warn!(
+                        "folder {folder} forked at entry {}: {}",
+                        fork.seq,
+                        fork.reason
+                    );
                 }
                 Event::Refused { write, reason } => {
                     tracing::warn!("the ordering node did not take write {write}: {reason}");
@@ -672,7 +831,9 @@ impl Host {
     fn write(&self, app: &str, path: &str, op: impl FnOnce(String) -> Op) -> Result<(), FsError> {
         self.with(|inner, changed| {
             let key = inner.app_key(app);
-            inner.write_at(Some(&key), path, op, changed).map_err(|e| FsError::Denied(e.0))
+            inner
+                .write_at(Some(&key), path, op, changed)
+                .map_err(|e| FsError::Denied(e.0))
         })
         .unwrap_or(Err(FsError::Invalid("the node stopped".into())))
     }
@@ -697,7 +858,10 @@ impl AppHost for Host {
     }
 
     fn append(&self, app: &str, path: &str, data: Vec<u8>) -> Result<(), FsError> {
-        Host::write(self, app, path, |path| Op::Append { path, data: Bytes(data) })
+        Host::write(self, app, path, |path| Op::Append {
+            path,
+            data: Bytes(data),
+        })
     }
 
     fn delete(&self, app: &str, path: &str) -> Result<(), FsError> {
@@ -713,7 +877,8 @@ impl AppHost for Host {
     }
 
     fn kv_get(&self, app: &str, key: &str) -> Option<Vec<u8>> {
-        self.with(|inner, _| inner.kv(app).get(key).cloned()).flatten()
+        self.with(|inner, _| inner.kv(app).get(key).cloned())
+            .flatten()
     }
 
     fn kv_set(&self, app: &str, key: &str, value: Vec<u8>) {
@@ -738,8 +903,15 @@ impl AppHost for Host {
     }
 
     fn kv_keys(&self, app: &str, prefix: &str) -> Vec<String> {
-        self.with(|inner, _| inner.kv(app).keys().filter(|k| k.starts_with(prefix)).cloned().collect())
-            .unwrap_or_default()
+        self.with(|inner, _| {
+            inner
+                .kv(app)
+                .keys()
+                .filter(|k| k.starts_with(prefix))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
     }
 
     fn log(&self, app: &str, message: &str) {
@@ -764,15 +936,31 @@ impl fmt::Display for Status {
         for peer in &self.peers {
             let _ = writeln!(out, "peer     {peer}");
         }
-        let _ = writeln!(out, "waiting  {} writes for their ordering node", self.pending);
+        let _ = writeln!(
+            out,
+            "waiting  {} writes for their ordering node",
+            self.pending
+        );
         for folder in &self.folders {
-            let at = if folder.mounted_at.is_empty() { "-".to_string() } else { folder.mounted_at.join(", ") };
-            let _ = writeln!(out, "folder   {} {:?} at {at}, {} entries", folder.id, folder.name, folder.entries);
+            let at = if folder.mounted_at.is_empty() {
+                "-".to_string()
+            } else {
+                folder.mounted_at.join(", ")
+            };
+            let _ = writeln!(
+                out,
+                "folder   {} {:?} at {at}, {} entries",
+                folder.id, folder.name, folder.entries
+            );
             if folder.orderer != self.key {
                 let _ = writeln!(out, "           ordered by {}", folder.orderer);
             }
             if let Some(fork) = &folder.fork {
-                let _ = writeln!(out, "           FORK at entry {}: {}", fork.seq, fork.reason);
+                let _ = writeln!(
+                    out,
+                    "           FORK at entry {}: {}",
+                    fork.seq, fork.reason
+                );
             }
         }
         for app in &self.apps {

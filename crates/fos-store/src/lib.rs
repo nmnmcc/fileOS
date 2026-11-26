@@ -57,14 +57,20 @@ impl Store {
             let path = dir.join(sub);
             fs::create_dir_all(&path).map_err(|e| io_error(&path, &e))?;
         }
-        Ok(Self { dir: dir.to_path_buf() })
+        Ok(Self {
+            dir: dir.to_path_buf(),
+        })
     }
 
     pub fn dir(&self) -> &Path {
         &self.dir
     }
 
-    fn read_or_make(&self, name: &str, make: impl FnOnce() -> Result<Vec<u8>, Error>) -> Result<Vec<u8>, Error> {
+    fn read_or_make(
+        &self,
+        name: &str,
+        make: impl FnOnce() -> Result<Vec<u8>, Error>,
+    ) -> Result<Vec<u8>, Error> {
         let path = self.dir.join(name);
         match fs::read(&path) {
             Ok(bytes) => Ok(bytes),
@@ -84,7 +90,9 @@ impl Store {
     /// When the key file cannot be read or made, or is broken.
     pub fn key(&self) -> Result<SecretKey, Error> {
         let seed = self.read_or_make("node.key", || random_seed().map(Vec::from))?;
-        let seed: [u8; 32] = seed.try_into().map_err(|_| Error("node.key is not 32 bytes".into()))?;
+        let seed: [u8; 32] = seed.try_into().map_err(|bytes: Vec<u8>| {
+            Error(format!("node.key has {} bytes, not 32", bytes.len()))
+        })?;
         Ok(SecretKey::from_seed(&seed))
     }
 
@@ -94,8 +102,10 @@ impl Store {
     ///
     /// When the token file cannot be read or made.
     pub fn token(&self) -> Result<String, Error> {
-        let bytes = self.read_or_make("gateway.token", || Ok(Hash(random_seed()?).to_string().into_bytes()))?;
-        String::from_utf8(bytes).map_err(|_| Error("gateway.token is not text".into()))
+        let bytes = self.read_or_make("gateway.token", || {
+            Ok(Hash(random_seed()?).to_string().into_bytes())
+        })?;
+        String::from_utf8(bytes).map_err(|e| Error(format!("gateway.token is not text: {e}")))
     }
 
     /// The ID of the root folder, if there is one yet.
@@ -158,7 +168,9 @@ impl Store {
             out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
             out.extend_from_slice(&bytes);
         }
-        file.write_all(&out).and_then(|()| file.sync_data()).map_err(|e| io_error(&path, &e))
+        file.write_all(&out)
+            .and_then(|()| file.sync_data())
+            .map_err(|e| io_error(&path, &e))
     }
 
     /// Reads every folder from its log. The engine checks every entry again.
@@ -177,7 +189,8 @@ impl Store {
         paths.sort();
         for path in paths {
             let bytes = fs::read(&path).map_err(|e| io_error(&path, &e))?;
-            let mut entries = read_entries(&bytes).map_err(|e| Error(format!("{}: {e}", path.display())))?;
+            let mut entries =
+                read_entries(&bytes).map_err(|e| Error(format!("{}: {e}", path.display())))?;
             if entries.is_empty() {
                 continue;
             }
@@ -185,7 +198,12 @@ impl Store {
             for entry in entries {
                 match folder.accept(entry, authz) {
                     Ok(()) | Err(Reject::Old) => {}
-                    Err(e) => return Err(Error(format!("{}: entry not taken again: {e:?}", path.display()))),
+                    Err(e) => {
+                        return Err(Error(format!(
+                            "{}: entry not taken again: {e:?}",
+                            path.display()
+                        )));
+                    }
                 }
             }
             folders.push(folder);
@@ -207,12 +225,22 @@ impl Store {
     ///
     /// When the file cannot be written.
     pub fn kv_save(&self, app: &str, map: &BTreeMap<String, Vec<u8>>) -> Result<(), Error> {
-        let map: BTreeMap<&String, Bytes> = map.iter().map(|(k, v)| (k, Bytes(v.clone()))).collect();
+        let map: BTreeMap<&String, Bytes> =
+            map.iter().map(|(k, v)| (k, Bytes(v.clone()))).collect();
         write_atomic(&self.kv_path(app), &encode(&map))
     }
 
     fn kv_path(&self, app: &str) -> PathBuf {
-        let safe: String = app.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect();
+        let safe: String = app
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
         self.dir.join("local").join(format!("{safe}.kv"))
     }
 }
@@ -230,7 +258,9 @@ impl fos_sync::Blobs for Store {
 fn read_entries(mut bytes: &[u8]) -> Result<Vec<Entry>, Error> {
     let mut entries = Vec::new();
     while !bytes.is_empty() {
-        let (len, rest) = bytes.split_first_chunk::<4>().ok_or_else(|| Error("cut short".into()))?;
+        let (len, rest) = bytes
+            .split_first_chunk::<4>()
+            .ok_or_else(|| Error("cut short".into()))?;
         let len = u32::from_be_bytes(*len) as usize;
         if rest.len() < len {
             // A write that stopped half way, for example at a power cut.
@@ -274,8 +304,18 @@ mod tests {
         let mut open = Open::default();
         let (mut folder, genesis) = Folder::create("f", &key, &mut open);
         let hash = store.put_blob(b"hello").unwrap();
-        let op = Op::Put { path: "/a".into(), blob: hash, size: 5 };
-        let entry = folder.order(SignedWrite::sign(Some(folder.id()), 1, op, &key), &key, &mut open).unwrap();
+        let op = Op::Put {
+            path: "/a".into(),
+            blob: hash,
+            size: 5,
+        };
+        let entry = folder
+            .order(
+                SignedWrite::sign(Some(folder.id()), 1, op, &key),
+                &key,
+                &mut open,
+            )
+            .unwrap();
         store.append_entries(folder.id(), &[genesis]).unwrap();
         store.append_entries(folder.id(), &[entry]).unwrap();
         store.set_root(folder.id()).unwrap();

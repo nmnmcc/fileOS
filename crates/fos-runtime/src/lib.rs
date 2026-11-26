@@ -98,8 +98,10 @@ impl Bundle {
         let text = files
             .get("/manifest.toml")
             .ok_or_else(|| Error("an .app folder needs a manifest.toml".into()))?;
-        let text = std::str::from_utf8(text).map_err(|_| Error("manifest.toml is not UTF-8".into()))?;
-        let manifest: Manifest = toml::from_str(text).map_err(|e| Error(format!("manifest.toml: {e}")))?;
+        let text = std::str::from_utf8(text)
+            .map_err(|e| Error(format!("manifest.toml is not UTF-8: {e}")))?;
+        let manifest: Manifest =
+            toml::from_str(text).map_err(|e| Error(format!("manifest.toml: {e}")))?;
         if manifest.requires != WIT_VERSION {
             return Err(Error(format!(
                 "{} needs {}, but this runtime gives {WIT_VERSION}",
@@ -107,7 +109,10 @@ impl Bundle {
             )));
         }
         if !files.contains_key(&format!("/{}", manifest.main)) {
-            return Err(Error(format!("{} is not in the .app folder", manifest.main)));
+            return Err(Error(format!(
+                "{} is not in the .app folder",
+                manifest.main
+            )));
         }
         Ok(Self { manifest, files })
     }
@@ -118,7 +123,11 @@ impl Bundle {
     ///
     /// When the directory cannot be read, or [`Bundle::from_files`] fails.
     pub fn read_dir(dir: &Path) -> Result<Self, Error> {
-        fn walk(dir: &Path, prefix: &str, out: &mut BTreeMap<String, Vec<u8>>) -> std::io::Result<()> {
+        fn walk(
+            dir: &Path,
+            prefix: &str,
+            out: &mut BTreeMap<String, Vec<u8>>,
+        ) -> std::io::Result<()> {
             for entry in std::fs::read_dir(dir)? {
                 let entry = entry?;
                 let name = entry.file_name().to_string_lossy().into_owned();
@@ -142,7 +151,13 @@ impl Bundle {
 
     /// The hash of everything in the bundle. It changes when any file changes.
     pub fn hash(&self) -> Hash {
-        Hash::of_value(&self.files.iter().map(|(p, d)| (p, Hash::of(d))).collect::<Vec<_>>())
+        Hash::of_value(
+            &self
+                .files
+                .iter()
+                .map(|(p, d)| (p, Hash::of(d)))
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -171,7 +186,9 @@ impl Runtime {
 
     fn component(&self, bundle: &Bundle, kind: Kind) -> Result<Component, Error> {
         if bundle.manifest.kind != kind {
-            return Err(Error(format!("{} is not an {kind:?}", bundle.manifest.id).to_lowercase()));
+            return Err(Error(
+                format!("{} is not an {kind:?}", bundle.manifest.id).to_lowercase(),
+            ));
         }
         Component::new(&self.engine, bundle.main()).map_err(wasm_error)
     }
@@ -187,9 +204,13 @@ impl Runtime {
         // The engine is the owner's choice: no limits.
         store.set_fuel(u64::MAX).map_err(wasm_error)?;
         let linker = Linker::new(&self.engine);
-        let bindings =
-            bindings::engine::Engine::instantiate(&mut store, &component, &linker).map_err(wasm_error)?;
-        Ok(EngineInstance { id: bundle.manifest.id.clone(), store, bindings })
+        let bindings = bindings::engine::Engine::instantiate(&mut store, &component, &linker)
+            .map_err(wasm_error)?;
+        Ok(EngineInstance {
+            id: bundle.manifest.id.clone(),
+            store,
+            bindings,
+        })
     }
 
     /// Starts an app. Its calls go to `host`.
@@ -200,15 +221,24 @@ impl Runtime {
     pub fn app(&self, bundle: &Bundle, host: Arc<dyn AppHost>) -> Result<AppInstance, Error> {
         let component = self.component(bundle, Kind::App)?;
         let limits = StoreLimitsBuilder::new().memory_size(APP_MEMORY).build();
-        let ctx = AppCtx { app: bundle.manifest.id.clone(), host, limits };
+        let ctx = AppCtx {
+            app: bundle.manifest.id.clone(),
+            host,
+            limits,
+        };
         let mut store = Store::new(&self.engine, ctx);
         store.limiter(|ctx| &mut ctx.limits);
         store.set_fuel(APP_FUEL).map_err(wasm_error)?;
         let mut linker = Linker::new(&self.engine);
         bindings::app::App::add_to_linker::<AppCtx, HasSelf<AppCtx>>(&mut linker, |ctx| ctx)
             .map_err(wasm_error)?;
-        let bindings = bindings::app::App::instantiate(&mut store, &component, &linker).map_err(wasm_error)?;
-        Ok(AppInstance { manifest: bundle.manifest.clone(), store, bindings })
+        let bindings =
+            bindings::app::App::instantiate(&mut store, &component, &linker).map_err(wasm_error)?;
+        Ok(AppInstance {
+            manifest: bundle.manifest.clone(),
+            store,
+            bindings,
+        })
     }
 }
 
@@ -230,20 +260,29 @@ impl std::fmt::Debug for EngineInstance {
 }
 
 impl EngineInstance {
-    fn authz(&mut self) -> (&mut Store<()>, &bindings::engine::exports::fos::app::authz::Guest) {
+    fn authz(
+        &mut self,
+    ) -> (
+        &mut Store<()>,
+        &bindings::engine::exports::fos::app::authz::Guest,
+    ) {
         (&mut self.store, self.bindings.fos_app_authz())
     }
 }
 
 fn keys(list: Vec<Vec<u8>>) -> Vec<PublicKey> {
-    list.iter().filter_map(|k| PublicKey::try_from(k.as_slice()).ok()).collect()
+    list.iter()
+        .filter_map(|k| PublicKey::try_from(k.as_slice()).ok())
+        .collect()
 }
 
 /// A trap in the engine is a "no", so a broken engine never lets more in.
 impl Authz for EngineInstance {
     fn init(&mut self, folder: Hash, creator: PublicKey) -> Vec<u8> {
         let (store, authz) = self.authz();
-        authz.call_init(store, &folder.to_string(), &creator.0.to_vec()).unwrap_or_default()
+        authz
+            .call_init(store, &folder.to_string(), &creator.0.to_vec())
+            .unwrap_or_default()
     }
 
     fn apply(&mut self, state: &[u8], author: PublicKey, policy: &[u8]) -> Result<Vec<u8>, String> {
@@ -253,7 +292,14 @@ impl Authz for EngineInstance {
             .unwrap_or_else(|e| Err(format!("the engine failed: {e:#}")))
     }
 
-    fn check(&mut self, state: &[u8], principal: PublicKey, ability: Ability, folder: Hash, path: &str) -> Decision {
+    fn check(
+        &mut self,
+        state: &[u8],
+        principal: PublicKey,
+        ability: Ability,
+        folder: Hash,
+        path: &str,
+    ) -> Decision {
         let op = wit::Op {
             ability: to_wit_ability(ability),
             folder: folder.to_string(),
@@ -269,18 +315,26 @@ impl Authz for EngineInstance {
 
     fn readers(&mut self, state: &[u8]) -> Vec<PublicKey> {
         let (store, authz) = self.authz();
-        authz.call_readers(store, state).map(keys).unwrap_or_default()
+        authz
+            .call_readers(store, state)
+            .map(keys)
+            .unwrap_or_default()
     }
 
     fn storers(&mut self, state: &[u8]) -> Vec<PublicKey> {
         let (store, authz) = self.authz();
-        authz.call_storers(store, state).map(keys).unwrap_or_default()
+        authz
+            .call_storers(store, state)
+            .map(keys)
+            .unwrap_or_default()
     }
 
     fn grant(&mut self, to: PublicKey, abilities: &[Ability], path: &str) -> Vec<u8> {
         let abilities: Vec<wit::Ability> = abilities.iter().map(|a| to_wit_ability(*a)).collect();
         let (store, authz) = self.authz();
-        authz.call_grant(store, &to.0.to_vec(), &abilities, path).unwrap_or_default()
+        authz
+            .call_grant(store, &to.0.to_vec(), &abilities, path)
+            .unwrap_or_default()
     }
 }
 
@@ -412,7 +466,11 @@ impl AppInstance {
     /// Says if the app watches `path`.
     pub fn watches(&self, path: &str) -> bool {
         self.manifest.watch.iter().any(|w| {
-            w.path == "/" || path == w.path || path.strip_prefix(&w.path).is_some_and(|r| r.starts_with('/'))
+            w.path == "/"
+                || path == w.path
+                || path
+                    .strip_prefix(&w.path)
+                    .is_some_and(|r| r.starts_with('/'))
         })
     }
 
@@ -423,7 +481,10 @@ impl AppInstance {
     /// When the app traps or runs out of fuel or memory.
     pub fn on_change(&mut self, path: &str) -> Result<(), Error> {
         self.store.set_fuel(APP_FUEL).map_err(wasm_error)?;
-        self.bindings.fos_app_events().call_on_change(&mut self.store, path).map_err(wasm_error)
+        self.bindings
+            .fos_app_events()
+            .call_on_change(&mut self.store, path)
+            .map_err(wasm_error)
     }
 }
 

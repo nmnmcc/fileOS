@@ -37,6 +37,7 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
+format_collect = "allow"
 
 # Small components.
 [profile.release]

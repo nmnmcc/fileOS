@@ -56,14 +56,21 @@ fn decode(text: &str) -> String {
 ///
 /// When it cannot listen on the address.
 pub async fn start(node: Node, addr: SocketAddr, token: String) -> Result<SocketAddr, Error> {
-    let listener = TcpListener::bind(addr).await.map_err(|e| Error(format!("gateway: {addr}: {e}")))?;
-    let local = listener.local_addr().map_err(|e| Error(format!("gateway: {e}")))?;
+    let listener = TcpListener::bind(addr)
+        .await
+        .map_err(|e| Error(format!("gateway: {addr}: {e}")))?;
+    let local = listener
+        .local_addr()
+        .map_err(|e| Error(format!("gateway: {e}")))?;
     tokio::spawn(async move {
         loop {
-            let Ok((stream, _)) = listener.accept().await else { continue };
+            let Ok((stream, _)) = listener.accept().await else {
+                continue;
+            };
             let (node, token) = (node.clone(), token.clone());
             tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| serve(node.clone(), token.clone(), req));
+                let service =
+                    hyper::service::service_fn(move |req| serve(node.clone(), token.clone(), req));
                 if let Err(e) = hyper::server::conn::http1::Builder::new()
                     .serve_connection(TokioIo::new(stream), service)
                     .await
@@ -76,7 +83,11 @@ pub async fn start(node: Node, addr: SocketAddr, token: String) -> Result<Socket
     Ok(local)
 }
 
-async fn serve(node: Node, token: String, req: Request<Incoming>) -> Result<Reply, std::convert::Infallible> {
+async fn serve(
+    node: Node,
+    token: String,
+    req: Request<Incoming>,
+) -> Result<Reply, std::convert::Infallible> {
     let authorized = req
         .headers()
         .get(hyper::header::AUTHORIZATION)
@@ -104,7 +115,8 @@ async fn serve(node: Node, token: String, req: Request<Incoming>) -> Result<Repl
     };
     // Node calls may run WebAssembly and touch the disk, so they run on a
     // thread for blocking work.
-    let result = tokio::task::spawn_blocking(move || route(&node, &method, &path, &query, body)).await;
+    let result =
+        tokio::task::spawn_blocking(move || route(&node, &method, &path, &query, body)).await;
     Ok(match result {
         Ok(Ok(reply)) => reply,
         Ok(Err(e)) => reply(StatusCode::BAD_REQUEST, format!("{e}\n")),
@@ -119,16 +131,24 @@ fn route(
     query: &BTreeMap<String, String>,
     body: Vec<u8>,
 ) -> Result<Reply, Error> {
-    let arg = |name: &str| query.get(name).cloned().ok_or_else(|| Error(format!("`{name}` is needed")));
+    let arg = |name: &str| {
+        query
+            .get(name)
+            .cloned()
+            .ok_or_else(|| Error(format!("`{name}` is needed")))
+    };
     let ok = |text: String| Ok(reply(StatusCode::OK, text));
-    let text = |body: Vec<u8>| String::from_utf8(body).map_err(|_| Error("the body is not text".into()));
+    let text =
+        |body: Vec<u8>| String::from_utf8(body).map_err(|e| Error(format!("the body is not text: {e}")));
     if let Some(fs_path) = path.strip_prefix("/v0/fs") {
         let fs_path = if fs_path.is_empty() { "/" } else { fs_path };
         return match *method {
             Method::GET if query.contains_key("list") => ok(node.list(fs_path)?.join("\n") + "\n"),
             Method::GET => Ok(reply(StatusCode::OK, node.read(fs_path)?)),
             Method::PUT => node.put(fs_path, &body).and_then(|()| ok(String::new())),
-            Method::POST if query.contains_key("append") => node.append(fs_path, &body).and_then(|()| ok(String::new())),
+            Method::POST if query.contains_key("append") => {
+                node.append(fs_path, &body).and_then(|()| ok(String::new()))
+            }
             Method::DELETE => node.delete(fs_path).and_then(|()| ok(String::new())),
             _ => Ok(reply(StatusCode::METHOD_NOT_ALLOWED, "")),
         };
@@ -151,12 +171,16 @@ fn route(
     }
     match (method, path) {
         (&Method::GET, "/v0/status") => ok(node.status().to_string()),
-        (&Method::POST, "/v0/folder") => ok(format!("{}\n", node.create(&arg("name")?, &arg("at")?)?)),
+        (&Method::POST, "/v0/folder") => {
+            ok(format!("{}\n", node.create(&arg("name")?, &arg("at")?)?))
+        }
         (&Method::POST, "/v0/mount") => {
             node.mount(arg("id")?.parse()?, &arg("at")?)?;
             ok(String::new())
         }
-        (&Method::POST, "/v0/install") => ok(format!("{}\n", node.install(&PathBuf::from(arg("dir")?))?)),
+        (&Method::POST, "/v0/install") => {
+            ok(format!("{}\n", node.install(&PathBuf::from(arg("dir")?))?))
+        }
         (&Method::POST, "/v0/dial") => {
             node.dial(text(body)?.trim())?;
             ok(String::new())

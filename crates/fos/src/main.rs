@@ -16,7 +16,11 @@ use fos_node::{NetConfig, Node};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
 #[derive(Parser)]
-#[command(name = "fos", version, about = "fileOS: a file system that syncs between your nodes")]
+#[command(
+    name = "fos",
+    version,
+    about = "fileOS: a file system that syncs between your nodes"
+)]
 struct Cli {
     /// The data directory of the node.
     #[arg(long, env = "FOS_DIR", default_value_os_t = default_dir(), global = true)]
@@ -35,7 +39,7 @@ enum Command {
     /// Run the node: the network, the apps and the gateway.
     Run {
         /// libp2p addresses to listen on.
-        #[arg(long, default_values = ["/ip4/0.0.0.0/udp/0/quic-v1", "/ip4/0.0.0.0/tcp/0"])]
+        #[arg(long, default_values = ["/ip4/0.0.0.0/tcp/0", "/ip6/::/tcp/0"])]
         listen: Vec<String>,
         /// Nodes to connect to at the start.
         #[arg(long)]
@@ -67,7 +71,11 @@ enum Command {
     /// Take a file or mount away.
     Rm { path: String },
     /// Give a key abilities (read, write, append, grant, store or all) on a path.
-    Grant { path: String, key: String, abilities: String },
+    Grant {
+        path: String,
+        key: String,
+        abilities: String,
+    },
     /// Write a policy entry for the engine into the folder that has a path.
     Policy { path: String, text: String },
     /// Install an app from an .app directory.
@@ -79,7 +87,10 @@ enum Command {
 }
 
 fn default_dir() -> PathBuf {
-    std::env::var_os("HOME").map_or_else(|| PathBuf::from(".fileos"), |home| PathBuf::from(home).join(".fileos"))
+    std::env::var_os("HOME").map_or_else(
+        || PathBuf::from(".fileos"),
+        |home| PathBuf::from(home).join(".fileos"),
+    )
 }
 
 fn main() -> ExitCode {
@@ -118,56 +129,129 @@ fn run(cli: Cli) -> Result<(), Error> {
             println!("made a node in {}\nnode key {key}", dir.display());
             Ok(())
         }
-        Command::Run { listen, peer, gateway, no_mdns } => serve(&dir, listen, peer, &gateway, !no_mdns),
+        Command::Run {
+            listen,
+            peer,
+            gateway,
+            no_mdns,
+        } => serve(&dir, listen, peer, &gateway, !no_mdns),
         Command::Status => print(&client()?.call("GET", "/v0/status", &[])?),
-        Command::New { name, at } => print(&client()?.call("POST", &format!("/v0/folder?name={}&at={}", enc(&name), enc(&at)), &[])?),
-        Command::Mount { id, at } => client()?.call("POST", &format!("/v0/mount?id={}&at={}", enc(&id), enc(&at)), &[]).map(drop),
-        Command::Ls { path } => print(&client()?.call("GET", &format!("/v0/fs{}?list", url_path(&path)), &[])?),
+        Command::New { name, at } => print(&client()?.call(
+            "POST",
+            &format!("/v0/folder?name={}&at={}", enc(&name), enc(&at)),
+            &[],
+        )?),
+        Command::Mount { id, at } => client()?
+            .call(
+                "POST",
+                &format!("/v0/mount?id={}&at={}", enc(&id), enc(&at)),
+                &[],
+            )
+            .map(drop),
+        Command::Ls { path } => {
+            print(&client()?.call("GET", &format!("/v0/fs{}?list", url_path(&path)), &[])?)
+        }
         Command::Cat { path } => {
             let data = client()?.call("GET", &format!("/v0/fs{}", url_path(&path)), &[])?;
-            std::io::stdout().write_all(&data).map_err(|e| Error(e.to_string()))
+            std::io::stdout()
+                .write_all(&data)
+                .map_err(|e| Error(e.to_string()))
         }
         Command::Put { path, file } => {
-            let data = match file {
-                Some(file) => std::fs::read(&file).map_err(|e| Error(format!("{}: {e}", file.display())))?,
-                None => {
-                    let mut data = Vec::new();
-                    std::io::stdin().read_to_end(&mut data).map_err(|e| Error(e.to_string()))?;
-                    data
-                }
+            let data = if let Some(file) = file {
+                std::fs::read(&file).map_err(|e| Error(format!("{}: {e}", file.display())))?
+            } else {
+                let mut data = Vec::new();
+                std::io::stdin()
+                    .read_to_end(&mut data)
+                    .map_err(|e| Error(e.to_string()))?;
+                data
             };
-            client()?.call("PUT", &format!("/v0/fs{}", url_path(&path)), &data).map(drop)
+            client()?
+                .call("PUT", &format!("/v0/fs{}", url_path(&path)), &data)
+                .map(drop)
         }
-        Command::Append { path, text } => {
-            client()?.call("POST", &format!("/v0/fs{}?append", url_path(&path)), format!("{text}\n").as_bytes()).map(drop)
-        }
-        Command::Rm { path } => client()?.call("DELETE", &format!("/v0/fs{}", url_path(&path)), &[]).map(drop),
-        Command::Grant { path, key, abilities } => client()?
-            .call("POST", &format!("/v0/grant{}?to={}&abilities={}", url_path(&path), enc(&key), enc(&abilities)), &[])
+        Command::Append { path, text } => client()?
+            .call(
+                "POST",
+                &format!("/v0/fs{}?append", url_path(&path)),
+                format!("{text}\n").as_bytes(),
+            )
             .map(drop),
-        Command::Policy { path, text } => client()?.call("POST", &format!("/v0/policy{}", url_path(&path)), text.as_bytes()).map(drop),
+        Command::Rm { path } => client()?
+            .call("DELETE", &format!("/v0/fs{}", url_path(&path)), &[])
+            .map(drop),
+        Command::Grant {
+            path,
+            key,
+            abilities,
+        } => client()?
+            .call(
+                "POST",
+                &format!(
+                    "/v0/grant{}?to={}&abilities={}",
+                    url_path(&path),
+                    enc(&key),
+                    enc(&abilities)
+                ),
+                &[],
+            )
+            .map(drop),
+        Command::Policy { path, text } => client()?
+            .call(
+                "POST",
+                &format!("/v0/policy{}", url_path(&path)),
+                text.as_bytes(),
+            )
+            .map(drop),
         Command::Install { app } => {
-            let app = std::fs::canonicalize(&app).map_err(|e| Error(format!("{}: {e}", app.display())))?;
-            let key = client()?.call("POST", &format!("/v0/install?dir={}", enc(&app.to_string_lossy())), &[])?;
+            let app = std::fs::canonicalize(&app)
+                .map_err(|e| Error(format!("{}: {e}", app.display())))?;
+            let key = client()?.call(
+                "POST",
+                &format!("/v0/install?dir={}", enc(&app.to_string_lossy())),
+                &[],
+            )?;
             print(&[b"installed; app key ", key.as_slice()].concat())
         }
-        Command::Kv { app } => print(&client()?.call("GET", &format!("/v0/kv/{}", enc(&app)), &[])?),
-        Command::Dial { addr } => client()?.call("POST", "/v0/dial", addr.as_bytes()).map(drop),
+        Command::Kv { app } => {
+            print(&client()?.call("GET", &format!("/v0/kv/{}", enc(&app)), &[])?)
+        }
+        Command::Dial { addr } => client()?
+            .call("POST", "/v0/dial", addr.as_bytes())
+            .map(drop),
     }
 }
 
 fn print(data: &[u8]) -> Result<(), Error> {
-    std::io::stdout().write_all(data).map_err(|e| Error(e.to_string()))
+    std::io::stdout()
+        .write_all(data)
+        .map_err(|e| Error(e.to_string()))
 }
 
-fn serve(dir: &Path, listen: Vec<String>, peers: Vec<String>, gateway: &str, mdns: bool) -> Result<(), Error> {
+fn serve(
+    dir: &Path,
+    listen: Vec<String>,
+    peers: Vec<String>,
+    gateway: &str,
+    mdns: bool,
+) -> Result<(), Error> {
     let parse = |list: Vec<String>| {
         list.iter()
-            .map(|a| a.parse().map_err(|e| Error(format!("{a} is not a multiaddr: {e}"))))
+            .map(|a| {
+                a.parse()
+                    .map_err(|e| Error(format!("{a} is not a multiaddr: {e}")))
+            })
             .collect::<Result<Vec<_>, _>>()
     };
-    let config = NetConfig { listen: parse(listen)?, peers: parse(peers)?, mdns };
-    let gateway = gateway.parse().map_err(|e| Error(format!("{gateway}: {e}")))?;
+    let config = NetConfig {
+        listen: parse(listen)?,
+        peers: parse(peers)?,
+        mdns,
+    };
+    let gateway = gateway
+        .parse()
+        .map_err(|e| Error(format!("{gateway}: {e}")))?;
     let runtime = tokio::runtime::Runtime::new().map_err(|e| Error(e.to_string()))?;
     runtime.block_on(async {
         let node = Node::open(dir)?;
@@ -175,7 +259,10 @@ fn serve(dir: &Path, listen: Vec<String>, peers: Vec<String>, gateway: &str, mdn
         node.start_net(config)?;
         let addr = fos_gateway::start(node.clone(), gateway, token).await?;
         fos_node::write_gateway_addr(dir, Some(addr))?;
-        eprintln!("node {}\ngateway http://{addr}\n(stop with Ctrl-C)", node.key());
+        eprintln!(
+            "node {}\ngateway http://{addr}\n(stop with Ctrl-C)",
+            node.key()
+        );
         let _ = tokio::signal::ctrl_c().await;
         fos_node::write_gateway_addr(dir, None)
     })
@@ -189,9 +276,16 @@ struct Client {
 
 impl Client {
     fn new(dir: &Path) -> Result<Self, Error> {
-        let addr = std::fs::read_to_string(dir.join("gateway.addr"))
-            .map_err(|_| Error(format!("no node is running for {}: start it with `fos run`", dir.display())))?;
-        Ok(Self { addr: addr.trim().to_string(), token: fos_node::token(dir)? })
+        let addr = std::fs::read_to_string(dir.join("gateway.addr")).map_err(|e| {
+            Error(format!(
+                "no node is running for {} ({e}): start it with `fos run`",
+                dir.display()
+            ))
+        })?;
+        Ok(Self {
+            addr: addr.trim().to_string(),
+            token: fos_node::token(dir)?,
+        })
     }
 
     fn call(&self, method: &str, target: &str, body: &[u8]) -> Result<Vec<u8>, Error> {
@@ -203,13 +297,23 @@ impl Client {
             self.token,
             body.len()
         );
-        stream.write_all(head.as_bytes()).and_then(|()| stream.write_all(body)).map_err(io)?;
+        stream
+            .write_all(head.as_bytes())
+            .and_then(|()| stream.write_all(body))
+            .map_err(io)?;
         let mut response = Vec::new();
         stream.read_to_end(&mut response).map_err(io)?;
-        let split = response.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(|| Error("a broken answer".into()))?;
+        let split = response
+            .windows(4)
+            .position(|w| w == b"\r\n\r\n")
+            .ok_or_else(|| Error("a broken answer".into()))?;
         let head = String::from_utf8_lossy(&response[..split]);
         let body = response[split + 4..].to_vec();
-        let status: u16 = head.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let status: u16 = head
+            .split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
         if status == 200 {
             Ok(body)
         } else {

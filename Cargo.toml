@@ -29,9 +29,10 @@ fos-node = { path = "crates/fos-node" }
 
 # Formats and keys. All of them build for wasm32-unknown-unknown.
 blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
-ed25519-dalek = { version = "2.2.0", default-features = false, features = [
-  "std",
+# The same version as libp2p-identity, so there is one copy.
+ed25519-dalek = { version = "3.0.0", default-features = false, features = [
   "fast",
+  "zeroize",
 ] }
 serde = { version = "1.0.229", default-features = false, features = [
   "std",
@@ -58,10 +59,12 @@ wasmtime = { version = "51.0.0", default-features = false, features = [
   "component-model",
 ] }
 # The network. We do not make our own (see the fileOS design page).
+# No "quic" for now: libp2p-quic always turns on quinn's aws-lc-rs backend,
+# and aws-lc-sys is not allowed (deny.toml). TCP with Noise and Yamux does the
+# same work; relays and hole punching (DCUtR) work over TCP too.
 libp2p = { version = "0.57.1", default-features = false, features = [
   "tokio",
   "tcp",
-  "quic",
   "noise",
   "yamux",
   "identify",

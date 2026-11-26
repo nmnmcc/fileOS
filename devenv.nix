@@ -64,6 +64,7 @@ in
     pkgs.git
     pkgs.gh
     pkgs.knope # change files and releases: knope.toml
+    pkgs.wasm-tools # makes components of the apps: scripts/apps.py
   ];
 
   # One command formats every file in the repository: `treefmt`.
@@ -108,8 +109,8 @@ in
 
   # Build artifacts: `devenv build outputs.hs` or `devenv build outputs.docs`.
   outputs = {
-    hs = rustPlatform.buildRustPackage {
-      pname = "hs";
+    fos = rustPlatform.buildRustPackage {
+      pname = "fos";
       inherit version;
       src = lib.fileset.toSource {
         root = ./.;
@@ -117,27 +118,21 @@ in
           ./Cargo.toml
           ./Cargo.lock
           ./crates
-          ./docs/openapi.json
+          ./wit
         ];
       };
       cargoLock.lockFile = ./Cargo.lock;
-      # One executable: SQLite is compiled in (sqlx-sqlite's `bundled`).
-      # Without this, the nixpkgs cargo hook asks libsqlite3-sys (and others)
-      # to link system libraries in its place.
-      dontCargoUseSystemLibs = true;
       cargoBuildFlags = [
         "--package"
-        "hs"
+        "fos"
       ];
-      cargoTestFlags = [ "--workspace" ];
-      # When it is run as `hsctl`, hs works as `hs ctl`.
-      postInstall = ''
-        ln -s hs "$out/bin/hsctl"
-      '';
+      # The tests need the WebAssembly apps in target/apps/, which are built
+      # outside Nix. `check` runs every test.
+      doCheck = false;
       meta = {
-        description = "homeserver";
+        description = "fileOS";
         license = lib.licenses.agpl3Only;
-        mainProgram = "hs";
+        mainProgram = "fos";
       };
     };
 

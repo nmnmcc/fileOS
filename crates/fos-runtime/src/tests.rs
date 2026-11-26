@@ -8,8 +8,14 @@ use super::*;
 
 /// The .app folders that `apps` (scripts/apps.py) builds.
 fn bundle(name: &str) -> Bundle {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/apps").join(name);
-    assert!(dir.exists(), "{} is missing: run `apps` first", dir.display());
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/apps")
+        .join(name);
+    assert!(
+        dir.exists(),
+        "{} is missing: run `apps` first",
+        dir.display()
+    );
     Bundle::read_dir(&dir).unwrap()
 }
 
@@ -17,21 +23,38 @@ fn bundle(name: &str) -> Bundle {
 fn the_capability_engine_runs() {
     let runtime = Runtime::new().unwrap();
     let mut engine = runtime.engine(&bundle("Capability.app")).unwrap();
-    let (alice, bob) = (SecretKey::from_seed(&[1; 32]).public(), SecretKey::from_seed(&[2; 32]).public());
+    let (alice, bob) = (
+        SecretKey::from_seed(&[1; 32]).public(),
+        SecretKey::from_seed(&[2; 32]).public(),
+    );
     let folder = Hash::of(b"folder");
 
     let state = engine.init(folder, alice);
-    assert_eq!(engine.check(&state, alice, Ability::Write, folder, "/a"), Decision::Allow);
-    assert!(matches!(engine.check(&state, bob, Ability::Read, folder, "/a"), Decision::Deny(_)));
+    assert_eq!(
+        engine.check(&state, alice, Ability::Write, folder, "/a"),
+        Decision::Allow
+    );
+    assert!(matches!(
+        engine.check(&state, bob, Ability::Read, folder, "/a"),
+        Decision::Deny(_)
+    ));
 
     let policy = engine.grant(bob, &[Ability::Read, Ability::Store], "/");
-    assert_eq!(String::from_utf8(policy.clone()).unwrap(), format!("grant {bob} read,store /"));
+    assert_eq!(
+        String::from_utf8(policy.clone()).unwrap(),
+        format!("grant {bob} read,store /")
+    );
     let state = engine.apply(&state, alice, &policy).unwrap();
-    assert_eq!(engine.check(&state, bob, Ability::Read, folder, "/a"), Decision::Allow);
+    assert_eq!(
+        engine.check(&state, bob, Ability::Read, folder, "/a"),
+        Decision::Allow
+    );
     assert_eq!(engine.storers(&state), vec![alice, bob]);
-    assert!(engine.apply(&state, bob, b"nonsense").is_err());
+    engine.apply(&state, bob, b"nonsense").unwrap_err();
     // An engine is not an app.
-    assert!(runtime.app(&bundle("Capability.app"), Arc::new(Host::default())).is_err());
+    runtime
+        .app(&bundle("Capability.app"), Arc::new(Host::default()))
+        .unwrap_err();
 }
 
 #[derive(Default)]
@@ -66,7 +89,13 @@ impl AppHost for Host {
         self.kv.lock().unwrap().remove(key);
     }
     fn kv_keys(&self, _: &str, prefix: &str) -> Vec<String> {
-        self.kv.lock().unwrap().keys().filter(|k| k.starts_with(prefix)).cloned().collect()
+        self.kv
+            .lock()
+            .unwrap()
+            .keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect()
     }
     fn log(&self, _: &str, _: &str) {}
 }
@@ -81,12 +110,17 @@ fn the_photos_app_indexes_a_photo() {
     host.files.insert("/photos/a.png".into(), png);
     let host = Arc::new(host);
 
-    let mut app = runtime.app(&bundle("Photos.app"), host.clone()).unwrap();
+    let mut app = runtime
+        .app(&bundle("Photos.app"), Arc::<Host>::clone(&host))
+        .unwrap();
     assert_eq!(app.manifest().name, "Photos");
     assert!(app.watches("/photos/a.png"));
     assert!(!app.watches("/photosx"));
     app.on_change("/photos/a.png").unwrap();
-    assert_eq!(host.kv_get("photos", "photo:/photos/a.png").as_deref(), Some(&b"64x32"[..]));
+    assert_eq!(
+        host.kv_get("photos", "photo:/photos/a.png").as_deref(),
+        Some(&b"64x32"[..])
+    );
     // A deleted file leaves the index.
     app.on_change("/photos/b.png").unwrap();
     assert_eq!(host.kv_keys("photos", "photo:"), ["photo:/photos/a.png"]);

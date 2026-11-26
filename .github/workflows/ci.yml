@@ -55,8 +55,10 @@ jobs:
       - run: devenv shell -- artifacts
       - uses: actions/upload-artifact@v7
         with:
-          name: hs-linux-x86_64
-          path: artifacts/hs
+          name: fos-linux-x86_64
+          path: |
+            artifacts/fos
+            artifacts/apps
       - uses: actions/upload-artifact@v7
         with:
           name: docs

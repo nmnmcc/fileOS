@@ -61,8 +61,12 @@ impl SecretKey {
 
     /// A key for `purpose` that comes from this key and always gives the same
     /// result. A node uses it to give each app its own key.
+    #[must_use]
     pub fn derive(&self, purpose: &str) -> Self {
-        let seed = blake3::derive_key("fileOS 2026 derived key", &[&self.seed()[..], purpose.as_bytes()].concat());
+        let seed = blake3::derive_key(
+            "fileOS 2026 derived key",
+            &[&self.seed()[..], purpose.as_bytes()].concat(),
+        );
         Self::from_seed(&seed)
     }
 
@@ -96,18 +100,18 @@ impl fmt::Debug for Bytes {
 }
 
 impl Serialize for Bytes {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_bytes(&self.0)
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_bytes(&self.0)
     }
 }
 
 impl<'de> Deserialize<'de> for Bytes {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct Visit;
         impl de::Visitor<'_> for Visit {
             type Value = Bytes;
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("a byte string")
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a byte string")
             }
             fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Bytes, E> {
                 Ok(Bytes(v.to_vec()))
@@ -116,7 +120,7 @@ impl<'de> Deserialize<'de> for Bytes {
                 Ok(Bytes(v))
             }
         }
-        d.deserialize_byte_buf(Visit)
+        deserializer.deserialize_byte_buf(Visit)
     }
 }
 
@@ -167,7 +171,9 @@ fn read_hex<const N: usize>(s: &str) -> Result<[u8; N], Error> {
     }
     let mut out = [0; N];
     for (i, byte) in out.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).map_err(|_| bad())?;
+        *byte = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
+            .ok()
+            .ok_or_else(bad)?;
     }
     Ok(out)
 }
@@ -190,8 +196,8 @@ macro_rules! byte_type {
 
         impl FromStr for $name {
             type Err = Error;
-            fn from_str(s: &str) -> Result<Self, Error> {
-                read_hex::<$len>(s).map(Self)
+            fn from_str(text: &str) -> Result<Self, Error> {
+                read_hex::<$len>(text).map(Self)
             }
         }
 
@@ -199,30 +205,34 @@ macro_rules! byte_type {
             type Error = Error;
             fn try_from(bytes: &[u8]) -> Result<Self, Error> {
                 bytes.try_into().map(Self).map_err(|_| {
-                    Error(format!(concat!("a ", stringify!($name), " has {} bytes, not {}"), $len, bytes.len()))
+                    Error(format!(
+                        concat!("a ", stringify!($name), " has {} bytes, not {}"),
+                        $len,
+                        bytes.len()
+                    ))
                 })
             }
         }
 
         impl Serialize for $name {
-            fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                s.serialize_bytes(&self.0)
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.serialize_bytes(&self.0)
             }
         }
 
         impl<'de> Deserialize<'de> for $name {
-            fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 struct Visit;
                 impl de::Visitor<'_> for Visit {
                     type Value = $name;
-                    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                        write!(f, "{} bytes", $len)
+                    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                        write!(formatter, "{} bytes", $len)
                     }
                     fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<$name, E> {
                         $name::try_from(v).map_err(E::custom)
                     }
                 }
-                d.deserialize_bytes(Visit)
+                deserializer.deserialize_bytes(Visit)
             }
         }
     };

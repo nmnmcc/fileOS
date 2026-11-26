@@ -14,8 +14,8 @@ struct Photos;
 
 impl Guest for Photos {
     fn on_change(path: String) {
-        let lower = path.to_ascii_lowercase();
-        if !(lower.ends_with(".jpg") || lower.ends_with(".jpeg") || lower.ends_with(".png")) {
+        let extension = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
+        if !matches!(extension.as_deref(), Some("jpg" | "jpeg" | "png")) {
             return;
         }
         let key = format!("photo:{path}");
@@ -37,6 +37,7 @@ impl Guest for Photos {
 fos_app::app::export_app!(Photos);
 
 /// The width and height of a PNG or JPEG image, from its header.
+#[must_use]
 pub fn image_size(bytes: &[u8]) -> Option<(u32, u32)> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") && bytes.get(12..16) == Some(b"IHDR") {
         let w = u32::from_be_bytes(bytes.get(16..20)?.try_into().ok()?);
@@ -77,7 +78,9 @@ mod tests {
         assert_eq!(image_size(&png), Some((640, 480)));
 
         // SOI, an APP0 segment of 4 bytes, then SOF0 with height 300 and width 400.
-        let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 0, 0, 0xFF, 0xC0, 0, 17, 8, 1, 44, 1, 144];
+        let jpeg = [
+            0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 0, 0, 0xFF, 0xC0, 0, 17, 8, 1, 44, 1, 144,
+        ];
         assert_eq!(image_size(&jpeg), Some((400, 300)));
         assert_eq!(image_size(b"not an image"), None);
     }

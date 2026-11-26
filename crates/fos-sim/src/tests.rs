@@ -12,14 +12,23 @@ fn a_shared_folder_syncs_both_ways() {
     let family = sim.create(alice, "family");
     sim.follow(bob, family);
     sim.put(alice, family, "/photos/a.jpg", b"photo a").unwrap();
-    assert_eq!(sim.read(bob, family, "/photos/a.jpg").as_deref(), Some(&b"photo a"[..]));
+    assert_eq!(
+        sim.read(bob, family, "/photos/a.jpg").as_deref(),
+        Some(&b"photo a"[..])
+    );
 
     // Bob is not the ordering node: his write goes to Alice, and comes back
     // in the main line.
     sim.put(bob, family, "/notes/b.txt", b"from bob").unwrap();
-    assert_eq!(sim.read(alice, family, "/notes/b.txt").as_deref(), Some(&b"from bob"[..]));
-    assert_eq!(sim.folder(alice, family).unwrap().head(), sim.folder(bob, family).unwrap().head());
-    assert!(sim.nodes[bob].replica.pending().is_empty());
+    assert_eq!(
+        sim.read(alice, family, "/notes/b.txt").as_deref(),
+        Some(&b"from bob"[..])
+    );
+    assert_eq!(
+        sim.folder(alice, family).unwrap().head(),
+        sim.folder(bob, family).unwrap().head()
+    );
+    assert_eq!(sim.nodes[bob].replica.pending().len(), 0);
 }
 
 #[test]
@@ -38,12 +47,15 @@ fn writes_wait_for_the_ordering_node() {
     assert!(sim.read(alice, family, "/offline.txt").is_none());
 
     sim.connect(alice, bob);
-    assert!(sim.nodes[bob].replica.pending().is_empty());
+    assert_eq!(sim.nodes[bob].replica.pending().len(), 0);
     for node in [alice, bob] {
         let f = sim.folder(node, family).unwrap();
         assert_eq!(f.list("/"), ["offline.txt", "while-apart.txt"]);
     }
-    assert_eq!(sim.read(bob, family, "/while-apart.txt").as_deref(), Some(&b"x"[..]));
+    assert_eq!(
+        sim.read(bob, family, "/while-apart.txt").as_deref(),
+        Some(&b"x"[..])
+    );
 }
 
 #[test]
@@ -82,11 +94,19 @@ fn a_node_with_different_rules_forks() {
 
     // Alice, Bob and Dave follow the main line.
     for node in [alice, bob, dave] {
-        assert_eq!(sim.folder(node, family).unwrap().list("/"), ["a.txt", "b.txt", "photo.jpg"]);
+        assert_eq!(
+            sim.folder(node, family).unwrap().list("/"),
+            ["a.txt", "b.txt", "photo.jpg"]
+        );
     }
     // Carol's copy stopped at Dave's entry. It has a fork, and she can see why.
     let carol_copy = sim.folder(carol, family).unwrap();
     assert_eq!(carol_copy.list("/"), ["a.txt"]);
     assert_eq!(carol_copy.fork().map(|f| f.seq), Some(2));
-    assert!(sim.nodes[carol].events.iter().any(|e| matches!(e, Event::Forked { .. })));
+    assert!(
+        sim.nodes[carol]
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::Forked { .. }))
+    );
 }
