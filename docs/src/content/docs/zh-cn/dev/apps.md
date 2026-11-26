@@ -3,7 +3,7 @@ title: 编写 App 和引擎
 description: 接口、SDK、.app 文件夹和 manifest。
 ---
 
-App 和引擎都是 WebAssembly 组件。内核用 [wasmtime](https://wasmtime.dev) 运行它们。它们只通过 [`wit/fos.wit`](https://github.com/nmnmcc/homeserver/blob/main/wit/fos.wit) 里的接口和内核通信。
+App 和引擎都是 WebAssembly 组件。内核用 [wasmtime](https://wasmtime.dev) 运行它们。它们只通过 [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit) 里的接口和内核通信。
 
 ## App
 

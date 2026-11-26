@@ -10,7 +10,7 @@ fileOS 保存的是个人的私密数据，所以即使项目还处于原型阶�
 
 ## 报告漏洞
 
-请通过 [GitHub 私密漏洞报告](https://github.com/nmnmcc/homeserver/security/advisories/new)提交。不要公开提 issue、PR 或讨论。
+请通过 [GitHub 私密漏洞报告](https://github.com/nmnmcc/fileOS/security/advisories/new)提交。不要公开提 issue、PR 或讨论。
 
 请说明受影响的部分、复现方法，以及攻击者能借此做什么。中文或英文均可。
 

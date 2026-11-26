@@ -5,7 +5,7 @@ description: The interfaces, the SDK, the .app folder and the manifest.
 
 Apps and engines are WebAssembly components. The core runs them with
 [wasmtime](https://wasmtime.dev). They talk to the core only through the
-interfaces in [`wit/fos.wit`](https://github.com/nmnmcc/homeserver/blob/main/wit/fos.wit).
+interfaces in [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit).
 
 ## Apps
 

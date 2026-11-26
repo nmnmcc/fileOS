@@ -8,7 +8,7 @@ body:
     attributes:
       value: |
         Write in English or Chinese. For a security problem, send a
-        [private report](https://github.com/nmnmcc/homeserver/security/advisories/new) in place of an issue.
+        [private report](https://github.com/nmnmcc/fileOS/security/advisories/new) in place of an issue.
   - type: textarea
     id: what
     attributes:
