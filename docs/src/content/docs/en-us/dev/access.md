@@ -43,7 +43,9 @@ Everything that is kept is a file: people's files, the data of apps, cache
 files, and each record of a chat or a feed (a directory with one file for each
 record). There is no key-value store and no stream type.
 
-- A file has a **fixed ID**, made when it is made. A rename does not change it.
+- A file has a **fixed ID**: the hash of the log entry that made it, with its
+  place in that entry (one entry can make many files). So the ID proves
+  itself, as the ID of a space and a `did:fos` do. A rename does not change it.
 - A file has **versions**. When two devices change it at the same time, the
   versions are kept side by side, and nobody's change is lost in secret.
 - A file whose content is a **CRDT** (made on [Loro](https://github.com/loro-dev/loro))
@@ -274,13 +276,14 @@ Ming owns a space `S1`. Its names are `2026/beach.jpg`, `2026/cat.jpg` and
 
 ## What is the same, and what is kept apart
 
-| Made one                                     | Why                                           |
-| -------------------------------------------- | --------------------------------------------- |
-| All stored data is files (no kv, no streams) | Same rules: sync, versions, access, retention |
-| Synced files and cache files                 | Only the place is different                   |
-| Access for people, devices, groups and apps  | One kind of grant, the same checks            |
-| People's trees, app handles, contacts        | All are mounts in a view                      |
-| Data changes, grant changes, messages        | All are changes to files: `watch`             |
+| Made one                                     | Why                                                                    |
+| -------------------------------------------- | ---------------------------------------------------------------------- |
+| All stored data is files (no kv, no streams) | Same rules: sync, versions, access, retention                          |
+| Synced files and cache files                 | Only the place is different                                            |
+| Access for people, devices, groups and apps  | One kind of grant, the same checks                                     |
+| People's trees, app handles, contacts        | All are mounts in a view                                               |
+| Data changes, grant changes, messages        | All are changes to files: `watch`                                      |
+| IDs of principals, spaces and files          | Each is the hash of the signed entry that made it, so it proves itself |
 
 | Kept apart              | Why                                                                    |
 | ----------------------- | ---------------------------------------------------------------------- |
