@@ -10,6 +10,11 @@
 //! The node and the people who use it through the gateway act with the node
 //! key. Each app acts with its own key, which comes from the node key. Every
 //! write, by anyone, goes through the engine.
+//!
+//! A node may be one of the nodes of an identity (a person, named by a
+//! `did:fos` DID). The identity folder is mounted at [`IDENTITY_AT`]. It has
+//! the DID log and a certificate for each node. One node holds the keys of
+//! the identity, and only that node can add or take away nodes.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::{self, Write as _};
@@ -18,12 +23,16 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
 use fos_fs::{Ability, Authz, Decision, Fork, Node as FsNode, Op, resolve};
+use fos_id::{Link, NodeCert, Op as DidOp, Service, State};
 use fos_runtime::{AppHost, AppInstance, Bundle, EngineInstance, FsError, Kind, Runtime};
 use fos_store::Store;
 use fos_sync::{Blobs as _, Event, Replica, Step};
 use tokio::sync::mpsc;
 
 pub use fos_net::Config as NetConfig;
+
+/// Where the identity folder is mounted in the root folder.
+pub const IDENTITY_AT: &str = "/identity";
 
 /// One node. Cheap to clone; all clones are the same node.
 #[derive(Clone)]
@@ -59,6 +68,10 @@ struct Inner {
     waiting: BTreeMap<Hash, Vec<String>>,
     /// The last messages from apps, newest last.
     logs: VecDeque<String>,
+    /// The rotation key of the identity, when this node holds it.
+    rotation_key: Option<SecretKey>,
+    /// The signing key of the identity, when this node holds it.
+    signing_key: Option<SecretKey>,
 }
 
 /// What a node is doing, for people.
@@ -72,6 +85,30 @@ pub struct Status {
     pub folders: Vec<FolderStatus>,
     pub apps: Vec<String>,
     pub logs: Vec<String>,
+    pub identity: Option<Identity>,
+}
+
+/// The identity of a node.
+#[derive(Clone, Debug)]
+pub struct Identity {
+    /// The DID of the identity. `None` while the node waits for the
+    /// identity folder from another node, or when its log is not valid.
+    pub did: Option<String>,
+    /// The identity folder.
+    pub folder: Hash,
+    /// The rotation keys, as `did:key`, the first one with the highest priority.
+    pub rotation_keys: Vec<String>,
+    /// Other names of the identity.
+    pub also_known_as: Vec<String>,
+    /// This node holds a rotation key of the identity.
+    pub holds_rotation_key: bool,
+    /// This node holds the signing key of the identity, so it can add nodes.
+    pub holds_signing_key: bool,
+    /// The nodes of the identity: the ones with a good certificate.
+    pub nodes: Vec<PublicKey>,
+    /// The link that people give to others, with the addresses of this node
+    /// as hints.
+    pub link: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -210,6 +247,8 @@ impl Node {
             .root()?
             .ok_or_else(|| Error(format!("{} has no node: run `fos init`", dir.display())))?;
         let key = store.key()?;
+        let rotation_key = store.identity_key("rotation")?;
+        let signing_key = store.identity_key("signing")?;
         let runtime = Runtime::new()?;
         let mut engine = runtime.engine(&Bundle::read_dir(&store.engine_dir())?)?;
         let seed = fos_store::random_seed()?;
@@ -219,6 +258,10 @@ impl Node {
         );
         for folder in store.load_folders(&mut engine)? {
             replica.insert(folder);
+        }
+        // The signing key is the ordering node of the identity folder.
+        if let Some(signing) = &signing_key {
+            replica.add_key(signing.clone());
         }
         let inner = Inner {
             store,
@@ -231,6 +274,8 @@ impl Node {
             listening: Vec::new(),
             waiting: BTreeMap::new(),
             logs: VecDeque::new(),
+            rotation_key,
+            signing_key,
         };
         let node = Node {
             shared: Arc::new(Shared {
@@ -429,6 +474,121 @@ impl Node {
         Ok(app_key.public())
     }
 
+    /// Makes a new identity. This node holds its rotation key and its
+    /// signing key, and is its first node. Gives the DID.
+    ///
+    /// # Errors
+    ///
+    /// When this node already has an identity, or the keys cannot be kept.
+    pub fn identity_new(&self) -> Result<String, Error> {
+        let mut inner = self.inner();
+        if let Some(folder) = inner.identity_folder() {
+            return Err(Error(format!(
+                "this node already has an identity, with the folder {folder}"
+            )));
+        }
+        // Keys from an earlier try that did not end are used again.
+        let rotation = inner.identity_key("rotation")?;
+        let signing = inner.identity_key("signing")?;
+        let Inner {
+            replica, engine, ..
+        } = &mut *inner;
+        let (folder, step) = replica.create_as(fos_id::FOLDER_NAME, &signing, engine);
+        inner.process(step, &self.shared.changed)?;
+        inner.mount(folder, IDENTITY_AT, &self.shared.changed)?;
+        let state = State {
+            rotation_keys: vec![fos_id::did_key(rotation.public())],
+            verification_methods: [(
+                fos_id::SIGNING_METHOD.to_string(),
+                fos_id::did_key(signing.public()),
+            )]
+            .into(),
+            also_known_as: Vec::new(),
+            services: [(
+                fos_id::FOLDER_SERVICE.to_string(),
+                Service {
+                    kind: fos_id::FOLDER_SERVICE_TYPE.to_string(),
+                    endpoint: folder.to_string(),
+                },
+            )]
+            .into(),
+        };
+        let genesis = DidOp::genesis(state, &rotation)?;
+        let did = genesis.did();
+        let path = format!("{IDENTITY_AT}{}", fos_id::op_path(&genesis));
+        inner.put(
+            Some(&signing),
+            &path,
+            &genesis.to_bytes(),
+            &self.shared.changed,
+        )?;
+        inner.add_node(&did, &signing, self.key(), &self.shared.changed)?;
+        drop(inner);
+        self.pump();
+        Ok(did)
+    }
+
+    /// Adds a node to the identity: puts its certificate into the identity
+    /// folder, and lets it read and keep the folder. Only the node that holds
+    /// the signing key of the identity can do this. Gives the ID of the identity
+    /// folder, which the other node joins.
+    ///
+    /// # Errors
+    ///
+    /// When this node does not hold the signing key of the identity.
+    pub fn identity_add_node(&self, node: PublicKey) -> Result<Hash, Error> {
+        let mut inner = self.inner();
+        let (did, signing, folder) = inner.held_identity()?;
+        inner.add_node(&did, &signing, node, &self.shared.changed)?;
+        drop(inner);
+        self.pump();
+        Ok(folder)
+    }
+
+    /// Takes a node away from the identity: deletes its certificate. The
+    /// node may still keep its copy of the folder until the engine takes its
+    /// grant away.
+    ///
+    /// # Errors
+    ///
+    /// When this node does not hold the signing key of the identity, or the
+    /// node is not one of its nodes.
+    pub fn identity_remove_node(&self, node: PublicKey) -> Result<(), Error> {
+        let mut inner = self.inner();
+        let (_, signing, _) = inner.held_identity()?;
+        let path = format!("{IDENTITY_AT}{}", fos_id::node_path(node));
+        inner.write_at(
+            Some(&signing),
+            &path,
+            |path| Op::Delete { path },
+            &self.shared.changed,
+        )?;
+        drop(inner);
+        self.pump();
+        Ok(())
+    }
+
+    /// Makes this node one of the nodes of an identity, by the ID of its
+    /// folder. The node that holds the signing key must add this node first
+    /// ([`Node::identity_add_node`]), or the folder does not come.
+    ///
+    /// # Errors
+    ///
+    /// When this node already has an identity.
+    pub fn identity_join(&self, folder: Hash) -> Result<(), Error> {
+        if let Some(have) = self.inner().identity_folder() {
+            return Err(Error(format!(
+                "this node already has an identity, with the folder {have}"
+            )));
+        }
+        self.mount(folder, IDENTITY_AT)
+    }
+
+    /// The identity of this node, if it has one.
+    pub fn identity(&self) -> Option<Identity> {
+        self.inner().identity(self.key())
+    }
+
     /// The local key-value store of an app.
     pub fn kv(&self, app: &str) -> BTreeMap<String, Vec<u8>> {
         self.inner().kv(app).clone()
@@ -464,6 +624,7 @@ impl Node {
         let peers = inner.replica.peers().copied().collect();
         let pending = inner.replica.pending().len();
         let logs = inner.logs.drain(..).collect();
+        let identity = inner.identity(self.key());
         Status {
             key: self.key(),
             root: inner.root,
@@ -473,6 +634,7 @@ impl Node {
             folders,
             apps,
             logs,
+            identity,
         }
     }
 
@@ -606,6 +768,158 @@ fn fs_error(e: FsError) -> Error {
 }
 
 impl Inner {
+    /// The identity folder, if one is mounted.
+    fn identity_folder(&self) -> Option<Hash> {
+        match self.replica.folder(self.root)?.get(IDENTITY_AT)? {
+            FsNode::Mount(folder) => Some(*folder),
+            _ => None,
+        }
+    }
+
+    /// A secret key of the identity on this node, by its use. It is made
+    /// and kept when this node does not have it yet.
+    fn identity_key(&mut self, usage: &str) -> Result<SecretKey, Error> {
+        let held = match usage {
+            "rotation" => &mut self.rotation_key,
+            _ => &mut self.signing_key,
+        };
+        if let Some(key) = held {
+            return Ok(key.clone());
+        }
+        let key = SecretKey::from_seed(&fos_store::random_seed()?);
+        self.store.set_identity_key(usage, &key)?;
+        *held = Some(key.clone());
+        if usage == "signing" {
+            self.replica.add_key(key.clone());
+        }
+        Ok(key)
+    }
+
+    /// The operations of the DID log in the identity folder.
+    fn identity_ops(&self, folder: Hash) -> Vec<DidOp> {
+        let Some(f) = self.replica.folder(folder) else {
+            return Vec::new();
+        };
+        f.list(fos_id::OPS)
+            .into_iter()
+            .filter_map(|name| {
+                let (blob, _) = f.file(&format!("{}/{name}", fos_id::OPS))?;
+                let op = DidOp::from_bytes(&self.store.get(blob)?).ok()?;
+                (op.hash().to_string() == name).then_some(op)
+            })
+            .collect()
+    }
+
+    /// The DID and the state of the identity whose log is in `folder`: the
+    /// one whose state names this folder, and whose signing key made it.
+    fn resolve_identity(&self, folder: Hash) -> Option<(String, State)> {
+        let creator = self.replica.folder(folder)?.creator();
+        let ops = self.identity_ops(folder);
+        fos_id::dids(&ops).into_iter().find_map(|did| {
+            let state = fos_id::resolve(&did, &ops).ok()?.state?;
+            (state.folder() == Some(folder) && state.signing_key() == Some(creator))
+                .then_some((did, state))
+        })
+    }
+
+    /// The DID, the signing key and the folder of the identity, when this
+    /// node holds the signing key.
+    fn held_identity(&self) -> Result<(String, SecretKey, Hash), Error> {
+        let none = || Error("this node does not hold the signing key of an identity".into());
+        let signing = self.signing_key.clone().ok_or_else(none)?;
+        let folder = self.identity_folder().ok_or_else(none)?;
+        let (did, state) = self.resolve_identity(folder).ok_or_else(none)?;
+        if state.signing_key() != Some(signing.public()) {
+            return Err(none());
+        }
+        Ok((did, signing, folder))
+    }
+
+    /// Puts the certificate of `node` into the identity folder, and lets the
+    /// node read and keep the folder.
+    fn add_node(
+        &mut self,
+        did: &str,
+        signing: &SecretKey,
+        node: PublicKey,
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
+        let cert = NodeCert::sign(did, signing, node);
+        let path = format!("{IDENTITY_AT}{}", fos_id::node_path(node));
+        self.put(Some(signing), &path, &cert.to_bytes(), changed)?;
+        let policy = self
+            .engine
+            .grant(node, &[Ability::Read, Ability::Store], "/");
+        self.write_at(
+            Some(signing),
+            IDENTITY_AT,
+            |_| Op::Policy(Bytes(policy)),
+            changed,
+        )
+    }
+
+    /// The identity of this node. Which nodes belong to it is a fact: the
+    /// kernel checks the DID log and the certificates, and does not ask the
+    /// engine.
+    fn identity(&self, me: PublicKey) -> Option<Identity> {
+        let folder = self.identity_folder()?;
+        let holds = |key: &Option<SecretKey>, keys: &[PublicKey]| {
+            key.as_ref().is_some_and(|k| keys.contains(&k.public()))
+        };
+        let Some((did, state)) = self.resolve_identity(folder) else {
+            return Some(Identity {
+                did: None,
+                folder,
+                rotation_keys: Vec::new(),
+                also_known_as: Vec::new(),
+                holds_rotation_key: false,
+                holds_signing_key: false,
+                nodes: Vec::new(),
+                link: None,
+            });
+        };
+        let signing = state.signing_key();
+        let f = self.replica.folder(folder)?;
+        let nodes = f
+            .list(fos_id::NODES)
+            .into_iter()
+            .filter_map(|name| {
+                let (blob, _) = f.file(&format!("{}/{name}", fos_id::NODES))?;
+                let cert = NodeCert::from_bytes(&self.store.get(blob)?).ok()?;
+                (cert.did == did
+                    && signing.is_some_and(|key| cert.verify(key))
+                    && cert.node.to_string() == name)
+                    .then_some(cert.node)
+            })
+            .collect::<Vec<_>>();
+        // Other nodes find this one by its addresses only if it is one of
+        // the nodes of the identity.
+        let hints = if nodes.contains(&me) {
+            self.listening.clone()
+        } else {
+            Vec::new()
+        };
+        Some(Identity {
+            link: Some(
+                Link {
+                    did: did.clone(),
+                    hints,
+                }
+                .to_string(),
+            ),
+            did: Some(did),
+            folder,
+            holds_rotation_key: holds(
+                &self.rotation_key,
+                &state.rotation_keys().unwrap_or_default(),
+            ),
+            holds_signing_key: holds(&self.signing_key, &signing.into_iter().collect::<Vec<_>>()),
+            rotation_keys: state.rotation_keys,
+            also_known_as: state.also_known_as,
+            nodes,
+        })
+    }
+
     fn app_key(&self, app: &str) -> SecretKey {
         self.key.derive(&format!("app:{app}"))
     }
@@ -925,11 +1239,58 @@ impl AppHost for Host {
     }
 }
 
+impl fmt::Display for Identity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut out = String::new();
+        match &self.did {
+            Some(did) => {
+                let _ = writeln!(out, "did      {did}");
+            }
+            None => {
+                let _ = writeln!(
+                    out,
+                    "did      (waiting for the identity folder: the node that holds the \
+                     signing key must add this node, and be connected)"
+                );
+            }
+        }
+        let _ = writeln!(out, "folder   {}", self.folder);
+        if let Some(link) = &self.link {
+            let _ = writeln!(out, "link     {link}");
+        }
+        for name in &self.also_known_as {
+            let _ = writeln!(out, "aka      {name}");
+        }
+        for (i, key) in self.rotation_keys.iter().enumerate() {
+            let _ = writeln!(out, "rotation {key} (priority {})", i + 1);
+        }
+        if self.holds_rotation_key {
+            let _ = writeln!(out, "         this node holds a rotation key");
+        }
+        if self.holds_signing_key {
+            let _ = writeln!(out, "         this node holds the signing key");
+        }
+        for node in &self.nodes {
+            let _ = writeln!(out, "node     {node}");
+        }
+        f.write_str(&out)
+    }
+}
+
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut out = String::new();
         let _ = writeln!(out, "node     {}", self.key);
         let _ = writeln!(out, "root     {}", self.root);
+        match &self.identity {
+            Some(Identity { did: Some(did), .. }) => {
+                let _ = writeln!(out, "identity {did}");
+            }
+            Some(Identity { folder, .. }) => {
+                let _ = writeln!(out, "identity (waiting for its folder {folder})");
+            }
+            None => {}
+        }
         for addr in &self.listening {
             let _ = writeln!(out, "listen   {addr}");
         }

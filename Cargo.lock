@@ -1091,6 +1091,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fos-id"
+version = "0.1.0"
+dependencies = [
+ "bs58",
+ "fos-core",
+ "serde",
+]
+
+[[package]]
 name = "fos-net"
 version = "0.1.0"
 dependencies = [
@@ -1107,6 +1116,7 @@ version = "0.1.0"
 dependencies = [
  "fos-core",
  "fos-fs",
+ "fos-id",
  "fos-net",
  "fos-runtime",
  "fos-store",

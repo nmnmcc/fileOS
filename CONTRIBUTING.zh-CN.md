@@ -96,6 +96,7 @@ crates/
   fos-store       数据目录：节点密钥、blob、文件夹日志、本地键值存储
   fos-sync        节点之间的同步（sans-IO，可移植）
   fos-fs          文件夹：签名日志、顺序、分叉、挂载（sans-IO，可移植）
+  fos-id          身份：did:fos、节点证书、身份链接（可移植）
   fos-core        格式：CBOR、ed25519、BLAKE3（依赖图最底层，可移植）
   fos-sim         用于测试的确定性多节点模拟
 apps/             第二个 workspace，由 `apps` 编译成 wasm32-unknown-unknown

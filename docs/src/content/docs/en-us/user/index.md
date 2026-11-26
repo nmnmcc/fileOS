@@ -52,6 +52,22 @@ If your friend's node has different rules from yours, its copy can stop at
 the first change its rules do not take. `fos status` then says `FORK`. Nothing
 is lost; your friend can change their rules or make a new folder.
 
+## One identity, many nodes
+
+Your identity is you; a node is one of your machines. Your identity is a DID
+(`did:fos:…`), and with it all your nodes are known to be yours.
+
+1. On the node that is to hold the keys of your identity (your laptop, for
+   example), run `fos id new`. It prints your DID. Keep a copy of the two key
+   files that it names in a safe place.
+2. On your other node, run `fos status` and copy its node key.
+3. On the first node, run `fos id add-node <node key>`. It prints a command.
+4. On the other node, run that command: `fos id join <folder ID>`.
+
+`fos id` shows your identity, its nodes and its link. The link is what you
+give to other people. Only the node that holds the signing key can add nodes
+(`fos id add-node`) or take them away (`fos id remove-node`).
+
 ## Apps
 
 An app is a folder with a `.app` name, such as `Photos.app`. Install one with

@@ -260,7 +260,7 @@ interface authz {
 我们用 libp2p，但不用其中属于 IPFS 的部分：
 
 - **不用 bitswap，也不用全局内容 DHT。** 节点只从保存这个文件夹的节点获取 blob。
-- **Kademlia 只用来查找某个 PeerId 的地址**，而且可以关掉。查找节点首先靠一个人的身份日志和熟人的节点。是否使用 DHT 由引擎决定。
+- **完全不用 DHT。** 节点通过任何人都能部署的会合节点，以及熟人的节点找到。见[身份与查找节点](../identity/)。
 
 以下部分仍然由我们自己做，因为它们就是 fileOS 本身：文件夹日志的同步协议、记录的排序，以及用 MLS 分发密钥。
 
@@ -489,6 +489,7 @@ crates/
   fos-store      磁盘：节点密钥、blob、日志、本地键值存储
   fos-sync       同步协议（sans-IO，portable）
   fos-fs         文件夹、日志、顺序、分叉、挂载（sans-IO，portable）
+  fos-id         身份：did:fos、节点证书、身份链接（portable）
   fos-core       格式：CBOR、ed25519、BLAKE3（portable，最底层）
   fos-sim        多节点的确定性模拟，只测内核
 apps/            第二个 workspace，编译成 wasm32-unknown-unknown

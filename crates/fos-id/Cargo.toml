@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "fos-id"
+description = "fileOS identities: did:fos, node certificates and identity links"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[package.metadata.fos]
+portable = true
+
+[dependencies]
+fos-core.workspace = true
+bs58.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

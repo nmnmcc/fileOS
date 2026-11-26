@@ -110,3 +110,49 @@ fn a_node_with_different_rules_forks() {
             .any(|e| matches!(e, Event::Forked { .. }))
     );
 }
+
+#[test]
+fn a_node_puts_in_order_the_folder_of_an_identity_it_holds() {
+    let mut sim = Sim::default();
+    let (alice, bob) = (sim.add(1), sim.add(2));
+    sim.all_store();
+    sim.connect(alice, bob);
+
+    // The identity is a key of its own, not a node. Alice's node holds it.
+    let identity = SecretKey::from_seed(&[9; 32]);
+    let n = &mut sim.nodes[alice];
+    let (folder, step) = n.replica.create_as("identity", &identity, &mut n.engine);
+    sim.apply(alice, step);
+    sim.run();
+    assert_eq!(
+        sim.folder(alice, folder).unwrap().creator(),
+        identity.public()
+    );
+    assert_eq!(
+        sim.folder(alice, folder).unwrap().orderer(),
+        identity.public()
+    );
+
+    // Bob gets the folder. Alice writes in it as the identity.
+    sim.follow(bob, folder);
+    let n = &mut sim.nodes[alice];
+    n.blobs.0.insert(Hash::of(b"cert"), b"cert".to_vec());
+    let op = Op::Put {
+        path: "/nodes/bob".into(),
+        blob: Hash::of(b"cert"),
+        size: 4,
+    };
+    let step = n
+        .replica
+        .write(folder, op, &identity, &mut n.engine)
+        .unwrap();
+    sim.apply(alice, step);
+    sim.run();
+    assert_eq!(
+        sim.read(bob, folder, "/nodes/bob").as_deref(),
+        Some(&b"cert"[..])
+    );
+    let entry = &sim.folder(bob, folder).unwrap().entries_from(1)[0];
+    assert_eq!(entry.write.write.author, identity.public());
+    assert_eq!(entry.orderer, identity.public());
+}

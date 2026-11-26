@@ -84,6 +84,23 @@ enum Command {
     Kv { app: String },
     /// Connect to another node by its multiaddr.
     Dial { addr: String },
+    /// The identity of this node. With no command, show it.
+    Id {
+        #[command(subcommand)]
+        command: Option<IdCommand>,
+    },
+}
+
+#[derive(Subcommand)]
+enum IdCommand {
+    /// Make a new identity (a did:fos DID). This node holds its keys and is its first node.
+    New,
+    /// Add a node to the identity. Only the node that holds the signing key can.
+    AddNode { key: String },
+    /// Take a node away from the identity.
+    RemoveNode { key: String },
+    /// Join an identity, with the folder ID that `fos id add-node` gave.
+    Join { folder: String },
 }
 
 fn default_dir() -> PathBuf {
@@ -219,6 +236,42 @@ fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Dial { addr } => client()?
             .call("POST", "/v0/dial", addr.as_bytes())
+            .map(drop),
+        Command::Id { command } => id(&client()?, command, &dir),
+    }
+}
+
+fn id(client: &Client, command: Option<IdCommand>, dir: &Path) -> Result<(), Error> {
+    let text = |data: Vec<u8>| String::from_utf8_lossy(&data).trim().to_string();
+    match command {
+        None => print(&client.call("GET", "/v0/id", &[])?),
+        Some(IdCommand::New) => {
+            let did = text(client.call("POST", "/v0/id/new", &[])?);
+            println!(
+                "identity {did}\nThis node holds the keys of the identity:\n  {}\n  {}\n\
+                 Keep a copy of them in a safe place. With the rotation key you can \
+                 change everything; without it, the identity cannot be changed.",
+                dir.join("identity-rotation.key").display(),
+                dir.join("identity-signing.key").display()
+            );
+            Ok(())
+        }
+        Some(IdCommand::AddNode { key }) => {
+            let folder =
+                text(client.call("POST", &format!("/v0/id/node?key={}", enc(&key)), &[])?);
+            println!("added node {key}\nOn that node, run: fos id join {folder}");
+            Ok(())
+        }
+        Some(IdCommand::RemoveNode { key }) => {
+            client.call("DELETE", &format!("/v0/id/node?key={}", enc(&key)), &[])?;
+            println!(
+                "took away node {key}\nIt may still keep its copy of the identity folder \
+                 until your engine takes its grant away."
+            );
+            Ok(())
+        }
+        Some(IdCommand::Join { folder }) => client
+            .call("POST", &format!("/v0/id/join?folder={}", enc(&folder)), &[])
             .map(drop),
     }
 }

@@ -56,6 +56,7 @@ const topics = [
       page("dev", "Overview", "概览"),
       page("dev/contributing", "Contributing", "参与贡献"),
       page("dev/fileos", "Architecture: fileOS", "架构：fileOS"),
+      page("dev/identity", "Identity and finding nodes", "身份与查找节点"),
       page("dev/apps", "Writing apps and engines", "编写 App 和引擎"),
       page("dev/prior-art", "Projects to learn from", "值得学习的项目"),
     ],
