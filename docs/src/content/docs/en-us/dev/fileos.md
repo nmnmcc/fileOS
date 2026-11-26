@@ -9,6 +9,13 @@ A prototype of this design is in the repository. The section
 and which are not yet. The name "fileOS" is a working name.
 :::
 
+:::caution[The design is changing]
+Three parts of this page are old: one ordering node for each folder, MLS for
+encryption, and apps installed on each node. The new design is in
+[Data: sync, conflicts, storage and keys](../data/),
+[Apps as workers](../workers/) and [HTTP and the browser](../http/).
+:::
+
 ## In one sentence
 
 **The core keeps only facts: data, signatures, keys and transport. Every rule

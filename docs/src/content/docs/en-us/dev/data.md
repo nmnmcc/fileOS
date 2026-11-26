@@ -1,0 +1,341 @@
+---
+title: "Data: sync, conflicts, storage and keys"
+description: How data is kept and synced with no ordering node, how conflicts are settled, how storage stays bounded, and how data is encrypted.
+---
+
+:::note[Status: design]
+This page is the new design. It takes the place of the ordering node of each
+folder in [Architecture](../fileos/), which is still how the prototype works.
+Nothing on this page is built yet.
+:::
+
+## Why there is no ordering node
+
+The prototype gives each folder one ordering node, which puts all writes in
+one order. In a network of people, we cannot take it that any node is always
+online and never moves. A laptop sleeps, a phone changes networks, a box at
+home loses power. With one ordering node, nobody can write when it is away.
+
+There is no way round this: with no node that is always there, and no
+majority of nodes online, a system cannot both take writes at any time and
+give every reader the newest data (the CAP theorem). We pick writes at any
+time. Data is made correct by merging, not by an owner:
+
+- **Every node can write at any time, also when offline.**
+- **All nodes come to the same state** when they have the same operations,
+  in any order.
+- **An owner is only an aid** (for speed and less work), never what makes data
+  correct.
+
+## The data model
+
+### Signed logs in a causal graph
+
+- Every writer (a node or an app, by its key) has its own **append-only log**.
+  Each entry is signed by the writer, names the entry before it in the same
+  log by its hash, and names the entries of other logs that it depends on.
+- Together the logs make a **causal graph** (a DAG): an entry comes after
+  everything it names.
+- An entry has a small **header** (writer, signature, place in the log,
+  dependencies, the hash of the body) and a **body**. They are kept apart, so
+  a body can be deleted and the chain of hashes stays good.
+
+This is close to the format of [p2panda](https://p2panda.org): Ed25519,
+BLAKE3, CBOR, one log for each author, and headers apart from bodies. We take
+its format as our model.
+
+### A folder is a flat key space
+
+Inside a folder, data is a **flat set of keys**, as in S3, not a tree of
+directory nodes:
+
+- A key is a path such as `/photos/2026/a.jpg`. A "directory" is only a prefix
+  that keys have in common. Listing a directory is a search by prefix.
+- There is no move operation. A rename makes a new key and deletes the old
+  one. This is cheap: the content is chunks named by their hash, so no data is
+  copied.
+- An empty directory is a marker key, if one is needed.
+- Keys are UTF-8 in NFC form, with `/` between parts. They are case-sensitive.
+  `.` and `..` are not allowed, and keys have a size limit.
+
+Why not a tree: when folders can move, a concurrent move can make a cycle (A
+into B while B goes into A), and every node must agree where a node was at
+the time of each write and each grant. That is very hard to get right, and
+it changes access without anyone asking. With a flat key space, access goes
+with the path, and a path is never changed by another operation.
+
+Folders are still put together into a tree, by mounts. A folder is the large
+unit of sync and access, like an S3 bucket, and it changes seldom.
+
+### Each key merges by itself
+
+- Writes to different keys never conflict.
+- Concurrent writes to the same file are kept as **versions side by side**.
+  No winner is picked without the user knowing (see
+  [Conflicts](#conflicts-what-people-and-developers-see)).
+- Appends to a stream never conflict. Concurrent records are put in causal
+  order, and records with no order between them are put in a fixed order.
+
+## Access: by path prefix, with strong removal
+
+### Capabilities on path prefixes
+
+Access is given on a **path prefix** (an "area"), as in
+[Willow's Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html):
+"read and write under `/photos/2026/`". A grant can be given on to others,
+but only made smaller. Every node can check a write with no network.
+
+| Access | What it lets you do                                                       |
+| ------ | ------------------------------------------------------------------------- |
+| Read   | Read and get the keys to decrypt                                          |
+| Write  | Add entries under the prefix                                              |
+| Manage | Give and take back access under the prefix                                |
+| Relay  | Keep and pass on the ciphertext, with no keys: for always-on helper nodes |
+
+Relay comes from Ink & Switch's
+[Keyhive](https://www.inkandswitch.com/keyhive/notebook/). It lets a VPS or a
+friend's node keep your data safe without being able to read it.
+
+### When a removal and a write happen at the same time
+
+This is the hardest question in access control with no ordering node. We use
+the rule that [p2panda-auth](https://p2panda.org/2025/07/28/access-control.html)
+calls **strong removal**:
+
+- When someone's access is taken away, every operation they made
+  **concurrently** with the removal is not valid. It stays in the graph, but it
+  has no effect. Operations that depend on it are not valid either.
+- It uses only causal order. No clocks, and every node gets the same answer.
+
+Strong removal has one bad case: two managers who remove each other at the
+same time are both removed, and the group may have no manager. So every
+identity has an **owner root key**: the rotation key with the highest
+priority in its [`did:fos`](../identity/) DID. It can never be removed, and it
+wins any conflict. Family and friends get access through groups, under it.
+
+The rule is a policy behind an interface, with this default, so that it can
+be changed.
+
+**Times are never used for access.** A clock that is wrong, or a node that
+lies about the time, must not be able to take or keep access.
+
+## Consistency
+
+### What is promised
+
+- **All nodes come to the same state** (strong eventual consistency).
+- **In one session, you always see your own writes, and you never see older
+  data than you saw before** (read-your-writes, monotonic reads).
+- **Between devices, a write is seen in seconds** when they are online, but
+  not at once.
+
+### Stickiness and bookmarks
+
+We take the way of [Cloudflare D1's Sessions API](https://developers.cloudflare.com/d1/best-practices/read-replication/):
+
+- **Stickiness:** a session stays on one node, usually the node on your
+  device. That node puts its own writes into its view at once, so you see
+  them.
+- **Bookmarks:** each answer has a `Fos-Bookmark` header: the heads of the
+  graph that the answer was made from. The app sends it back with its next
+  request. A node that has not yet seen those entries waits for them, or
+  sends the request to a node that has.
+
+### Rules that need agreement
+
+Some rules cannot be kept by merging, because each node decides alone: a name
+that must be unique, a booking that must not be made two times, a number that
+must not go below zero. For these few cases there is an **authority path**:
+the app says that a write must be agreed by one named node (by default, a
+node of the owner). If that node cannot be reached, the write fails. It is
+never kept in secret and merged later.
+
+## Conflicts: what people and developers see
+
+A CRDT promises that all devices end with the same data. It does not promise
+that the data is what anyone wanted. A conflict is not taken away; it is
+settled by a fixed rule. These still happen:
+
+- **The same value written at the same time.** With "last writer wins", one
+  write is lost. With a multi-value register, both are kept and the app
+  chooses.
+- **Text written at the same place at the same time.** Some algorithms mix the
+  letters of the two writes. Newer ones such as
+  [Fugue](https://arxiv.org/abs/2305.00583) keep this very small.
+- **Moves.** Concurrent moves in a list can make two copies, and in a tree they
+  can make a cycle. (A reason for flat keys.)
+- **A delete at the same time as an edit.** Most often the delete wins, and the
+  edit is lost.
+- **Rules about meaning** (unique names, two bookings, below zero). A CRDT
+  cannot see these. See [Rules that need agreement](#rules-that-need-agreement).
+
+### Defaults
+
+| Data                  | Default                                                                                             |
+| --------------------- | --------------------------------------------------------------------------------------------------- |
+| Whole files           | Keep all versions. Never pick a winner in secret. The system shows "N versions" and lets you choose |
+| Small fields of apps  | Last writer wins for each field, but the value that lost stays in the history and can come back     |
+| Documents (rich text) | A text CRDT (Fugue-based), with full history; drafts and review for written work                    |
+| Rules about meaning   | The authority path, or a fix that the user can see                                                  |
+
+### What the kernel gives apps
+
+- **Typed CRDT building blocks** in `wit/fos.wit`: registers (last writer wins,
+  and multi-value), maps, counters, text, movable lists and movable trees.
+  They are built on one library, [Loro](https://github.com/loro-dev/loro)
+  (MIT), which has movable lists and trees and can cut old history. Its cost
+  is to be measured before it is taken.
+- **History that keeps everything** (inside the retention policy), so a write
+  that "lost" can always be found.
+- **One conflict interface and one system view** of versions, not one for each
+  app.
+- **A hook after merging**, where an app checks its rules and gives fixes or
+  warnings.
+- **The authority path**, as a policy that can be changed.
+
+## Storage that does not grow without end
+
+Data that grows with time, and not with what people care about, is a main
+reason why software is hard to run yourself. So this is a rule:
+**no kind of data grows without a limit by default.** Every kind of data has
+an owner, a time it is kept, and a plan for when space runs out.
+
+| Data                   | How it is kept bounded                                                |
+| ---------------------- | --------------------------------------------------------------------- |
+| Content now            | Grows only with what people add                                       |
+| Old versions           | Retention policy, thinner with age                                    |
+| Logs, headers, deletes | Made smaller at checkpoints                                           |
+| Caches and indexes     | A budget; the least used go first; never backed up; can be made again |
+| Data kept for others   | A quota for each person; relay and mailbox data ends after a time     |
+
+### Retention: thinner with age
+
+As in Time Machine, restic's `forget --keep-…` and Syncthing's staggered
+versions. The default:
+
+- the last 24 hours: one version each hour;
+- the last 30 days: one version each day;
+- older: one version each week, with a limit.
+
+It is a policy for each folder. Deleted files go to a bin that empties after
+a time.
+
+### Chunks named by content
+
+Files are cut into chunks at points that the content decides
+(content-defined chunking, as in restic and borg), and each chunk is named by
+its BLAKE3 hash. A new version keeps only the chunks that changed. The same
+content in two files is kept once. Sync sends only the chunks that are
+missing. So old versions cost about as much as the bytes that changed, not
+the size of the file.
+
+### Checkpoints: smaller logs and final history
+
+The owner root key signs a **checkpoint** from time to time (a policy: for
+example once a day, when a device of the owner is online). A checkpoint says:
+"the state up to these heads is final".
+
+- **Compaction.** History before a checkpoint becomes a snapshot. Only the
+  entries that the retention policy keeps stay, deletes ("tombstones") go,
+  and access control keeps only the members at that point, as Kafka does for
+  each key. New nodes start from the signed snapshot. Old bodies can be
+  deleted first, and the small headers at the next checkpoint. Loro can cut
+  history in the same way (shallow snapshots).
+- **Finality.** An entry that comes after a checkpoint but says it is older is
+  not taken. Without this, a stolen device could make writes that say they
+  are old, and nobody could tell them from a late honest write.
+- **A device that was offline for a long time.** Its changes that are older
+  than the checkpoint are put on top again as new entries, as `git rebase`
+  does, and the user is told. Where they meet other changes, the result is
+  versions side by side. Nothing is lost, but nothing is merged in secret.
+
+### A budget that people can see
+
+- `fos node status` says where the space goes: content, old versions,
+  metadata, caches, and data kept for others.
+- People can set a budget. When it is nearly full, the kernel makes room in
+  this order: caches first, then thinner old versions, then no new data for
+  others. Last, it tells the person. Content that the person has now is never
+  deleted by the kernel.
+- An app says for all its data if it is to be kept or is a cache. Caches count
+  against the budget and can be deleted at any time.
+
+## Encryption
+
+### Forward secrecy, and where it means something
+
+Forward secrecy means: if a key is stolen today, older data stays safe. For
+data that is **still kept**, this is not possible: whoever has today's key
+can read what you can read. Systems with CRDTs, such as Keyhive, give it up
+for this reason. Forward secrecy means something in three other places, and
+we keep it there:
+
+| Where                     | How                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Deleted or compacted data | **The key is destroyed** with the data, so copies anywhere are of no use                               |
+| Moving over the network   | libp2p's Noise already gives it                                                                        |
+| "Burn after reading" chat | A double ratchet for that stream, if the person wants it (new devices then cannot read older messages) |
+
+### Keys
+
+1. Each chunk is encrypted with a **random data key**. Data keys are kept
+   encrypted with the folder's **epoch key** (key wrapping). A new epoch key
+   only wraps the small data keys again; the data is not encrypted again.
+2. **A new epoch key** comes when a member or a device is taken away (so that
+   they cannot read new data: post-compromise security), and from time to
+   time.
+3. **Delete means destroy the key** (crypto-shredding). When a file is deleted,
+   leaves the retention policy, or is compacted at a checkpoint, its data keys
+   are destroyed. Copies of the ciphertext on friends' nodes and in backups are
+   then only bytes. We cannot make a friend's node delete your data; this
+   makes it not matter.
+
+### Giving out epoch keys: HPKE
+
+The device that makes a change of members makes a new random epoch key, and
+encrypts it with **HPKE** (RFC 9180) for each device that is still a member.
+
+- With two changes at the same time, both keys are good for reading, and new
+  writes use one of them by a fixed rule. No ordering node is needed.
+- The cost is one HPKE message for each device. A family folder of 10 people
+  with 3 devices each is 30 messages, for a change that seldom happens.
+- **Weak point:** a device gets epoch keys with its own HPKE key. If that key
+  is stolen later, and someone kept the encrypted epoch keys, they can open
+  them. So **each device changes its HPKE key from time to time and destroys
+  the old one.**
+
+We looked at three group key agreements:
+
+| Protocol                                    | Why not now                                                                       |
+| ------------------------------------------- | --------------------------------------------------------------------------------- |
+| MLS (RFC 9420)                              | Needs exactly one commit in each epoch, so it needs an ordering node              |
+| DCGKA (Weidner, Kleppmann and others, 2021) | The best fit, but its only Rust code (p2panda's) has open findings from its audit |
+| BeeKEM (Keyhive)                            | A good fit, but it is not ready ("do not use in production"), with no audit       |
+
+HPKE is simple, uses standard parts, and is enough for small groups. When
+DCGKA or BeeKEM is ready and audited, we can move to it for stronger forward
+secrecy. The crate is [`hpke`](https://github.com/rozbb/rust-hpke) 0.15
+(pure Rust, builds for WebAssembly). There will be an outside security audit
+before this is used for real data.
+
+## Still open
+
+- How the interface tells people that data they already had was rolled back
+  (by strong removal, or by a rebase after a checkpoint).
+- How direct file writes (the command line) and app writes fit the same rules.
+- A folder shared by several identities: who signs its checkpoints, and whose
+  nodes handle its events.
+- The cost of Loro, measured with `budget`.
+
+## Projects we learn from
+
+| Project                                                                                       | What we take                                                    |
+| --------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| [p2panda](https://p2panda.org)                                                                | The log format; strong removal (p2panda-auth)                   |
+| [Keyhive](https://www.inkandswitch.com/keyhive/notebook/)                                     | The Relay access; why forward secrecy is given up for history   |
+| [Willow and Meadowcap](https://willowprotocol.org)                                            | Access by path prefix; why time must not decide access          |
+| [Matrix state resolution](https://spec.matrix.org/latest/rooms/v2/)                           | A rule for access in a graph, proven at scale, and its problems |
+| [Cloudflare D1](https://developers.cloudflare.com/d1/best-practices/read-replication/)        | Bookmarks for consistency in a session                          |
+| [Loro](https://github.com/loro-dev/loro), [Automerge](https://github.com/automerge/automerge) | CRDTs for app data                                              |
+| [Upwelling](https://www.inkandswitch.com/upwelling/)                                          | Automatic merge is necessary but not enough; people review      |
+| restic, borg, Time Machine, Syncthing                                                         | Chunks, and retention that gets thinner with age                |

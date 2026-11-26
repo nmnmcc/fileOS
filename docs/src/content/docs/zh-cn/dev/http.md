@@ -20,15 +20,15 @@ description: App 和插件怎样通过 HTTP 提供服务，每个都有自己的
 
 ```
 http://fos.localhost:<端口>/            内核：界面、登录、API
-http://<app-id>.localhost:<端口>/       每个 App 一个 origin
+http://<app>.localhost:<端口>/       每个 App 一个 origin
 http://<plugin-id>.localhost:<端口>/    带界面的插件
 ```
 
 - **不用配置。** RFC 6761 规定 `.localhost` 下的所有名字都指向本机。Chrome、Firefox 和 Safari 都不经过 DNS，直接把 `*.localhost` 解析到本机。
 - **不用证书。** 浏览器把 `localhost` 当作安全上下文，Service Worker、WebAuthn 等 Web API 都能用。
-- **App ID 不变，也永不复用。** 浏览器的存储跟着 origin 走。如果一个新 App 拿到了已删除 App 的名字，就会得到那个 App 的数据。所以 App ID 由 App 文件夹的 ID 推导：名字加上哈希的开头，例如 `photos-k3x9q2m7ab`（作为 DNS 标签，最多 63 个字符）。
+- **名字是 App 在身份中的名字**，在身份的每台设备上都相同，因为 App 随身份同步（见 [App 作为 Worker](../workers/)）。浏览器的存储跟着 origin 走，所以一个名字被另一个 App 再次使用时，内核会在它的第一个回应里发送 `Clear-Site-Data`。（原型目前仍在每个节点上由 App 文件夹生成 ID，例如 `photos-k3x9q2m7ab`。）
 
-不同端口隔不开 Cookie（RFC 6265），路径在浏览器里也隔不开任何东西。所以 App ID 放在主机名里，而不是端口或路径里。
+不同端口隔不开 Cookie（RFC 6265），路径在浏览器里也隔不开任何东西。所以 App 放在主机名里，而不是端口或路径里。
 
 ## App 和插件用 `wasi:http` 提供 HTTP
 
@@ -42,7 +42,7 @@ http://<plugin-id>.localhost:<端口>/    带界面的插件
 
 所有登录都由内核用标准协议完成。App 看不到密码、会话和令牌。
 
-1. 用户打开 `http://photos-k3x9.localhost/`。App 的静态文件不需要登录：它们是 App 的代码，不是数据。
+1. 用户打开 `http://photos.localhost/`。App 的静态文件不需要登录：它们是 App 的代码，不是数据。
 2. App 没有令牌，就带着 PKCE challenge 把浏览器转到 `http://fos.localhost/authorize`。
 3. 内核的页面让用户登录（用 passkey），并询问是否允许这个 App 代表用户行事。这个页面在内核自己的 origin 上，App 伪造不了。
 4. 内核带着一个授权码把浏览器转回 App。App 在 `http://fos.localhost/token` 用授权码换取令牌（CORS 只允许这个 App 的 origin）。
@@ -64,12 +64,12 @@ HTTP API 遵循 RFC 9110：用 `ETag` 和 `If-Match` 处理版本，用 `Range` 
 
 ## 浏览器和内核在哪里
 
-| 场景                       | App 的地址                   | 用户要配置    |
-| -------------------------- | ---------------------------- | ------------- |
-| 装了节点的设备（增强模式） | `<app-id>.localhost`         | 什么都不用    |
-| 你的另一台装了节点的设备   | 同上，由本机节点转发         | 什么都不用    |
-| 没有节点的设备             | `<app-id>.<节点>.<共享域名>` | 什么都不用    |
-| 你自己的域名（可选）       | `<app-id>.<你的域名>`        | 一条 DNS 记录 |
+| 场景                       | App 的地址                | 用户要配置    |
+| -------------------------- | ------------------------- | ------------- |
+| 装了节点的设备（增强模式） | `<app>.localhost`         | 什么都不用    |
+| 你的另一台装了节点的设备   | 同上，由本机节点转发      | 什么都不用    |
+| 没有节点的设备             | `<app>.<节点>.<共享域名>` | 什么都不用    |
+| 你自己的域名（可选）       | `<app>.<你的域名>`        | 一条 DNS 记录 |
 
 ### 增强模式：设备上有节点
 

@@ -62,9 +62,9 @@ engine is not asked. The formats are part of the contract between nodes.
 
 ### The identity folder
 
-Every identity has one folder. Its creator and ordering node is the signing
-key, so writes to it are made only on the node that holds the signing key. It
-has:
+Every identity has one folder. Only the signing key writes to it. (In the
+prototype the signing key is also the ordering node of the folder; in the new
+design there is no ordering node, see [Data](../data/).) It has:
 
 | Path          | What it is                                                                  |
 | ------------- | --------------------------------------------------------------------------- |
