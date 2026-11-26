@@ -539,7 +539,7 @@ wit/
 
 ## 代价和待定问题
 
-1. **编译时间。** 干净构建的大部分时间花在 wasmtime 的编译器（cranelift）上。在 CI 机器（4 核）上干净构建需要 198 秒，所以干净构建的预算现在是 360 秒。debug 构建中 cranelift 不做优化，这样它的编译快了约三分之一。增量构建很快：修改 `fos` 后 1.0 秒（预算 5 秒），修改 `fos-core` 后 4.2 秒（预算 20 秒）。
+1. **编译时间。** 干净构建的大部分时间花在 wasmtime 的编译器（cranelift）上。debug 构建中 cranelift 不做优化，这样它的编译快了约三分之一。在 CI 机器（4 核）上：干净构建 166 秒（预算 360 秒），修改 `fos` 后重建 1.0 秒（预算 5 秒），修改 `fos-core` 后重建 4.2 秒（预算 20 秒）。
 2. **QUIC。** `libp2p-quic` 总会打开 quinn 的 `aws-lc-rs` 后端，而 aws-lc-sys 是不允许的（`deny.toml`）。所以原型使用 TCP。中继和打洞在 TCP 上也能工作。等 libp2p 允许使用 `ring`，或者我们修改这条规则时，再加上 QUIC。
 3. **每个 crate 只有一个版本。** libp2p 和 wasmtime 会带来一些 crate 的两个版本（比如 `sha2`、`curve25519-dalek` 和 `getrandom`）。每一个都写在 `deny.toml` 里，并注明原因。它们都不来自我们自己的代码。
 4. **WASM 的速度。** 缩略图和全文搜索可能比原生代码慢 1.5 到 2 倍，需要在家用硬件上测量。
