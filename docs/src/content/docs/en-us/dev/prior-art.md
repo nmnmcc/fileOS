@@ -3,7 +3,7 @@ title: Projects to learn from
 description: Earlier work we study before we build our own, and what we take from each.
 ---
 
-homeserver writes its own core so that it stays light, is easy to extend and
+fileOS writes its own core so that it stays light, is easy to extend and
 fits our goals. To do that well, we study earlier work: software, protocols,
 papers, essays and projects that did not succeed. This page lists them by
 area. For each one it says what to learn from it and, where it matters, how
@@ -124,8 +124,8 @@ them.
   [CardDAV](https://www.rfc-editor.org/rfc/rfc6352).
 - **Sign-in**: [WebAuthn](https://www.w3.org/TR/webauthn-3/) (passkeys),
   [OpenID Connect](https://openid.net/developers/specs/) and
-  [OAuth 2.1](https://oauth.net/2.1/). homeserver implements these protocols
-  as an identity provider.
+  [OAuth 2.1](https://oauth.net/2.1/). The login app of fileOS will
+  implement these protocols as an identity provider.
 
 ## Identity and trust
 
@@ -150,8 +150,8 @@ them.
   with OpenID Connect and passkeys.
 - **[Authelia](https://www.authelia.com/)** and
   **[Authentik](https://goauthentik.io/)**: authentication gateways that
-  self-hosters now run and keep up to date on their own. homeserver's built-in
-  identity provider is meant to take their place.
+  self-hosters now run and keep up to date on their own. The login app of
+  fileOS is meant to take their place.
 - **[IndieAuth](https://indieauth.spec.indieweb.org/)**: signing in to other
   sites with your own URL as your identity.
 
@@ -172,7 +172,7 @@ them.
 
 The federated protocols we have today teach one lesson: federation alone does
 not give everyone a server of their own. Most people still come together on a
-few large servers. See "Why federation alone is not enough" in the [manifesto](https://github.com/nmnmcc/homeserver/blob/main/MANIFESTO.md) for
+few large servers. See "Why federation alone is not enough" in the [manifesto](https://github.com/nmnmcc/fileOS/blob/main/MANIFESTO.md) for
 the reasons and our answers.
 
 - **[Matrix](https://spec.matrix.org/)**: room state resolution across
@@ -180,8 +180,7 @@ the reasons and our answers.
   Study why. Identity is tied to the server's domain. Every server in a room
   must copy and resolve that room's whole state, so a small server that joins
   a large room pays a lot. And running a server takes work that does not end.
-  Its peer-to-peer experiments (Pinecone) are also worth reading. Note that
-  "homeserver" is also a Matrix term.
+  Its peer-to-peer experiments (Pinecone) are also worth reading.
 - **[ActivityPub](https://www.w3.org/TR/activitypub/)** and Mastodon: the
   federation that most people use. It is built around servers, not people.
   Identity is tied to an instance, and when you move you lose your old posts.
@@ -194,7 +193,7 @@ the reasons and our answers.
   is needed.
 - **[Nostr](https://github.com/nostr-protocol/nips)**: keys plus simple
   relays, and how far a very small protocol can go. Identity belongs to no
-  server, as in homeserver.
+  server, as in fileOS.
 - **[Briar](https://briarproject.org/)** and its
   [Mailbox](https://briarproject.org/download-briar-mailbox/): keeping
   messages for contacts who are offline. This is our "mailbox" role.
@@ -352,7 +351,7 @@ the reasons and our answers.
 
 ## Applications in scope
 
-These projects already do one part of what homeserver does. Study their
+These projects already do one part of what fileOS does. Study their
 features and data models, not their architecture.
 
 Only everyday needs that 80% of people have go here. Specialist needs, such

@@ -7,7 +7,7 @@ import starlightSidebarTopics from "starlight-sidebar-topics";
 
 // An empty value, as in a pull request build, is the same as no value.
 const site = process.env.DOCS_SITE_URL || undefined;
-// The path the site is served under, such as /homeserver on GitHub Pages.
+// The path the site is served under, such as /<repository> on GitHub Pages.
 const base = process.env.DOCS_BASE || undefined;
 const defaultLocale = "en-us";
 const locales = {
@@ -38,33 +38,14 @@ const topics = [
     label: t("User manual", "用户手册"),
     link: "/user/",
     icon: "seti:folder",
-    items: [
-      page("user", "Overview", "概览"),
-      page("user/getting-started", "Getting started", "开始使用"),
-      group("Your data", "你的数据", [
-        page("user/data", "Spaces and items", "空间与条目"),
-        page("user/finding", "Finding things", "查找"),
-        page("user/sharing", "Sharing", "分享"),
-      ]),
-      page("user/apps", "Apps and assistants", "应用与助手"),
-      page("user/recovery", "Your recovery code", "恢复码"),
-    ],
+    items: [page("user", "Overview", "概览")],
   },
   {
     id: "admin",
     label: t("Administration manual", "管理手册"),
     link: "/admin/",
     icon: "setting",
-    items: [
-      page("admin", "Overview", "概览"),
-      page("admin/install", "Installation", "安装"),
-      page("admin/running", "Running a node", "运行节点"),
-      page("admin/configuration", "Configuration", "配置"),
-      page("admin/access", "Tokens and grants", "令牌与授权"),
-      page("admin/backups", "Backups and restore", "备份与恢复"),
-      page("admin/sign-in", "Sign-in for other apps", "为其他应用提供登录"),
-      page("admin/troubleshooting", "Troubleshooting", "故障排除"),
-    ],
+    items: [page("admin", "Running a node", "运行节点")],
   },
   {
     id: "dev",
@@ -74,8 +55,8 @@ const topics = [
     items: [
       page("dev", "Overview", "概览"),
       page("dev/contributing", "Contributing", "参与贡献"),
-      page("dev/api", "REST API", "REST API"),
-      page("dev/architecture", "Architecture", "架构"),
+      page("dev/fileos", "Architecture: fileOS", "架构：fileOS"),
+      page("dev/apps", "Writing apps and engines", "编写 App 和引擎"),
       page("dev/prior-art", "Projects to learn from", "值得学习的项目"),
     ],
   },
@@ -95,7 +76,7 @@ export default defineConfig({
       },
     }),
     starlight({
-      title: "homeserver",
+      title: "fileOS",
       defaultLocale,
       locales,
       plugins: [

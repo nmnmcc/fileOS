@@ -8,7 +8,7 @@ body:
     attributes:
       value: |
         Write in English or Chinese. For a security problem, send a
-        [private report](https://github.com/nmnmcc/homeserver/security/advisories/new) in place of an issue.
+        [private report](https://github.com/nmnmcc/fileOS/security/advisories/new) in place of an issue.
   - type: textarea
     id: what
     attributes:
@@ -21,14 +21,14 @@ body:
     attributes:
       label: Steps to make it take place again
       placeholder: |
-        1. hs ctl init
-        2. hs ctl serve
+        1. fos init --engine apps/Capability.app
+        2. fos run
         3. ...
   - type: input
     id: version
     attributes:
       label: Version
-      description: The output of `hs --version`, or the commit you made it from.
+      description: The output of `fos --version`, or the commit you made it from.
     validations:
       required: true
   - type: input

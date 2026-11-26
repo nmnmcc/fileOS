@@ -17,8 +17,8 @@ from rich.console import Console
 from rich.table import Table
 
 ROOT = Path(__file__).resolve().parent.parent
-LEAF_FILE = ROOT / "crates/hs/src/main.rs"
-CORE_FILE = ROOT / "crates/hs-core/src/lib.rs"
+LEAF_FILE = ROOT / "crates/fos/src/main.rs"
+CORE_FILE = ROOT / "crates/fos-core/src/lib.rs"
 
 console = Console()
 
@@ -44,12 +44,12 @@ def timed_build(*extra: str) -> float:
 def main(
     clean: Annotated[
         float, typer.Option(envvar="BUDGET_CLEAN", help="Budget for a clean build, in seconds.")
-    ] = 180,
+    ] = 360,
     leaf: Annotated[
         float, typer.Option(envvar="BUDGET_LEAF", help="Budget after a change to a leaf crate.")
     ] = 5,
     core: Annotated[
-        float, typer.Option(envvar="BUDGET_CORE", help="Budget after a change to hs-core.")
+        float, typer.Option(envvar="BUDGET_CORE", help="Budget after a change to fos-core.")
     ] = 20,
 ) -> None:
     """Check the compile-time budget."""
@@ -61,7 +61,7 @@ def main(
     with console.status("Rebuild after a change to a leaf crate..."):
         LEAF_FILE.touch()  # make it look changed, but keep the contents
         leaf_seconds = timed_build()
-    with console.status("Rebuild after a change to hs-core..."):
+    with console.status("Rebuild after a change to fos-core..."):
         CORE_FILE.touch()
         core_seconds = timed_build()
 

@@ -1,4 +1,4 @@
-# Contributing to homeserver
+# Contributing to fileOS
 
 **English** | [简体中文](CONTRIBUTING.zh-CN.md)
 
@@ -48,9 +48,9 @@ An ordinary laptop should be enough to contribute. Most of Rust's compile time d
 
 | Measure                                | Budget  |
 | -------------------------------------- | ------- |
-| Clean debug build of the workspace     | ≤ 180 s |
+| Clean debug build of the workspace     | ≤ 360 s |
 | Rebuild after a change to a leaf crate | ≤ 5 s   |
-| Rebuild after a change to `hs-core`    | ≤ 20 s  |
+| Rebuild after a change to `fos-core`   | ≤ 20 s  |
 
 The budgets are for a laptop with 4 cores and 8 GB of RAM. We will change the budgets as the code gets bigger.
 
@@ -58,9 +58,9 @@ The budgets are for a laptop with 4 cores and 8 GB of RAM. We will change the bu
 
 1. **We review every new external dependency.** Say in the PR why it is needed and how much time it adds to the clean build (compare `cargo build --timings` before and after). Judge it by build time, binary size and what it brings with it (a second cryptography library or HTTP stack, a banned crate, heavy procedural macros, build scripts, C or C++). Do not judge it by its number of crates: a library in many small crates can cost less than one large crate.
 2. Put it once in the root `Cargo.toml` under `[workspace.dependencies]`, with `default-features = false`. Switch on only the features you use.
-3. One version of each crate. `cargo deny check` does not let two versions in, because each copy gets compiled by itself.
-4. No C or C++ that needs cmake. Small C code that the `cc` crate compiles is allowed, such as SQLite through the `bundled` feature of SQLx's SQLite driver. For TLS, use rustls with the `ring` backend. `hs` comes as one executable; it does not download or load anything at run time.
-5. Keep heavy dependencies (networking, cryptography, search, WASM) inside the crate that needs them, so changes in other places do not rebuild them.
+3. One version of each crate. `cargo deny check` does not let two versions in, because each copy gets compiled by itself. When an upstream crate brings a second version that we cannot take out, put it under `skip` in `deny.toml`, with the reason.
+4. No C or C++ that needs cmake. Small C code that the `cc` crate compiles is allowed, such as the code in `ring`. For TLS, use rustls with the `ring` backend. `fos` comes as one executable; it loads only the `.app` folders that the user gives it.
+5. Keep heavy dependencies inside the crate that needs them, so changes in other places do not rebuild them: wasmtime is only in `fos-runtime`, and libp2p is only in `fos-net`.
 
 ### Writing code that compiles fast
 
@@ -88,30 +88,31 @@ The budgets are for a laptop with 4 cores and 8 GB of RAM. We will change the bu
 
 ```
 crates/
-  hs              binary: wires the components together, nothing else
-  hs-api          everything served over HTTP: REST, federation, DAV, MCP, Bitwarden, S3
-  hs-node         assembles the components into one node
-  hs-net          federation and mutual aid between servers
-  hs-client       REST client and wire types, with optional OpenAPI schemas
-  hs-plugin-host  sandboxed WebAssembly plugin runtime
-  hs-idp          OpenID Connect provider, passkeys, forward auth (no I/O)
-  hs-objects      blobs, replicas, encryption at the trust boundary
-  hs-store        derived index in SQLite: resources, links, search, places
-  hs-space        space logs: ordering, membership, grants (sans-IO)
-  hs-media        media metadata and thumbnails
-  hs-sim          deterministic multi-node simulation, for tests
-  hs-identity     key-based identity, devices, migration (portable)
-  hs-plugin-api   Plugin Interface (MIT OR Apache-2.0, no_std, portable)
-  hs-core         core formats: CBOR, COSE, hashes, logs (bottom of the graph, portable)
+  fos             the program: wires the components together, nothing else
+  fos-node        assembles the components into one node
+  fos-gateway     the local HTTP API for clients
+  fos-runtime     wasmtime: .app folders, engines and apps
+  fos-net         libp2p: carries sync messages between nodes
+  fos-store       the data directory: node key, blobs, folder logs, local key-value stores
+  fos-sync        sync between nodes (sans-IO, portable)
+  fos-fs          folders: signed log, order, forks, mounts (sans-IO, portable)
+  fos-core        formats: CBOR, ed25519, BLAKE3 (bottom of the graph, portable)
+  fos-sim         deterministic multi-node simulation, for tests
+apps/             a second workspace, built for wasm32-unknown-unknown by `apps`
+  fos-app         the SDK for apps and engines (MIT OR Apache-2.0)
+  capability      the default engine
+  photos          the photos app
+wit/
+  fos.wit         the interfaces between the core and components (MIT OR Apache-2.0)
 ```
 
-Crates marked _portable_ have `portable = true` under `[package.metadata.hs]` in their `Cargo.toml`. They have to build for `wasm32-unknown-unknown`, because plugins, phone shells and the web app use them; `check` makes sure of this. Do not use threads, files, sockets or clocks in them. Get to those through interfaces that each host gives.
+Crates marked _portable_ have `portable = true` under `[package.metadata.fos]` in their `Cargo.toml`. They have to build for `wasm32-unknown-unknown`, because apps, phone shells and the web app use them; `check` makes sure of this. Do not use threads, files, sockets or clocks in them. Get to those through interfaces that each host gives.
 
-The documentation site is in `docs/`. It is built with [Astro Starlight](https://starlight.astro.build) (full-text search, translations). English pages are in `docs/src/content/docs/en-us/`, and Simplified Chinese pages are in `docs/src/content/docs/zh-cn/`, with the same file names. The pages are in three manuals. Each manual is a topic in the switcher at the top of the sidebar: `user/` for people who use a homeserver, `admin/` for people who run one, and `dev/` for developers. Put a new page in both languages, and add it to the `topics` list in `docs/astro.config.mjs`. Write it for the reader of its manual.
+The documentation site is in `docs/`. It is built with [Astro Starlight](https://starlight.astro.build) (full-text search, translations). English pages are in `docs/src/content/docs/en-us/`, and Simplified Chinese pages are in `docs/src/content/docs/zh-cn/`, with the same file names. The pages are in three manuals. Each manual is a topic in the switcher at the top of the sidebar: `user/` for people who use fileOS, `admin/` for people who run a node, and `dev/` for developers. Put a new page in both languages, and add it to the `topics` list in `docs/astro.config.mjs`. Write it for the reader of its manual.
 
 For production builds, set `DOCS_SITE_URL` to the public origin of the site. Then the build makes canonical URLs, `hreflang` links and the sitemap. The page at `/` only sends you to a language; it is not indexed and is not in the sitemap.
 
-Dependencies only go down. `hs-core` depends on no other homeserver crate. `hs-plugin-api` has no dependencies at all. `hs` stays thin, so that it rebuilds in seconds.
+Dependencies only go down. `fos-core` depends on no other fileOS crate. Apps and engines depend only on `fos-app`. `fos` stays thin, so that it rebuilds in seconds.
 
 ## Mechanism, not policy
 
@@ -119,12 +120,12 @@ We give mechanisms and sensible defaults; each person makes the rules. When code
 
 ## Licensing
 
-homeserver is under [AGPL-3.0-only](LICENSE), with the [homeserver Plugin Exception](PLUGIN-EXCEPTION.md) for plugins that use only the Plugin Interface. When you contribute, you agree that your contribution is under:
+fileOS is under [AGPL-3.0-only](LICENSE), with the [fileOS Plugin Exception](PLUGIN-EXCEPTION.md) for apps and engines that use only the Plugin Interface. When you contribute, you agree that your contribution is under:
 
-- **AGPL-3.0-only**, for everything except `crates/hs-plugin-api`
-- **MIT OR Apache-2.0**, for `crates/hs-plugin-api`, so that plugins can use any license
+- **AGPL-3.0-only**, for everything except `apps/fos-app` and `wit/`
+- **MIT OR Apache-2.0**, for `apps/fos-app` and `wit/`, so that apps and engines can use any license
 
-You keep the copyright to your work. There is no Contributor License Agreement. So no one, not even the maintainers, is able to put homeserver under a different license by themselves.
+You keep the copyright to your work. There is no Contributor License Agreement. So no one, not even the maintainers, is able to put fileOS under a different license by themselves.
 
 Put an SPDX header at the start of every source file:
 
@@ -156,7 +157,7 @@ budget   # compile-time budget
 
 The workspace gives its MSRV (the oldest Rust version it supports) in `Cargo.toml`. Nix gives that compiler for a locked check of all native targets.
 
-To measure how requests are handled with access logging on, run `cargo bench -p hs-api --bench request_path`. Set `HS_BENCH_REQUESTS` to change the sample size. The benchmark includes putting access events in the queue and flushing them. It also gives the p99 latency for blob range reads and resource writes at the same time, over loopback HTTP.
+`apps` builds the engine and apps into `target/apps/`. The tests of `fos-runtime` and `fos-node` use them, so run `apps` before `cargo test`. `check` does this for you.
 
 The formatters and their settings are only in `devenv.nix` (through treefmt-nix). Going into the shell does not change files; run `treefmt` yourself.
 
@@ -210,6 +211,6 @@ A maintainer makes a release from an up-to-date `main` with no uncommitted chang
 knope prepare-release
 ```
 
-Knope works out the new version from the change files. It puts that version in `Cargo.toml` (also for `hs-client`), puts the change files into `CHANGELOG.md` under the new version, and deletes them. Then [`scripts/release_pr.py`](scripts/release_pr.py) makes the branch `release/v<version>` with one commit, and opens a pull request.
+Knope works out the new version from the change files. It puts that version in `Cargo.toml` and `apps/Cargo.toml`, puts the change files into `CHANGELOG.md` under the new version, and deletes them. Then [`scripts/release_pr.py`](scripts/release_pr.py) makes the branch `release/v<version>` with one commit, and opens a pull request.
 
-When that pull request is merged, the [Release workflow](.github/workflows/release.yml) sees a version in `Cargo.toml` that has no tag. It makes the release files (`hs-<version>-linux-x86_64.tar.gz`, the documentation, and `SHA256SUMS`) and runs `knope release`. Knope makes the tag `v<version>` and the GitHub release, with the part of `CHANGELOG.md` for that version as the release notes.
+When that pull request is merged, the [Release workflow](.github/workflows/release.yml) sees a version in `Cargo.toml` that has no tag. It makes the release files (`fos-<version>-linux-x86_64.tar.gz` with `fos` and the `.app` folders, the documentation, and `SHA256SUMS`) and runs `knope release`. Knope makes the tag `v<version>` and the GitHub release, with the part of `CHANGELOG.md` for that version as the release notes.

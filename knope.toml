@@ -11,11 +11,7 @@
 # the tag and the GitHub release.
 
 [package]
-versioned_files = [
-  "Cargo.toml",
-  # The version other crates use to get hs-client.
-  { path = "Cargo.toml", dependency = "hs-client" },
-]
+versioned_files = ["Cargo.toml", "apps/Cargo.toml"]
 changelog = "CHANGELOG.md"
 assets = "release/*"
 
@@ -45,4 +41,4 @@ type = "Release"
 
 [github]
 owner = "nmnmcc"
-repo = "homeserver"
+repo = "fileOS"

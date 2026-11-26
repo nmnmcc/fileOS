@@ -3,6 +3,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+exclude = ["apps"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,40 +15,70 @@ publish = false
 # Internal crates. Dependencies go down only; see CONTRIBUTING.md.
 # Every external dependency must be added here, with `default-features = false`,
 # after review (see "Dependency policy" in CONTRIBUTING.md).
+#
+# The WebAssembly apps and engines are in their own workspace, in apps/.
 [workspace.dependencies]
-hs-core = { path = "crates/hs-core" }
-hs-identity = { path = "crates/hs-identity" }
-hs-store = { path = "crates/hs-store" }
-hs-net = { path = "crates/hs-net" }
-hs-node = { path = "crates/hs-node" }
-hs-plugin-api = { path = "crates/hs-plugin-api" }
-hs-plugin-host = { path = "crates/hs-plugin-host" }
-hs-space = { path = "crates/hs-space" }
-hs-objects = { path = "crates/hs-objects" }
-hs-api = { path = "crates/hs-api" }
-hs-client = { path = "crates/hs-client", version = "0.1.0", default-features = false }
-hs-idp = { path = "crates/hs-idp" }
-hs-media = { path = "crates/hs-media" }
+fos-core = { path = "crates/fos-core" }
+fos-fs = { path = "crates/fos-fs" }
+fos-sync = { path = "crates/fos-sync" }
+fos-store = { path = "crates/fos-store" }
+fos-runtime = { path = "crates/fos-runtime" }
+fos-net = { path = "crates/fos-net" }
+fos-gateway = { path = "crates/fos-gateway" }
+fos-node = { path = "crates/fos-node" }
 
-# External. We measured each one; see the dependency budget on the architecture page.
+# Formats and keys. All of them build for wasm32-unknown-unknown.
 blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
-ring = { version = "0.17.14", default-features = false, features = ["alloc"] }
+# The same version as libp2p-identity, so there is one copy.
+ed25519-dalek = { version = "3.0.0", default-features = false, features = [
+  "fast",
+  "zeroize",
+] }
 serde = { version = "1.0.229", default-features = false, features = [
   "std",
   "derive",
 ] }
-serde_json = { version = "1.0.154", default-features = false, features = [
+# CBOR. libp2p's request-response uses the same crate for its CBOR codec.
+cbor4ii = { version = "1.2.5", default-features = false, features = [
+  "serde1",
+  "use_std",
+] }
+# The manifest of an .app folder.
+toml = { version = "1.2.3", default-features = false, features = [
   "std",
+  "parse",
+  "serde",
 ] }
-base64 = { version = "0.23.1", default-features = false, features = ["std"] }
-# The SQLx core and SQLite driver, used directly. The `sqlx` facade always turns
-# on its `migrate` feature, which brings in SHA-2 from RustCrypto for checksums.
-sqlx-core = { version = "0.9.1", default-features = false, features = [
-  "_rt-tokio",
+getrandom = { version = "0.3.4", default-features = false, features = ["std"] }
+
+# The app runtime. We do not make our own (see the fileOS design page).
+wasmtime = { version = "51.0.0", default-features = false, features = [
+  "std",
+  "runtime",
+  "cranelift",
+  "component-model",
 ] }
-sqlx-sqlite = { version = "0.9.1", default-features = false, features = [
-  "bundled",
+# The network. We do not make our own (see the fileOS design page).
+# No "quic" for now: libp2p-quic always turns on quinn's aws-lc-rs backend,
+# and aws-lc-sys is not allowed (deny.toml). TCP with Noise and Yamux does the
+# same work; relays and hole punching (DCUtR) work over TCP too.
+libp2p = { version = "0.57.1", default-features = false, features = [
+  "tokio",
+  "tcp",
+  "noise",
+  "yamux",
+  "identify",
+  "ping",
+  "mdns",
+  "relay",
+  "dcutr",
+  "autonat",
+  "request-response",
+  "cbor",
+  "macros",
+  "ed25519",
 ] }
+
 tokio = { version = "1.54.1", default-features = false, features = [
   "rt-multi-thread",
   "net",
@@ -55,70 +86,20 @@ tokio = { version = "1.54.1", default-features = false, features = [
   "time",
   "sync",
   "macros",
-  "fs",
   "signal",
 ] }
 hyper = { version = "1.13.0", default-features = false, features = [
   "server",
-  "client",
   "http1",
-  "http2",
 ] }
 hyper-util = { version = "0.1.21", default-features = false, features = [
   "tokio",
-  "server",
-  "server-auto",
-  "client-legacy",
-  "http1",
-  "http2",
+] }
+percent-encoding = { version = "2.3.2", default-features = false, features = [
+  "std",
 ] }
 http-body-util = { version = "0.1.5", default-features = false }
-http-body = { version = "1.0.1", default-features = false }
-http = { version = "1.5.0", default-features = false, features = ["std"] }
 bytes = { version = "1.12.2", default-features = false, features = ["std"] }
-rustls = { version = "0.23.46", default-features = false, features = [
-  "ring",
-  "std",
-  "tls12",
-  "logging",
-] }
-tokio-rustls = { version = "0.26.6", default-features = false, features = [
-  "ring",
-  "tls12",
-] }
-webpki-roots = { version = "1.0.12", default-features = false }
-rcgen = { version = "0.14.10", default-features = false, features = [
-  "ring",
-  "pem",
-] }
-quick-xml = { version = "0.42.0", default-features = false }
-# Thumbnails. Pure Rust, no build scripts or proc macros. Together they take
-# about 1 s of a clean build.
-zune-jpeg = { version = "0.5.15", default-features = false, features = [
-  "std",
-  "x86",
-  "neon",
-] }
-zune-png = { version = "0.5.2", default-features = false, features = [
-  "std",
-  "sse",
-] }
-jpeg-encoder = { version = "0.7.1", default-features = false, features = [
-  "std",
-] }
-# EXIF reader. Pure Rust, one small dependency.
-exif = { package = "kamadak-exif", version = "0.6.2", default-features = false }
-# Image dimensions from headers. Pure Rust, no dependencies.
-imagesize = { version = "0.15.0", default-features = false, features = [
-  "jpeg",
-  "png",
-  "gif",
-  "webp",
-  "heif",
-] }
-
-# Small, well-known building blocks, in place of our own copies. Most of them
-# were already compiled for SQLx, rcgen or hyper.
 clap = { version = "4.6.10", default-features = false, features = [
   "std",
   "help",
@@ -128,50 +109,12 @@ clap = { version = "4.6.10", default-features = false, features = [
   "derive",
   "env",
 ] }
-# Its dynamic completion is not stable yet, so the version is exact.
-clap_complete = { version = "=4.6.12", default-features = false, features = [
-  "unstable-dynamic",
-] }
-data-encoding = { version = "2.11.1", default-features = false, features = [
-  "alloc",
-] }
-percent-encoding = { version = "2.3.2", default-features = false, features = [
-  "std",
-] }
-form_urlencoded = { version = "1.2.3", default-features = false, features = [
-  "std",
-] }
-time = { version = "0.3.55", default-features = false, features = [
-  "std",
-  "formatting",
-  "parsing",
-  "macros",
-] }
-httpdate = { version = "1.0.3", default-features = false }
-# Structured Field Values (RFC 9651) for HTTP Message Signatures.
-sfv = { version = "0.16.1", default-features = false, features = [
-  "parsed-types",
-] }
-tar = { version = "0.4.46", default-features = false }
-tempfile = { version = "3.27.0", default-features = false }
 tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = [
   "fmt",
+  "env-filter",
 ] }
-mimalloc = { version = "0.1.52", default-features = false }
-# The command line: turning off echo while a token is typed, and lining up
-# table columns that have wide (CJK) characters in them. rustix is already
-# built for tempfile.
-rustix = { version = "1.1.6", default-features = false, features = [
-  "std",
-  "termios",
-] }
-unicode-width = { version = "0.2.2", default-features = false }
-# The REST API's types and its OpenAPI document come from the same Rust
-# code. utoipa derives the schemas (serde, indexmap and syn, all already
-# built). serde_urlencoded reads and writes the typed queries.
-utoipa = { version = "6.0.0", default-features = false, features = ["macros"] }
-serde_urlencoded = { version = "0.7.1", default-features = false }
+tempfile = { version = "3.27.0", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -246,6 +189,15 @@ debug = "line-tables-only"
 # Dependencies are compiled once and cached. A little optimization makes tests faster.
 [profile.dev.package."*"]
 opt-level = 1
+
+# Not for wasmtime's compiler: it is the longest part of a clean build, and
+# with no optimization it builds about a third faster. Debug builds then
+# compile WebAssembly a little more slowly, which tests do not see.
+[profile.dev.package.cranelift-codegen]
+opt-level = 0
+
+[profile.dev.package.wasmtime-internal-cranelift]
+opt-level = 0
 
 [profile.release]
 lto = "thin"

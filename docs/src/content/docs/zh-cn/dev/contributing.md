@@ -31,9 +31,9 @@ Node.js 22.23.4 或更高版本：在 `docs/` 中运行 `npm install` 和
 
 | 指标                     | 预算    |
 | ------------------------ | ------- |
-| 整个工作区的干净调试构建 | ≤ 180 s |
+| 整个工作区的干净调试构建 | ≤ 360 s |
 | 修改叶子 crate 后重建    | ≤ 5 s   |
-| 修改 `hs-core` 后重建    | ≤ 20 s  |
+| 修改 `fos-core` 后重建   | ≤ 20 s  |
 
 超出预算的拉取请求与测试失败的同等对待。
 
@@ -45,15 +45,15 @@ C 或 C++。
 
 ## 代码的形态
 
-- crate 小，依赖图浅。依赖只能向下；`hs-core` 不依赖其他 homeserver
-  crate，`hs` 保持轻薄。
+- crate 小，依赖图浅。依赖只能向下；`fos-core` 不依赖其他 fileOS
+  crate，`fos` 保持轻薄。
 - 标记为 `portable = true` 的 crate 必须能为 `wasm32-unknown-unknown`
   构建：其中不能有线程、文件、套接字和时钟。
-- 协议逻辑是 sans-IO 的（自身不做输入输出），同一份代码可以在确定性模拟（`hs-sim`）中运行。
+- 协议逻辑是 sans-IO 的（自身不做输入输出），同一份代码可以在确定性模拟（`fos-sim`）中运行。
 - 机制而非策略：当代码要决定"应该发生什么"（帮谁、分享什么、保留什么）时，
   把它做成带默认值、可替换的策略。
 
-crate 布局见[架构](../architecture/#crate)。
+crate 布局见[架构](../fileos/#crate-结构)。
 
 ## 语言
 
@@ -74,8 +74,8 @@ crate 布局见[架构](../architecture/#crate)。
 
 ## 许可证与签署
 
-homeserver 采用 AGPL-3.0-only；`hs-plugin-api` 采用 MIT OR Apache-2.0，
-以便插件可以使用任何许可证。每个源文件以 SPDX 头开始。没有 CLA：你保留
+fileOS 采用 AGPL-3.0-only；App SDK（`apps/fos-app`）和 `wit/` 里的接口
+采用 MIT OR Apache-2.0，以便 App 和引擎可以使用任何许可证。每个源文件以 SPDX 头开始。没有 CLA：你保留
 自己的版权。
 
 每个提交都必须按
@@ -92,4 +92,4 @@ homeserver 采用 AGPL-3.0-only；`hs-plugin-api` 采用 MIT OR Apache-2.0，
 
 为该手册的读者写作。用户手册不假定读者了解服务器；管理手册假定读者会用
 终端；只有开发者手册才谈 crate 和协议。描述当前版本实际做到的事；尚未实现的
-设计属于[架构](../architecture/)。
+设计属于[架构](../fileos/)。

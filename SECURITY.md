@@ -2,7 +2,7 @@
 
 **English** | [简体中文](SECURITY.zh-CN.md)
 
-homeserver keeps people's private data. We take security problems seriously, even while the project is an early test version.
+fileOS keeps people's private data. We take security problems seriously, even while the project is an early test version.
 
 ## Versions
 
@@ -10,7 +10,7 @@ Only the latest release and `main` get fixes. Before 1.0, a fix comes in the nex
 
 ## Reporting a problem
 
-Send the report privately, with [GitHub's private reporting](https://github.com/nmnmcc/homeserver/security/advisories/new). Do not put it in an open issue, pull request or discussion.
+Send the report privately, with [GitHub's private reporting](https://github.com/nmnmcc/fileOS/security/advisories/new). Do not put it in an open issue, pull request or discussion.
 
 Say which part is open to attack, the steps to make the problem take place, and what an attacker is able to do with it. Write in English or Chinese.
 

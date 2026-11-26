@@ -1,9 +1,9 @@
 ---
-title: homeserver documentation
-description: A personal server you own, for the data you keep and share.
+title: fileOS documentation
+description: A file system that your computers and the computers of people you know keep together.
 template: splash
 hero:
-  tagline: A personal server you own, for the data you keep and share. Pick the manual for what you want to do.
+  tagline: A file system that your computers and the computers of people you know keep together. Everything else is an app. Pick the manual for what you want to do.
 ---
 
 import { Aside, CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -12,22 +12,21 @@ import { Aside, CardGrid, LinkCard } from "@astrojs/starlight/components";
   <LinkCard
     title="User manual"
     href="user/"
-    description="For everyone who keeps things on a homeserver: signing in, adding and finding your data, sharing with people you know, and connecting the apps you already use."
+    description="For everyone who keeps files on fileOS: folders, sharing with people you know, and apps."
   />
   <LinkCard
     title="Administration manual"
     href="admin/"
-    description="For the person who sets up a node for themselves or their family: installing hs, running it, configuration, tokens, backups and recovery."
+    description="For the person who runs a node: building fos, making a node, running it and connecting it to other nodes."
   />
   <LinkCard
     title="Developer manual"
     href="dev/"
-    description="For people who work on homeserver or make things on top of it: contributing, the REST API, the architecture and the projects we learn from."
+    description="For people who work on fileOS or write apps and engines for it: the architecture, the interfaces and how to contribute."
   />
 </CardGrid>
 
-<Aside type="caution" title="Experimental">
-  Version 0.1.0 is an MVP (a first, minimal version). Data formats may still
-  change, so keep an export. The manuals describe what 0.1.0 does; the
-  [architecture](dev/architecture/) describes where it is going.
+<Aside type="caution" title="Prototype">
+  fileOS is a prototype, and its formats will change. The
+  [architecture](dev/fileos/) says which parts are built.
 </Aside>

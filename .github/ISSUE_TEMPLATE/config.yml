@@ -3,7 +3,7 @@
 blank_issues_enabled: true
 contact_links:
   - name: Report a security problem
-    url: https://github.com/nmnmcc/homeserver/security/advisories/new
+    url: https://github.com/nmnmcc/fileOS/security/advisories/new
     about: Send it privately, not in an open issue. See SECURITY.md.
   - name: Documentation
     url: https://hs.nmnm.cc/

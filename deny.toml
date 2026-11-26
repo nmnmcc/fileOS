@@ -7,6 +7,9 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+  { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained; it comes from netlink (Linux only), through if-watch in libp2p" },
+]
 
 [licenses]
 version = 2
@@ -43,13 +46,30 @@ allow-wildcard-paths = true
 deny = [
   { crate = "openssl-sys", reason = "C build dependency; use rustls with the ring backend" },
   { crate = "aws-lc-sys", reason = "needs cmake/clang and is slow to build; use rustls with the ring backend" },
-  { crate = "async-trait", reason = "native async fn in traits is stable" },
+  # wasmtime uses it inside; our code must not.
+  { crate = "async-trait", wrappers = [
+    "wasmtime",
+  ], reason = "native async fn in traits is stable" },
 ]
-# Duplicates we cannot take out: each comes from an upstream default.
+# Duplicates we cannot take out: each comes from an upstream crate.
 skip = [
-  { crate = "base64@0.22.1", reason = "sqlx-core; rcgen's pem is on the newer one" },
-  { crate = "hashbrown@0.16.1", reason = "sqlx-core's hashlink; indexmap is on the newer one" },
-  { crate = "syn@2.0.119", reason = "tracing-attributes, through sqlx-core's tracing defaults" },
+  # libp2p-noise (snow) and cranelift are on the older RustCrypto crates;
+  # ed25519-dalek 3 (libp2p-identity) is on the newer ones.
+  { crate = "block-buffer@0.10.4", reason = "snow, cranelift-codegen (sha2 0.10)" },
+  { crate = "chacha20@0.9.1", reason = "snow" },
+  { crate = "cpufeatures@0.2.17", reason = "snow, sha2 0.10" },
+  { crate = "crypto-common@0.1.7", reason = "snow, sha2 0.10" },
+  { crate = "curve25519-dalek@4.1.3", reason = "snow" },
+  { crate = "digest@0.10.7", reason = "snow, sha2 0.10" },
+  { crate = "fiat-crypto@0.2.9", reason = "curve25519-dalek 4, for snow" },
+  { crate = "sha2@0.10.9", reason = "snow, cranelift-codegen" },
+  { crate = "getrandom@0.2.17", reason = "ring" },
+  { crate = "getrandom@0.3.4", reason = "libp2p-noise and snow; libp2p itself is on 0.4" },
+  { crate = "r-efi@5.3.0", reason = "getrandom 0.3, on UEFI only" },
+  { crate = "thiserror@1.0.69", reason = "rtnetlink (Linux only), through if-watch in libp2p" },
+  { crate = "thiserror-impl@1.0.69", reason = "rtnetlink (Linux only), through if-watch in libp2p" },
+  { crate = "hashbrown@0.16.1", reason = "gimli, in wasmtime; indexmap is on the newer one" },
+  { crate = "syn@2.0.119", reason = "proc macros upstream (libp2p, curve25519-dalek, jni); serde is on syn 3" },
   { crate = "windows-sys@0.52.0", reason = "ring, on Windows only" },
 ]
 

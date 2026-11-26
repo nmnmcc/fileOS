@@ -3,9 +3,9 @@
 # Python is used only for the helper scripts in scripts/. Not a package.
 
 [project]
-name = "homeserver-scripts"
+name = "fileos-scripts"
 version = "0.0.0"
-description = "Development and CI scripts for homeserver"
+description = "Development and CI scripts for fileOS"
 license = "AGPL-3.0-only"
 requires-python = "==3.14.*"
 dependencies = ["typer>=0.29.2"]

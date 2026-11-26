@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+id = "photos"
+name = "Photos"
+kind = "app"
+version = "0.1.0"
+build = 1
+requires = "fos:app@0.1.0"
+main = "bin/app.wasm"
+
+[[permissions]]
+path = "/photos"
+access = "read"
+reason = "reason.photos"
+
+[[watch]]
+path = "/photos"

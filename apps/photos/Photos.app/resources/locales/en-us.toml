@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name = "Photos"
+"reason.photos" = "Photos reads your photos to find their size and make an index on this node."

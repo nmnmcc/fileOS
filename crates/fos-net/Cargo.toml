@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "fos-net"
+description = "fileOS network: carries sync messages over libp2p"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+fos-core.workspace = true
+fos-sync.workspace = true
+libp2p.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

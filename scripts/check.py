@@ -2,14 +2,15 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Run the checks CI runs.
 
-Formatting (treefmt), lints, tests, the browser build of portable crates,
-dependency policy and Python type safety (basedpyright, "standard" mode).
-Stops at the first check that fails.
+Formatting (treefmt), the WebAssembly apps, lints, tests, the browser build of
+portable crates, dependency policy and Python type safety (basedpyright,
+"standard" mode). Stops at the first check that fails.
 """
 
 import json
 import os
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -19,12 +20,13 @@ from rich.console import Console
 ROOT = Path(__file__).resolve().parent.parent
 
 WASM_TARGET = "wasm32-unknown-unknown"
+APPS = ["--manifest-path", "apps/Cargo.toml"]
 
 
 def portable_check() -> list[str]:
     """`cargo check` for the browser, for every crate with `portable = true`.
 
-    The list comes from `[package.metadata.hs]` in each Cargo.toml, so it is
+    The list comes from `[package.metadata.fos]` in each Cargo.toml, so it is
     never written down twice.
     """
     out = subprocess.run(
@@ -38,8 +40,8 @@ def portable_check() -> list[str]:
     command = ["cargo", "check", "--locked", "--target", WASM_TARGET]
     for package in packages:
         metadata = package.get("metadata")
-        hs = metadata.get("hs") if isinstance(metadata, dict) else None
-        if isinstance(hs, dict) and hs.get("portable") is True:
+        fos = metadata.get("fos") if isinstance(metadata, dict) else None
+        if isinstance(fos, dict) and fos.get("portable") is True:
             command += ["--package", str(package["name"])]
     return command
 
@@ -47,12 +49,27 @@ def portable_check() -> list[str]:
 # A check is a command, or a function that builds one when it runs.
 CHECKS: list[list[str] | Callable[[], list[str]]] = [
     ["treefmt", "--ci"],
+    # The engine and apps in target/apps/, which the tests of the node use.
+    [sys.executable, str(ROOT / "scripts" / "apps.py")],
     ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"],
+    [
+        "cargo",
+        "clippy",
+        *APPS,
+        "--target",
+        WASM_TARGET,
+        "--all-targets",
+        "--locked",
+        "--",
+        "-D",
+        "warnings",
+    ],
     ["cargo", "test", "--workspace", "--locked"],
-    ["cargo", "check", "-p", "hs-client", "--no-default-features", "--locked"],
+    ["cargo", "test", *APPS, "--locked"],
     ["cargo", "doc", "--workspace", "--no-deps", "--locked"],
-    portable_check,  # shared with plugins, phone shells and the web app
+    portable_check,  # shared with apps, phone shells and the web app
     ["cargo", "deny", "check"],
+    ["cargo", "deny", *APPS, "check"],
     ["cargo", "machete"],
     ["uv", "run", "--locked", "basedpyright"],
 ]

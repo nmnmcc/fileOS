@@ -1,6 +1,6 @@
 # Notes for coding agents
 
-This file is for AI coding agents working on homeserver. `CLAUDE.md` is a link to it. People should read [CONTRIBUTING.md](CONTRIBUTING.md). Everything here except "Worktrees" comes from it, and CONTRIBUTING.md is right when the two are different.
+This file is for AI coding agents working on fileOS. `CLAUDE.md` is a link to it. People should read [CONTRIBUTING.md](CONTRIBUTING.md). Everything here except "Worktrees" comes from it, and CONTRIBUTING.md is right when the two are different.
 
 ## Language
 
@@ -16,11 +16,12 @@ The devenv shell (`direnv allow`, or `devenv shell -- <command>`) has every tool
 | `treefmt`               | Formats every file. Run it before every commit.                     |
 | `check`                 | Formatting, Clippy, tests, Rustdoc, cargo-deny, wasm, Python, MSRV. |
 | `budget`                | The compile-time budget. Run it after changes to dependencies.      |
+| `apps`                  | Builds the engine and apps in `apps/` into `target/apps/`.          |
 | `docs`                  | Shows the documentation site.                                       |
 | `knope document-change` | Makes a change file in `.changeset/`.                               |
 | `cargo test -p <crate>` | Tests for one crate, while working.                                 |
 
-`docs/openapi.json` is made from the API types, and a test in `hs-api` checks it. After changing the REST API, make it again with `HS_UPDATE_OPENAPI=1 cargo test -p hs-api --test openapi`.
+The tests of `fos-runtime` and `fos-node` use the `.app` folders in `target/apps/`, so run `apps` before `cargo test`. The interfaces between the core and WebAssembly components are in `wit/fos.wit`.
 
 ## Worktrees
 
@@ -48,8 +49,8 @@ When the work is done (the pull request is merged or closed, or the work is drop
 
 - Compile time is a feature. A pull request over the budget is not merged. Keep generics from spreading (inner-function pattern), use `dyn Trait` at crate edges, use few procedural macros. No `async-trait`. No code generation in `build.rs`.
 - Every new external dependency needs a reason in the pull request and its cost to a clean build. Put it once in the root `Cargo.toml` under `[workspace.dependencies]` with `default-features = false`. One version of every crate. No C or C++ that needs cmake. TLS is rustls with `ring`.
-- Dependencies between crates go down only. `hs-core` uses no other homeserver crate; `hs-plugin-api` has no dependencies; `hs` stays thin. The layout is in CONTRIBUTING.md under "Workspace layout".
-- Crates with `portable = true` in `[package.metadata.hs]` must build for `wasm32-unknown-unknown`: no threads, files, sockets or clocks in them.
-- Protocol logic is sans-IO, so it runs in the simulation in `hs-sim`.
+- Dependencies between crates go down only. `fos-core` uses no other fileOS crate; apps and engines depend only on `fos-app`; `fos` stays thin. The layout is in CONTRIBUTING.md under "Workspace layout".
+- Crates with `portable = true` in `[package.metadata.fos]` must build for `wasm32-unknown-unknown`: no threads, files, sockets or clocks in them.
+- Protocol logic is sans-IO, so it runs in the simulation in `fos-sim`.
 - Mechanism, not policy: when code decides what should happen (whom to help, what to share, what to keep), make it a policy that can be replaced, with a default.
-- Every source file starts with an SPDX header: `// SPDX-License-Identifier: AGPL-3.0-only`, or `MIT OR Apache-2.0` in `crates/hs-plugin-api`.
+- Every source file starts with an SPDX header: `// SPDX-License-Identifier: AGPL-3.0-only`, or `MIT OR Apache-2.0` in `apps/fos-app` and `wit/`.

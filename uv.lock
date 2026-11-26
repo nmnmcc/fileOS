@@ -42,7 +42,7 @@ wheels = [
 ]
 
 [[package]]
-name = "homeserver-scripts"
+name = "fileos-scripts"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
