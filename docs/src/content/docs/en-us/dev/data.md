@@ -6,7 +6,8 @@ description: How data is kept and synced with no ordering node, how conflicts ar
 :::note[Status: design]
 This page is the new design. It takes the place of the ordering node of each
 folder in [Architecture](../fileos/), which is still how the prototype works.
-Nothing on this page is built yet.
+Nothing on this page is built yet. What the prototype calls a folder is a
+**space** here (see [The model](../access/)).
 :::
 
 ## Why there is no ordering node
@@ -44,9 +45,9 @@ This is close to the format of [p2panda](https://p2panda.org): Ed25519,
 BLAKE3, CBOR, one log for each author, and headers apart from bodies. We take
 its format as our model.
 
-### A folder is a flat key space
+### A space is a flat key space
 
-Inside a folder, data is a **flat set of keys**, as in S3, not a tree of
+Inside a space, data is a **flat set of keys**, as in S3, not a tree of
 directory nodes:
 
 - A key is a path such as `/photos/2026/a.jpg`. A "directory" is only a prefix
@@ -58,14 +59,15 @@ directory nodes:
 - Keys are UTF-8 in NFC form, with `/` between parts. They are case-sensitive.
   `.` and `..` are not allowed, and keys have a size limit.
 
-Why not a tree: when folders can move, a concurrent move can make a cycle (A
+Why not a tree: when directories can move, a concurrent move can make a cycle (A
 into B while B goes into A), and every node must agree where a node was at
 the time of each write and each grant. That is very hard to get right, and
 it changes access without anyone asking. With a flat key space, access goes
 with the path, and a path is never changed by another operation.
 
-Folders are still put together into a tree, by mounts. A folder is the large
-unit of sync and access, like an S3 bucket, and it changes seldom.
+People still see a tree, made by views: a holder mounts the grants it has at
+names it picks. A space is the large unit of sync, owners and keys, like an S3
+bucket, and it changes seldom.
 
 ### Each key merges by itself
 
@@ -80,18 +82,18 @@ unit of sync and access, like an S3 bucket, and it changes seldom.
   record, named so that names sort by time and never meet. Different files
   never conflict.
 
-## Access: by path prefix, with strong removal
+## Access: grants, with strong removal
 
-### Grants of exact permissions on path prefixes
+### Grants of exact permissions on prefixes or files
 
 Access is a **grant** of exact permissions (such as `files.read` or
-`access.give`) on a path prefix (an "area", as in
-[Willow's Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html)),
-to an app, a person or a device. A grant can be given on to others, but only
+`access.give`) on a prefix of names in a space (an "area", as in
+[Willow's Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html))
+or on one file by its ID, to an app, a person, a device or a group. A grant can be given on to others, but only
 made smaller. Every node can check a write with no network. There is no
 authorization engine: rules are made by apps that manage files. The whole
-model, with links in namespaces and the root path `/{identity}/{hash}` of
-every file, is in [Access: namespaces, links and sharing](../access/).
+model (content, files, spaces, principals, grants, views and events) is in
+[The model: spaces, grants and views](../access/).
 
 ### When a removal and a write happen at the same time
 
@@ -112,7 +114,7 @@ wins any conflict. Family and friends get access through groups, under it.
 
 Strong removal is the one rule of the kernel, the same on every node.
 Different rules for a set of files come from the app that manages them (see
-[Access](../access/)).
+[The model](../access/)).
 
 **Times are never used for access.** A clock that is wrong, or a node that
 lies about the time, must not be able to take or keep access.
@@ -204,7 +206,7 @@ same way for every app and file:
   app.
 - **Checks on writes** before a write is taken, and **watch events** after a
   merge, where an app can fix what its rules do not allow (see
-  [Access](../access/#checks-on-writes)).
+  [The model](../access/#checks-on-writes)).
 - **The authority path**, as a policy that can be changed.
 
 ## Storage that does not grow without end
@@ -231,7 +233,7 @@ versions. The default:
 - the last 30 days: one version each day;
 - older: one version each week, with a limit.
 
-It is a policy for each folder. Deleted files go to a bin that empties after
+It is a policy for each space. Deleted files go to a bin that empties after
 a time.
 
 ### Chunks named by content
@@ -245,8 +247,8 @@ the size of the file.
 
 ### Checkpoints: smaller logs and final history
 
-The owner of a folder (at the end of its chain of owners), or a principal
-with `folder.checkpoint`, signs a **checkpoint** from time to time (a policy:
+The owner of a space (at the end of its chain of owners), or a principal
+with `space.checkpoint`, signs a **checkpoint** from time to time (a policy:
 for example once a day, when a device of the owner is online). When nobody who
 may sign is online for a long time, checkpoints wait, and so does compaction:
 data is right, it only takes more space for a time. A checkpoint says:
@@ -274,7 +276,7 @@ data is right, it only takes more space for a time. A checkpoint says:
   this order: caches first, then thinner old versions, then no new data for
   others. Last, it tells the person. Content that the person has now is never
   deleted by the kernel.
-- An app's data to keep is files in the home folder; its derived data is cache
+- An app's data to keep is files in the home space; its derived data is cache
   files on each node. Cache files count against the budget and can be deleted
   at any time.
 
@@ -294,26 +296,26 @@ we keep it there:
 | Moving over the network   | libp2p's Noise already gives it                                                                              |
 | "Burn after reading" chat | A double ratchet for that conversation, if the person wants it (new devices then cannot read older messages) |
 
-### Keys that follow paths
+### Keys that follow prefixes
 
-A link can point to a directory deep in a folder, or to one file. A read link
-must give the keys of that part only. So keys follow root paths, in the way of
-Cryptree (Grolimund and others) and Tahoe-LAFS:
+A grant can be on a prefix deep in a space, or on one file. A read grant
+must give the keys of that part only. So keys follow the prefixes of names, in
+the way of Cryptree (Grolimund and others) and Tahoe-LAFS:
 
 1. **Each chunk is encrypted with a random data key.** Data keys are kept
-   encrypted with the key of the directory that the file is in (key
+   encrypted with the key of the prefix that the file is under (key
    wrapping).
-2. **The key of a directory is worked out from the key of its parent**, by a
-   one-way function. Whoever has the key of `/ming/F1/2026/` can work out the
-   keys of everything under it, but not the key of `/ming/F1/` or of
-   `/ming/F1/private/`.
-3. **A read link gives the key of its target.** Mom, with a link to `2026/`,
-   gets the key of `2026/`; an app with a link to one file gets the data key of
-   that file only.
-4. **When a read link is taken back,** only the keys of the part that it
+2. **The key of a prefix is worked out from the key of the prefix above it**,
+   by a one-way function. Whoever has the key of `2026/` in space `S1` can work
+   out the keys of everything under it, but not the key of the whole space or
+   of `private/`.
+3. **A read grant gives the key of what it is on.** Mom, with a grant on
+   `2026/`, gets the key of `2026/`; an app with a grant on one file gets the
+   data key of that file only.
+4. **When a read grant is taken back,** only the keys of the part that it
    reached are changed (and the data keys under it wrapped again; the data is
-   not encrypted again). The new keys go to everyone who still has a read link
-   to that part: this is post-compromise security, and it is also done from
+   not encrypted again). The new keys go to everyone who still has a read grant
+   on that part: this is post-compromise security, and it is also done from
    time to time.
 5. **Delete means destroy the key** (crypto-shredding). When a file is deleted,
    leaves the retention policy, or is compacted at a checkpoint, its data keys
@@ -323,13 +325,13 @@ Cryptree (Grolimund and others) and Tahoe-LAFS:
 
 ### Giving out keys: HPKE
 
-The device that makes or changes a read link sends the key of its target with
-**HPKE** (RFC 9180) to each device of each principal that has a read link to
-it.
+The device that makes or changes a read grant sends the key of what it is on
+with **HPKE** (RFC 9180) to each device of each principal that has a read grant
+on it.
 
 - With two changes at the same time, both keys are good for reading, and new
   writes use one of them by a fixed rule. No ordering node is needed.
-- The cost is one HPKE message for each device. A family folder of 10 people
+- The cost is one HPKE message for each device. A family space of 10 people
   with 3 devices each is 30 messages, for a change that seldom happens.
 - **Weak point:** a device gets keys with its own HPKE key. If that key
   is stolen later, and someone kept the encrypted keys, they can open
@@ -352,16 +354,16 @@ before this is used for real data.
 
 ## Building it: a new kernel
 
-The design on this page, [Access](../access/) and [Apps as workers](../workers/)
+The design on this page, [The model](../access/) and [Apps as workers](../workers/)
 is too far from the prototype to change it a step at a time, and a state
 between the two would mean nothing. So the kernel is written again:
 
 - **Kept:** `fos-core` (formats), `fos-id` (`did:fos`), the simulation in
   `fos-sim` as the way to test, `.app` files, the gateway, and the `wasi:http`
   runtime.
-- **New:** signed logs in a causal graph, flat keys and root paths,
-  namespaces and links, strong removal, checks on writes, chunks, checkpoints,
-  keys that follow paths, `wasi:filesystem` for apps, and watch.
+- **New:** signed logs in a causal graph, spaces with flat names, files with
+  fixed IDs, grants and views, strong removal, checks on writes, chunks,
+  checkpoints, keys that follow prefixes, `wasi:filesystem` for apps, and watch.
 - **Order:** first the data model in `fos-sim`, starting from the first test,
   "a node reads its own write while it is offline"; then storage, network and
   the runtime; last, the old `fos-fs`, `fos-sync` and engine are taken away.
@@ -371,7 +373,7 @@ between the two would mean nothing. So the kernel is written again:
 - How the interface tells people that data they already had was rolled back
   (by strong removal, or by a rebase after a checkpoint).
 - How direct file writes (the command line) and app writes fit the same rules.
-- A folder shared by several identities: who signs its checkpoints, and whose
+- A space shared by several identities: who signs its checkpoints, and whose
   nodes handle its events.
 - The cost of Loro, measured with `budget`.
 

@@ -5,7 +5,7 @@ description: How to put complex data into files so that it syncs and merges well
 
 :::note[Status: design]
 These patterns go with the new data design (see [Data](../data/)). Some of
-the building blocks named here (CRDT files, cache files, volatile files) are not
+the building blocks named here (CRDT files, cache files, short messages) are not
 built yet.
 :::
 
@@ -76,10 +76,11 @@ has been one of the safest mail formats to sync for decades.
   must, check them in the merge hook, or use the authority path, but seldom.
 - **Do not put data with different sharing in one file.** Access goes by path
   prefix, and half a file cannot be shared. Private notes and notes shared
-  with the family go under different prefixes, or different folders.
+  with the family go under different prefixes, or different spaces.
 - **Do not keep short-lived state in files that are kept.** Cursor positions,
-  "is typing" and "is online" go into **volatile files**: they sync at once but
-  are never stored, and they go after a short time, like `/run` on Unix.
+  "is typing" and "is online" are not data: they go as **short messages**
+  between the nodes that are online, which are never stored (this channel
+  comes later).
   Otherwise they are data that grows for nothing.
 - **Do not write the same key very often**, such as on every key press. Put
   frequent changes into a CRDT document (which packs operations together), or
@@ -98,7 +99,7 @@ has been one of the safest mail formats to sync for decades.
 | Rich text                                | A text CRDT, with history                 | Documents, note bodies     |
 | Large binary data                        | Its own chunked file, plus a small record | Photos, video              |
 | Data to search                           | A SQLite index in cache files             | Search, filters, totals    |
-| Short-lived state                        | Volatile files                            | Cursors, presence          |
+| Short-lived state                        | Short messages, not stored                | Cursors, presence          |
 
 ## Examples
 
@@ -110,7 +111,7 @@ has been one of the safest mail formats to sync for decades.
 - **Tasks:** one file for each task; the order uses fractional indexes; "how
   many are done" is not stored, but worked out from the files.
 - **Chat:** one directory for each conversation, one file for each message; where each person has read up to
-  is a small file of their own; "is typing" is a volatile file.
+  is a small file of their own; "is typing" is a short message.
 
 ## Help from the SDK
 

@@ -15,11 +15,11 @@ Files sync between the nodes of an identity, so apps must too. Otherwise each
 device has its own copy of an app, with its own address, its own access and
 its own data, and the person does not get one experience.
 
-- **Every identity has a home folder** that syncs to all of its nodes. A
-  person's folders (`/photos`, …) and apps (`/apps/…`) are mounted there. The
-  root folder of a node keeps only what is about that machine: its engine,
-  caches and settings.
-- **An app is installed into the home folder.** Every node of the identity gets
+- **Every identity has a home space** that syncs to all of its nodes. It keeps
+  the person's apps, their settings and the view of the person: which grants
+  are mounted at which names (`/photos`, …). A node keeps only what is about
+  that machine apart: its engine, caches and settings.
+- **An app is installed into the home space.** Every node of the identity gets
   the same app.
 - **An app has one name in an identity**, and its address is the same on every
   device: `http://photos.localhost:7341/`.
@@ -39,21 +39,22 @@ An app does not run all the time. It wakes up for an event, does its work,
 and stops. This is the model of Cloudflare Workers and of the service workers
 of browsers.
 
-**There are only two kinds of event**, because everything is a file:
+**There are three kinds of event**:
 
-| Event   | When                                   | Interface                               |
-| ------- | -------------------------------------- | --------------------------------------- |
-| `fetch` | An HTTP request comes for its origin   | `wasi:http/incoming-handler` (standard) |
-| `watch` | A file or directory it watches changes | `fos:app/events`                        |
+| Event      | When                                       | Interface                               |
+| ---------- | ------------------------------------------ | --------------------------------------- |
+| `fetch`    | An HTTP request comes for its origin       | `wasi:http/incoming-handler` (standard) |
+| `watch`    | A file or a prefix it watches changes      | `fos:app/events`                        |
+| `schedule` | A time given in the manifest, as cron does | `fos:app/events`                        |
 
-Every other "event" is a watch on files:
+Time is not data, so it is not a file: a `schedule` is listed in the manifest,
+as Cloudflare's Cron Triggers are. Every other "event" is a watch on files:
 
-| What the app waits for | What it watches                                                                                  |
-| ---------------------- | ------------------------------------------------------------------------------------------------ |
-| Changes to data        | The files or directories                                                                         |
-| Grants coming or going | `/granted/` in its view (see [Access](../access/))                                               |
-| Messages               | Its inbox directory: a message is a file that the sender writes there, with `files.create` on it |
-| A time                 | A file of the kernel that changes at that time, such as `/clock/every-hour`                      |
+| What the app waits for | What it watches                                                                               |
+| ---------------------- | --------------------------------------------------------------------------------------------- |
+| Changes to data        | The files or directories                                                                      |
+| Grants coming or going | `/granted/` in its view (see [The model](../access/))                                         |
+| Messages               | Its inbox prefix: a message is a file that the sender writes there, with `files.create` on it |
 
 So subscribing is only `files.watch` on a path, and the person sees and gives
 it as any other permission.
@@ -77,7 +78,7 @@ least once).
 ### Files: `wasi:filesystem`
 
 Apps use the standard `wasi:filesystem` of WASI 0.2, with WASI preopened
-directories as their namespace (see [Access](../access/#what-an-app-sees)).
+directories as their view (see [The model](../access/#what-an-app-sees)).
 
 - Reading at a position and reading as a stream are the WASI calls
   (`read`, `read-via-stream`), on top of `wasi:io`, which HTTP uses too.
@@ -117,7 +118,7 @@ gives `ui/`.
 Each event has an **ordered list of nodes** that may handle it:
 
 - People can set the list for each event of each app, or let only some nodes
-  handle an event. The settings are in the home folder, so every node reads
+  handle an event. The settings are in the home space, so every node reads
   the same ones. The kernel follows them (mechanism); the person's settings are
   the policy.
 - With no setting, the default is:
@@ -156,20 +157,20 @@ synced, so it is handled once and every node gets the result.
 
 ## What changes from today
 
-| Part             | Today                                                   | New                                                            |
-| ---------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
-| Where apps are   | The root folder of a node; each device installs its own | The home folder of the identity; synced                        |
-| Address          | By node: `photos-<hash>.localhost`                      | By identity: `photos.localhost` on every device                |
-| How apps run     | One instance kept for events; HTTP per request          | A worker: a new instance for each event                        |
-| Where events run | The node that gets the event                            | The list of nodes the person sets, with fallback               |
-| App state        | `kv` on one node only                                   | Files: synced in the home folder, and cache files on each node |
-| App keys         | From the node key                                       | From the shared app seed of the identity                       |
+| Part             | Today                                                   | New                                                           |
+| ---------------- | ------------------------------------------------------- | ------------------------------------------------------------- |
+| Where apps are   | The root folder of a node; each device installs its own | The home space of the identity; synced                        |
+| Address          | By node: `photos-<hash>.localhost`                      | By identity: `photos.localhost` on every device               |
+| How apps run     | One instance kept for events; HTTP per request          | A worker: a new instance for each event                       |
+| Where events run | The node that gets the event                            | The list of nodes the person sets, with fallback              |
+| App state        | `kv` on one node only                                   | Files: synced in the home space, and cache files on each node |
+| App keys         | From the node key                                       | From the shared app seed of the identity                      |
 
 ## Order of work
 
 1. Workers: a new instance for each event, the kernel gives `ui/`, the manifest
    lists events.
-2. The home folder: apps and their data (files, in place of `kv`) move into it; cache files are added;
+2. The home space: apps and their data (files, in place of `kv`) move into it; cache files are added;
    the shared app seed.
 3. Lists of nodes for each event, with fallback and heartbeats.
 4. Addresses `<app>.localhost`, and sending requests between nodes.
