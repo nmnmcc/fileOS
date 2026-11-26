@@ -76,6 +76,7 @@ const topics = [
       page("dev/contributing", "Contributing", "参与贡献"),
       page("dev/api", "REST API", "REST API"),
       page("dev/architecture", "Architecture", "架构"),
+      page("dev/fileos", "Design: fileOS", "设计：fileOS"),
       page("dev/prior-art", "Projects to learn from", "值得学习的项目"),
     ],
   },
