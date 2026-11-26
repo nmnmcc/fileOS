@@ -313,9 +313,9 @@ We use libp2p, but not the IPFS parts of it:
 
 - **No bitswap and no global content DHT.** A node gets blobs only from the
   nodes that keep that folder.
-- **Kademlia is used only to find the address of a PeerId**, and it can be
-  turned off. The first way to find a node is the identity log of a person and
-  the nodes of people you know. The engine says if the DHT is used.
+- **No DHT at all.** Nodes are found through rendezvous nodes that anyone can
+  run, and through the nodes of people you know. See
+  [Identity and finding nodes](../identity/).
 
 We still make these parts ourselves, because they are fileOS: the sync
 protocol for folder logs, the order of entries, and giving out keys with MLS.
