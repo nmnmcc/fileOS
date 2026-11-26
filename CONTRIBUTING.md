@@ -96,6 +96,7 @@ crates/
   fos-store       the data directory: node key, blobs, folder logs, local key-value stores
   fos-sync        sync between nodes (sans-IO, portable)
   fos-fs          folders: signed log, order, forks, mounts (sans-IO, portable)
+  fos-id          identities: node certificates and identity links (portable)
   fos-core        formats: CBOR, ed25519, BLAKE3 (bottom of the graph, portable)
   fos-sim         deterministic multi-node simulation, for tests
 apps/             a second workspace, built for wasm32-unknown-unknown by `apps`

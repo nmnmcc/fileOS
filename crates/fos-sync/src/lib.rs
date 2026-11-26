@@ -96,6 +96,9 @@ pub trait Blobs {
 #[derive(Debug)]
 pub struct Replica {
     key: SecretKey,
+    /// Other keys that this node puts folders in order for, such as the key
+    /// of an identity that this node holds.
+    keys: Vec<SecretKey>,
     folders: BTreeMap<Hash, Folder>,
     /// Folders to get, whose genesis entry this node does not have yet.
     wanted: BTreeSet<Hash>,
@@ -110,6 +113,7 @@ impl Replica {
     pub fn new(key: SecretKey, nonce: u64) -> Self {
         Self {
             key,
+            keys: Vec::new(),
             folders: BTreeMap::new(),
             wanted: BTreeSet::new(),
             peers: BTreeSet::new(),
@@ -145,9 +149,36 @@ impl Replica {
         self.folders.insert(folder.id(), folder);
     }
 
+    /// Lets this node put in order the folders whose ordering node is `key`.
+    pub fn add_key(&mut self, key: SecretKey) {
+        if key.public() != self.me() && !self.keys.iter().any(|k| k.public() == key.public()) {
+            self.keys.push(key);
+        }
+    }
+
+    /// Our secret key for `orderer`, if this node puts its folders in order.
+    fn ordering_key(&self, orderer: PublicKey) -> Option<&SecretKey> {
+        std::iter::once(&self.key)
+            .chain(&self.keys)
+            .find(|k| k.public() == orderer)
+    }
+
     /// Makes a new folder. This node is its creator and ordering node.
     pub fn create(&mut self, name: &str, authz: &mut dyn Authz) -> (Hash, Step) {
-        let (folder, genesis) = Folder::create(name, &self.key, authz);
+        let key = self.key.clone();
+        self.create_as(name, &key, authz)
+    }
+
+    /// Makes a new folder with `key` as its creator and ordering node. This
+    /// node keeps `key`, so it puts the folder in order.
+    pub fn create_as(
+        &mut self,
+        name: &str,
+        key: &SecretKey,
+        authz: &mut dyn Authz,
+    ) -> (Hash, Step) {
+        self.add_key(key.clone());
+        let (folder, genesis) = Folder::create(name, key, authz);
         let id = folder.id();
         self.folders.insert(id, folder);
         let mut step = Step::default();
@@ -192,6 +223,12 @@ impl Replica {
     ) -> Result<Step, Error> {
         self.nonce += 1;
         let write = SignedWrite::sign(Some(folder), self.nonce, op, author);
+        let orderer = self
+            .folders
+            .get(&folder)
+            .ok_or_else(|| Error(format!("folder {folder} is not here")))?
+            .orderer();
+        let ordering_key = self.ordering_key(orderer).cloned();
         let f = self
             .folders
             .get_mut(&folder)
@@ -200,8 +237,8 @@ impl Replica {
         // would not take back.
         f.try_write(&write, authz).map_err(Error)?;
         let mut step = Step::default();
-        if f.orderer() == self.key.public() {
-            let entry = f.order(write, &self.key, authz)?;
+        if let Some(key) = ordering_key {
+            let entry = f.order(write, &key, authz)?;
             self.publish(folder, vec![entry], &mut step, authz);
         } else {
             let orderer = f.orderer();
@@ -417,6 +454,10 @@ impl Replica {
         blobs: &dyn Blobs,
     ) {
         let Some(id) = write.write.folder else { return };
+        let Some(orderer) = self.folders.get(&id).map(Folder::orderer) else {
+            return;
+        };
+        let key = self.ordering_key(orderer).unwrap_or(&self.key).clone();
         let Some(folder) = self.folders.get_mut(&id) else {
             return;
         };
@@ -438,7 +479,7 @@ impl Replica {
             );
             return;
         }
-        match folder.order(write, &self.key, authz) {
+        match folder.order(write, &key, authz) {
             Ok(entry) => {
                 if let Op::Put { blob, .. } = &entry.write.write.op
                     && !blobs.has(*blob)

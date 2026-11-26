@@ -3,8 +3,10 @@ title: "Identity and finding nodes"
 description: How a person has one identity, and how anyone who knows it finds all of that person's nodes, with no center.
 ---
 
-:::note[Status: design]
-Nothing on this page is built yet. It is the plan for the next pull requests.
+:::note[Status: design, partly built]
+The identity, its folder, node certificates and identity links are built
+(step 1 of the [plan](#plan)). Address records and rendezvous are not built
+yet.
 :::
 
 ## The goal
@@ -30,10 +32,10 @@ broken into cannot add nodes to the identity.
 
 Every identity has one folder, made by `I`. Only `I` writes to it. It has:
 
-| Path               | What it is                                                   |
-| ------------------ | ------------------------------------------------------------ |
-| `/nodes/<N>`       | A node certificate: `I` says that `N` is one of its nodes    |
-| `/rendezvous`      | The rendezvous nodes of the identity, as multiaddrs          |
+| Path          | What it is                                                |
+| ------------- | --------------------------------------------------------- |
+| `/nodes/<N>`  | A node certificate: `I` says that `N` is one of its nodes |
+| `/rendezvous` | The rendezvous nodes of the identity, as multiaddrs       |
 
 A **node certificate** is signed by `I`, so it is a proof by itself, outside
 the log: anyone who has it can check it. To take a node away, `I` deletes its
@@ -46,6 +48,21 @@ have a version number and do not change.
 The nodes of an identity keep a copy of its folder, and so can people who
 follow the identity. When the list of nodes or rendezvous nodes changes, they
 get the change by sync.
+
+On a node, the identity folder is mounted at `/identity`. The ordering node of
+the folder is the identity key itself, so writes to it are made only where
+the key is.
+
+### Adding a node
+
+1. On the node that holds the key: `fos id add-node <node key>`. It puts the
+   certificate of the node into the identity folder, lets the node read and
+   keep the folder, and prints the ID of the folder.
+2. On the new node: `fos id join <folder ID>`. It mounts the folder at
+   `/identity`, and gets it from the first node.
+
+`fos id remove-node <node key>` deletes the certificate. The node may still
+keep its copy of the folder until the engine takes its grant away.
 
 ### Identity links
 
@@ -63,11 +80,11 @@ finding nodes (below) do not need them.
 
 Finding nodes is two questions, and they change at very different speeds:
 
-|              | Which nodes are mine         | Where each node is now                  |
-| ------------ | ---------------------------- | --------------------------------------- |
-| How often    | Seldom: a new device         | Often: a new IP address, a new network  |
-| Signed by    | The identity key `I`         | The node key `N`                        |
-| Kept in      | The identity folder (synced) | Address records, not in any log         |
+|           | Which nodes are mine         | Where each node is now                 |
+| --------- | ---------------------------- | -------------------------------------- |
+| How often | Seldom: a new device         | Often: a new IP address, a new network |
+| Signed by | The identity key `I`         | The node key `N`                       |
+| Kept in   | The identity folder (synced) | Address records, not in any log        |
 
 An **address record** says: node `N`, these addresses, number `seq`, good
 until time `t`. It is signed by `N`. A record with a bigger `seq` takes the
@@ -221,7 +238,7 @@ a look) is sans-IO, in a portable crate, so it runs in `fos-sim`.
 
 1. **Identity:** the identity key apart from the node key, the identity
    folder, node certificates, identity links, and adding a node
-   (`fos id`, `fos id join`, `fos id add-node`).
+   (`fos id`, `fos id new`, `fos id add-node`, `fos id join`). Built.
 2. **Address records:** nodes sign their addresses, and the nodes of one
    identity send them to each other.
 3. **Rendezvous:** names and encryption by period, the rendezvous store with

@@ -172,6 +172,23 @@ fn route(
     }
     match (method, path) {
         (&Method::GET, "/v0/status") => ok(node.status().to_string()),
+        (&Method::GET, "/v0/id") => ok(node.identity().map_or_else(
+            || "no identity: make one with `fos id new`, or join one with `fos id join`\n".into(),
+            |id| id.to_string(),
+        )),
+        (&Method::POST, "/v0/id/new") => ok(format!("{}\n", node.identity_new()?)),
+        (&Method::POST, "/v0/id/node") => ok(format!(
+            "{}\n",
+            node.identity_add_node(arg("key")?.parse()?)?
+        )),
+        (&Method::DELETE, "/v0/id/node") => {
+            node.identity_remove_node(arg("key")?.parse()?)?;
+            ok(String::new())
+        }
+        (&Method::POST, "/v0/id/join") => {
+            node.identity_join(arg("folder")?.parse()?)?;
+            ok(String::new())
+        }
         (&Method::POST, "/v0/folder") => {
             ok(format!("{}\n", node.create(&arg("name")?, &arg("at")?)?))
         }

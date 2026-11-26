@@ -20,6 +20,7 @@ publish = false
 [workspace.dependencies]
 fos-core = { path = "crates/fos-core" }
 fos-fs = { path = "crates/fos-fs" }
+fos-id = { path = "crates/fos-id" }
 fos-sync = { path = "crates/fos-sync" }
 fos-store = { path = "crates/fos-store" }
 fos-runtime = { path = "crates/fos-runtime" }

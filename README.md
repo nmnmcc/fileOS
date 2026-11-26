@@ -63,6 +63,10 @@ To share `/photos` with another node: `fos grant /photos <its node key> all` her
   - [x] Writes wait for their ordering node and go when it is back
   - [ ] QUIC
   - [ ] Folders encrypted with MLS (RFC 9420)
+- [ ] **Identity**
+  - [x] One identity for a person, apart from the keys of their nodes
+  - [x] Node certificates, signed by the identity, in an identity folder
+  - [ ] Finding all the nodes of an identity through rendezvous nodes
 - [x] **Running a node**
   - [x] One program (`fos`) and one data directory
   - [x] A local gateway and a command line

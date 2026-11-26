@@ -96,6 +96,37 @@ impl Store {
         Ok(SecretKey::from_seed(&seed))
     }
 
+    /// The secret key of the identity that this node holds, if it holds one.
+    /// Most nodes do not: the key of an identity is on one device only.
+    ///
+    /// # Errors
+    ///
+    /// When the file is there but cannot be read, or is broken.
+    pub fn identity_key(&self) -> Result<Option<SecretKey>, Error> {
+        let path = self.dir.join("identity.key");
+        let seed = match fs::read(&path) {
+            Ok(seed) => seed,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(io_error(&path, &e)),
+        };
+        let seed: [u8; 32] = seed.try_into().map_err(|bytes: Vec<u8>| {
+            Error(format!("identity.key has {} bytes, not 32", bytes.len()))
+        })?;
+        Ok(Some(SecretKey::from_seed(&seed)))
+    }
+
+    /// Keeps the secret key of an identity on this node.
+    ///
+    /// # Errors
+    ///
+    /// When this node already holds an identity, or the file cannot be written.
+    pub fn set_identity_key(&self, key: &SecretKey) -> Result<(), Error> {
+        if self.identity_key()?.is_some() {
+            return Err(Error("this node already holds an identity".into()));
+        }
+        write_atomic(&self.dir.join("identity.key"), &key.seed())
+    }
+
     /// The token that a local client gives to the gateway. It is made the first time.
     ///
     /// # Errors
