@@ -17,9 +17,10 @@ An app is a component of the `app` world.
 | `kv`                     | A key-value store on this node only, for indexes               |
 | `log`                    | Messages for the node's status and log                         |
 
-| The app gives (exports) | When the core calls it                  |
-| ----------------------- | --------------------------------------- |
-| `events.on-change`      | A path that the app watches has changed |
+| The app gives (exports)             | When the core calls it                       |
+| ----------------------------------- | -------------------------------------------- |
+| `events.on-change`                  | A path that the app watches has changed      |
+| `wasi:http/incoming-handler.handle` | An HTTP request for the app's origin came in |
 
 Every call to `fs` is made with the **app's own key**, which the node makes
 from its own key. The engine checks every call. An app can only use the paths
@@ -46,6 +47,35 @@ impl Guest for Sizes {
 
 fos_app::app::export_app!(Sizes);
 ```
+
+### HTTP
+
+Every app is an HTTP server for its own origin,
+`http://<app-id>.localhost:7341/`, with the standard `wasi:http` (WASI 0.2).
+`fos app install` prints the address. Each request gets a new instance of
+the app, with limits on fuel, memory and time (30 seconds). The kernel takes
+the `cookie`, `authorization` and `fos-user` headers away from requests,
+puts in `fos-user` with the DID of the person when someone is signed in, and
+takes `set-cookie` away from responses. An app has no files, sockets or
+outgoing HTTP of its own: only `fs`, `kv` and `log`.
+
+The SDK reads the request and writes the response for you:
+
+```rust
+use fos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
+use fos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
+use fos_app::http::Response;
+
+impl Http for Sizes {
+    fn handle(request: IncomingRequest, out: ResponseOutparam) {
+        fos_app::http::serve(request, out, |req| {
+            Response::text(200, format!("hello, {}", req.user().unwrap_or("no one")))
+        });
+    }
+}
+```
+
+See "HTTP and the browser" in the architecture for the reasons.
 
 ## Engines
 

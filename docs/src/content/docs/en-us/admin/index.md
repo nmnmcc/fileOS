@@ -35,19 +35,22 @@ folder may do everything in it, and gives others what they may do.
 fos node run
 ```
 
-This starts the network, the apps and the gateway. The gateway is a small
-HTTP API on `127.0.0.1` for the other `fos` commands. It needs the token in
-`gateway.token` in the data directory.
+This starts the network, the apps and the gateway. The gateway is the HTTP
+front of the node, on this machine only (`127.0.0.1` and `::1`, port 7341):
+`http://fos.localhost:7341/` is the kernel, and `http://<app-id>.localhost:7341/`
+is an app. The other `fos` commands use the kernel API, with the token in
+`gateway.token` in the data directory. `fos curl` runs curl with that token:
+for example, `fos curl /v0/status`.
 
-| Option           | What it does                                                   |
-| ---------------- | -------------------------------------------------------------- |
-| `--listen ADDR`  | A libp2p address to listen on (default: TCP on every address)  |
-| `--peer ADDR`    | A node to connect to at the start                              |
-| `--gateway ADDR` | Where the gateway listens (default `127.0.0.1`, any free port) |
-| `--no-mdns`      | Do not look for nodes on the home network                      |
+| Option          | What it does                                                  |
+| --------------- | ------------------------------------------------------------- |
+| `--listen ADDR` | A libp2p address to listen on (default: TCP on every address) |
+| `--peer ADDR`   | A node to connect to at the start                             |
+| `--port PORT`   | The port of the gateway (default 7341; 0 is any free port)    |
+| `--no-mdns`     | Do not look for nodes on the home network                     |
 
 `fos node status` shows the node key, the addresses it listens on (with `/p2p/…`,
-ready to give to another node), the peers, the folders and the apps.
+ready to give to another node), the peers and the folders.
 
 ## Connect two nodes
 

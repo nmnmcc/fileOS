@@ -29,13 +29,14 @@ There are only a few ideas:
 
 `fos` works with the kernel of your node. Its commands are in groups:
 
-| Group                     | What it is for                                          |
-| ------------------------- | ------------------------------------------------------- |
-| `fos node`                | This node: `init`, `run`, `status`, `connect`           |
-| `fos fs`                  | Files and streams: `ls`, `cat`, `put`, `append`, `rm`   |
-| `fos folder`              | Folders: `new`, `mount`, `grant`                        |
-| `fos identity` (`fos id`) | Your identity: `new`, `add-node`, `remove-node`, `join` |
-| `fos app`                 | `install` an app                                        |
+| Group                     | What it is for                                                 |
+| ------------------------- | -------------------------------------------------------------- |
+| `fos node`                | This node: `init`, `run`, `status`, `connect`                  |
+| `fos fs`                  | Files and streams: `ls`, `cat`, `put`, `append`, `rm`          |
+| `fos folder`              | Folders: `new`, `mount`, `grant`                               |
+| `fos identity` (`fos id`) | Your identity: `new`, `add-node`, `remove-node`, `join`        |
+| `fos app`                 | `pack` or `install` an app                                     |
+| `fos curl`                | curl with your node's token, for example `fos curl /v0/status` |
 
 What an app does is not in `fos`; you see it in the app. `fos help <group>`
 says more about each group.

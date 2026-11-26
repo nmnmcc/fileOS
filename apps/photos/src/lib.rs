@@ -6,11 +6,60 @@
 //! size of the image from its header and keeps it in the local key-value
 //! store, under `photo:<path>`, as `<width>x<height>`. The index is on this
 //! node only and can be made again at any time.
+//!
+//! At its own origin, it gives a page with the photos it found.
+
+use std::fmt::Write as _;
 
 use fos_app::app::exports::fos::app::events::Guest;
+use fos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
 use fos_app::app::fos::app::{fs, kv, log};
+use fos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
+use fos_app::http::{Request, Response};
 
 struct Photos;
+
+/// The page of the app, at its own origin: the photos it found.
+impl Http for Photos {
+    fn handle(request: IncomingRequest, out: ResponseOutparam) {
+        fos_app::http::serve(request, out, page);
+    }
+}
+
+fn page(req: &Request) -> Response {
+    if req.method != "GET" {
+        return Response::text(405, "only GET\n");
+    }
+    if req.path != "/" {
+        return Response::text(404, "not found\n");
+    }
+    let mut rows = String::new();
+    for key in kv::keys("photo:") {
+        let size = kv::get(&key).map(|v| String::from_utf8_lossy(&v).into_owned());
+        let _ = write!(
+            rows,
+            "<li>{} <small>{}</small></li>",
+            escape(key.trim_start_matches("photo:")),
+            escape(&size.unwrap_or_default())
+        );
+    }
+    let who = req.user().map_or_else(|| "no one".to_string(), escape);
+    Response::html(
+        200,
+        format!(
+            "<!doctype html><meta charset=utf-8><title>Photos</title>\
+             <h1>Photos</h1><p>Signed in: {who}</p><ul>{rows}</ul>"
+        ),
+    )
+}
+
+/// Text that is safe to put into HTML.
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
 
 impl Guest for Photos {
     fn on_change(path: String) {

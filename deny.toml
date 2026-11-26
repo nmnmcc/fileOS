@@ -46,9 +46,12 @@ allow-wildcard-paths = true
 deny = [
   { crate = "openssl-sys", reason = "C build dependency; use rustls with the ring backend" },
   { crate = "aws-lc-sys", reason = "needs cmake/clang and is slow to build; use rustls with the ring backend" },
-  # wasmtime uses it inside; our code must not.
+  # wasmtime and its WASI crates use it inside; our code must not.
   { crate = "async-trait", wrappers = [
     "wasmtime",
+    "wasmtime-wasi",
+    "wasmtime-wasi-io",
+    "wasmtime-wasi-http",
   ], reason = "native async fn in traits is stable" },
 ]
 # Duplicates we cannot take out: each comes from an upstream crate.

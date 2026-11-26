@@ -78,7 +78,7 @@ async fn two_nodes_share_a_photos_folder() {
 
     // Bob installs the photos app. Its permission is a policy entry, which
     // goes to Alice, the ordering node of the folder.
-    let app_key = bob.install(&apps.join("Photos.app")).unwrap();
+    let app_key = bob.install(&apps.join("Photos.app")).unwrap().key;
     assert_ne!(app_key, bob.key());
     until("alice orders the app's grant", || bob.status().pending == 0).await;
     assert_eq!(bob.status().apps, ["photos"]);

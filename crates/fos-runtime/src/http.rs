@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! Apps as HTTP servers, with `wasi:http`.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use bytes::Bytes;
+use fos_core::Error;
+use wasmtime::Store;
+use wasmtime::component::Linker;
+use wasmtime_wasi_http::WasiHttpView as _;
+use wasmtime_wasi_http::p2::bindings::ProxyPre;
+use wasmtime_wasi_http::p2::bindings::http::types::Scheme;
+use wasmtime_wasi_http::p2::body::HyperOutgoingBody;
+
+use crate::{APP_FUEL, AppCtx, AppHost, Bundle, Kind, Runtime, add_fos_to_linker, wasm_error};
+
+/// The most time one request may take.
+const REQUEST_TIME: Duration = Duration::from_secs(30);
+
+/// How much fuel an app may use before it lets other work run. With this,
+/// the time limit works even when an app does not stop.
+const FUEL_SLICE: u64 = 1_000_000;
+
+/// An app, ready to take HTTP requests for its origin.
+#[derive(Clone)]
+pub struct HttpApp {
+    id: String,
+    host: Arc<dyn AppHost>,
+    pre: ProxyPre<AppCtx>,
+}
+
+impl std::fmt::Debug for HttpApp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HttpApp({})", self.id)
+    }
+}
+
+impl Runtime {
+    /// Makes an app ready for HTTP requests. Its calls go to `host`.
+    ///
+    /// # Errors
+    ///
+    /// When the bundle is not an app, or its component does not export
+    /// `wasi:http/incoming-handler`.
+    pub fn http_app(&self, bundle: &Bundle, host: Arc<dyn AppHost>) -> Result<HttpApp, Error> {
+        let component = self.component(bundle, Kind::App)?;
+        let mut linker = Linker::new(&self.engine);
+        add_fos_to_linker(&mut linker)?;
+        wasmtime_wasi_http::p2::add_to_linker_async(&mut linker).map_err(wasm_error)?;
+        let pre = ProxyPre::new(linker.instantiate_pre(&component).map_err(wasm_error)?)
+            .map_err(wasm_error)?;
+        Ok(HttpApp {
+            id: bundle.manifest.id.clone(),
+            host,
+            pre,
+        })
+    }
+}
+
+impl HttpApp {
+    /// Gives one request to a new instance of the app, and gives back its
+    /// response. Call it inside a Tokio runtime.
+    ///
+    /// # Errors
+    ///
+    /// When the app traps, runs out of fuel, memory or time, or gives no
+    /// response.
+    pub async fn handle<B>(
+        &self,
+        request: hyper::Request<B>,
+    ) -> Result<hyper::Response<HyperOutgoingBody>, Error>
+    where
+        B: hyper::body::Body<Data = Bytes> + Send + 'static,
+        B::Error: Into<wasmtime_wasi_http::Error>,
+    {
+        let mut store = Store::new(
+            self.pre.engine(),
+            AppCtx::new(&self.id, Arc::clone(&self.host)),
+        );
+        store.limiter(|ctx| &mut ctx.limits);
+        store.set_fuel(APP_FUEL).map_err(wasm_error)?;
+        store
+            .fuel_async_yield_interval(Some(FUEL_SLICE))
+            .map_err(wasm_error)?;
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let req = store
+            .data_mut()
+            .http()
+            .new_incoming_request(Scheme::Http, request)
+            .map_err(wasm_error)?;
+        let out = store
+            .data_mut()
+            .http()
+            .new_response_outparam(sender)
+            .map_err(wasm_error)?;
+        let pre = self.pre.clone();
+        let task = tokio::spawn(tokio::time::timeout(REQUEST_TIME, async move {
+            let proxy = pre.instantiate_async(&mut store).await?;
+            proxy
+                .wasi_http_incoming_handler()
+                .call_handle(&mut store, req, out)
+                .await
+        }));
+        match receiver.await {
+            Ok(Ok(response)) => Ok(response),
+            Ok(Err(e)) => Err(Error(format!("the app {} failed: {e:?}", self.id))),
+            Err(_) => Err(match task.await {
+                Ok(Ok(Ok(()))) => Error(format!("the app {} gave no response", self.id)),
+                Ok(Ok(Err(e))) => Error(format!("the app {} failed: {e:#}", self.id)),
+                Ok(Err(_)) => Error(format!("the app {} took too long", self.id)),
+                Err(e) => Error(format!("the app {} failed: {e}", self.id)),
+            }),
+        }
+    }
+}

@@ -68,6 +68,14 @@ wasmtime = { version = "51.0.0", default-features = false, features = [
   "cranelift",
   "component-model",
 ] }
+# Apps are HTTP servers with wasi:http (WASI 0.2). Only the "p2" parts: no
+# outgoing HTTP of its own (no TLS), and no WASI 0.3.
+wasmtime-wasi = { version = "51.0.0", default-features = false, features = [
+  "p2",
+] }
+wasmtime-wasi-http = { version = "51.0.0", default-features = false, features = [
+  "p2",
+] }
 # The network. We do not make our own (see the fileOS design page).
 # No "quic" for now: libp2p-quic always turns on quinn's aws-lc-rs backend,
 # and aws-lc-sys is not allowed (deny.toml). TCP with Noise and Yamux does the

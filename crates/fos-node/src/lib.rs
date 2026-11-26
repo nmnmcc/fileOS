@@ -25,6 +25,8 @@ use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
 use fos_fs::{Ability, Authz, Decision, Fork, Node as FsNode, Op, resolve};
 use fos_id::{Link, NodeCert, Op as DidOp, Service, State};
 use fos_runtime::{AppHost, AppInstance, Bundle, EngineInstance, FsError, Kind, Runtime};
+
+pub use fos_runtime::HttpApp;
 use fos_store::Store;
 use fos_sync::{Blobs as _, Event, Replica, Step};
 use tokio::sync::mpsc;
@@ -49,6 +51,8 @@ impl fmt::Debug for Node {
 struct Shared {
     inner: Mutex<Inner>,
     apps: Mutex<Vec<AppInstance>>,
+    /// The apps that give HTTP, by app ID: the name of their origin.
+    http: Mutex<BTreeMap<String, HttpApp>>,
     /// Node paths that changed, for the apps that watch them.
     changed: Mutex<VecDeque<String>>,
     runtime: Runtime,
@@ -155,6 +159,37 @@ pub fn pack_app(dir: &Path) -> Result<Vec<u8>, Error> {
     Bundle::read_dir(dir)?.pack()
 }
 
+/// The ID of an app: the host name of its origin, `<app-id>.localhost`.
+///
+/// It is the ID in the manifest (only lowercase letters, digits and `-`)
+/// and the start of the ID of the app folder. So it does not change, and is
+/// not used again by another app, which would get the data that the browser
+/// keeps for the origin.
+pub fn app_id(manifest_id: &str, folder: Hash) -> String {
+    let name: String = manifest_id
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .take(40)
+        .collect();
+    let name = name.trim_matches('-');
+    let short = &folder.to_string()[..10];
+    if name.is_empty() {
+        format!("app-{short}")
+    } else {
+        format!("{name}-{short}")
+    }
+}
+
+/// An app that was installed.
+#[derive(Clone, Debug)]
+pub struct Installed {
+    /// The key that the app acts with.
+    pub key: PublicKey,
+    /// The ID of the app: its origin is `<id>.localhost`.
+    pub id: String,
+}
+
 /// The token that local clients give to the gateway of the node in `dir`.
 ///
 /// # Errors
@@ -164,17 +199,33 @@ pub fn token(dir: &Path) -> Result<String, Error> {
     Store::open(dir)?.token()
 }
 
-/// Writes the address of the running gateway into `dir`, or takes it away.
+/// Writes the port of the running gateway into `dir`, or takes it away.
+///
+/// With `None`, the files go. Next to it is `gateway.curl`, a curl config file that `fos curl`
+/// uses: it sends the token, and sends every connection to the gateway, so
+/// the token never leaves this machine.
 ///
 /// # Errors
 ///
-/// When the file cannot be written.
-pub fn write_gateway_addr(dir: &Path, addr: Option<std::net::SocketAddr>) -> Result<(), Error> {
-    let path = dir.join("gateway.addr");
-    match addr {
-        Some(addr) => fos_store::write_atomic(&path, addr.to_string().as_bytes()),
-        None => std::fs::remove_file(&path).or(Ok(())),
-    }
+/// When a file cannot be written.
+pub fn write_gateway_addr(dir: &Path, port: Option<u16>) -> Result<(), Error> {
+    let addr = dir.join("gateway.addr");
+    let curl = dir.join("gateway.curl");
+    let Some(port) = port else {
+        let _ = std::fs::remove_file(&curl);
+        return std::fs::remove_file(&addr).or(Ok(()));
+    };
+    let token = Store::open(dir)?.token()?;
+    fos_store::write_atomic(
+        &curl,
+        format!(
+            "# Made by `fos node run` for `fos curl`. It goes when the node stops.\n\
+             header = \"Authorization: Bearer {token}\"\n\
+             connect-to = \"::127.0.0.1:{port}\"\n"
+        )
+        .as_bytes(),
+    )?;
+    fos_store::write_atomic(&addr, format!("127.0.0.1:{port}").as_bytes())
 }
 
 /// Reads ability names, for example `read,write,store`.
@@ -281,6 +332,7 @@ impl Node {
             shared: Arc::new(Shared {
                 inner: Mutex::new(inner),
                 apps: Mutex::new(Vec::new()),
+                http: Mutex::new(BTreeMap::new()),
                 changed: Mutex::new(VecDeque::new()),
                 runtime,
                 key: key.public(),
@@ -422,7 +474,7 @@ impl Node {
     ///
     /// When the bundle is not an app, a permission cannot be given, or the app
     /// does not start.
-    pub fn install(&self, dir: &Path) -> Result<PublicKey, Error> {
+    pub fn install(&self, dir: &Path) -> Result<Installed, Error> {
         let bundle = Bundle::read(dir)?;
         if bundle.manifest.kind != Kind::App {
             return Err(Error(format!("{} is not an app", dir.display())));
@@ -433,6 +485,7 @@ impl Node {
             .unwrap_or_default();
         let at = format!("/apps/{name}");
         let app_key;
+        let folder;
         {
             let mut inner = self.inner();
             app_key = inner.app_key(&bundle.manifest.id);
@@ -446,6 +499,7 @@ impl Node {
                 replica, engine, ..
             } = &mut *inner;
             let (id, step) = replica.create(&name, engine);
+            folder = id;
             inner.process(step, &self.shared.changed)?;
             inner.mount(id, &at, &self.shared.changed)?;
             for (path, data) in &bundle.files {
@@ -460,7 +514,7 @@ impl Node {
                 )?;
             }
         }
-        self.start_app(&bundle)?;
+        let id = self.start_app(&bundle, folder)?;
         // Tell the new app about the files that are there already.
         let mut existing = Vec::new();
         {
@@ -471,7 +525,20 @@ impl Node {
         }
         lock(&self.shared.changed).extend(existing);
         self.pump();
-        Ok(app_key.public())
+        Ok(Installed {
+            key: app_key.public(),
+            id,
+        })
+    }
+
+    /// The app with this ID, if it gives HTTP.
+    pub fn http_app(&self, id: &str) -> Option<HttpApp> {
+        lock(&self.shared.http).get(id).cloned()
+    }
+
+    /// The IDs of the apps that give HTTP.
+    pub fn http_apps(&self) -> Vec<String> {
+        lock(&self.shared.http).keys().cloned().collect()
     }
 
     /// Makes a new identity. This node holds its rotation key and its
@@ -720,23 +787,30 @@ impl Node {
                 .collect();
             mounts
                 .into_iter()
-                .filter_map(|id| inner.bundle(id))
+                .filter_map(|id| Some((inner.bundle(id)?, id)))
                 .collect::<Vec<_>>()
         };
-        for bundle in bundles {
-            if let Err(e) = self.start_app(&bundle) {
+        for (bundle, folder) in bundles {
+            if let Err(e) = self.start_app(&bundle, folder) {
                 tracing::warn!("app {} did not start: {e}", bundle.manifest.id);
             }
         }
     }
 
-    fn start_app(&self, bundle: &Bundle) -> Result<(), Error> {
+    /// Starts an app that is in the folder `folder`. Gives its app ID.
+    fn start_app(&self, bundle: &Bundle, folder: Hash) -> Result<String, Error> {
         let host = Arc::new(Host {
             shared: Arc::downgrade(&self.shared),
         });
+        let id = app_id(&bundle.manifest.id, folder);
+        let http = self
+            .shared
+            .runtime
+            .http_app(bundle, Arc::<Host>::clone(&host))?;
         let app = self.shared.runtime.app(bundle, host)?;
         lock(&self.shared.apps).push(app);
-        Ok(())
+        lock(&self.shared.http).insert(id.clone(), http);
+        Ok(id)
     }
 
     /// Tells the apps about changed paths, until there are no more.

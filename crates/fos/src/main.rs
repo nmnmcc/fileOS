@@ -2,7 +2,8 @@
 
 //! `fos`: run a fileOS node, and use its kernel from the command line.
 //!
-//! The commands are in groups: `node`, `fs`, `folder`, `identity` and `app`.
+//! The commands are in groups: `node`, `fs`, `folder`, `identity` and `app`,
+//! and `fos curl` runs curl against the gateway.
 //! They are about the kernel only: what an app or a plugin does is not here,
 //! but packing and installing them is. `fos node init` and `fos node run`
 //! work on the data directory, and `fos app pack` on the files it is given.
@@ -66,6 +67,15 @@ enum Command {
         #[command(subcommand)]
         command: AppCommand,
     },
+    /// Run curl with this node's token, against its gateway. Every
+    /// connection goes to the gateway, so the token never leaves this
+    /// machine. A last argument that is only a path, such as /v0/status, is
+    /// a request to the kernel API.
+    Curl {
+        /// The arguments for curl.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -84,9 +94,9 @@ enum NodeCommand {
         /// Nodes to connect to at the start.
         #[arg(long)]
         peer: Vec<String>,
-        /// The address of the gateway, on this machine only.
-        #[arg(long, default_value = "127.0.0.1:0")]
-        gateway: String,
+        /// The port of the gateway, on this machine only. 0 is any free port.
+        #[arg(long, default_value_t = fos_gateway::DEFAULT_PORT)]
+        port: u16,
         /// Do not look for nodes on the home network.
         #[arg(long)]
         no_mdns: bool,
@@ -194,6 +204,7 @@ fn run(cli: Cli) -> Result<(), Error> {
         Command::Fs { command } => fs(&Client::new(&dir)?, command),
         Command::Folder { command } => folder(&Client::new(&dir)?, command),
         Command::Identity { command } => identity(&Client::new(&dir)?, command, &dir),
+        Command::Curl { args } => curl(&dir, args),
         Command::App {
             command: AppCommand::Pack { folder, file },
         } => {
@@ -214,12 +225,21 @@ fn run(cli: Cli) -> Result<(), Error> {
         } => {
             let app = std::fs::canonicalize(&app)
                 .map_err(|e| Error(format!("{}: {e}", app.display())))?;
-            let key = Client::new(&dir)?.call(
+            let client = Client::new(&dir)?;
+            let answer = client.call(
                 "POST",
                 &format!("/v0/install?dir={}", enc(&app.to_string_lossy())),
                 &[],
             )?;
-            print(&[b"installed; app key ", key.as_slice()].concat())
+            let answer = String::from_utf8_lossy(&answer);
+            let mut lines = answer.lines();
+            let (key, id) = (
+                lines.next().unwrap_or_default(),
+                lines.next().unwrap_or_default(),
+            );
+            let port = client.addr.rsplit(':').next().unwrap_or_default();
+            println!("installed\napp key {key}\nopen    http://{id}.localhost:{port}/");
+            Ok(())
         }
     }
 }
@@ -234,9 +254,9 @@ fn node(command: NodeCommand, dir: &Path) -> Result<(), Error> {
         NodeCommand::Run {
             listen,
             peer,
-            gateway,
+            port,
             no_mdns,
-        } => serve(dir, listen, peer, &gateway, !no_mdns),
+        } => serve(dir, listen, peer, port, !no_mdns),
         NodeCommand::Status => print(&Client::new(dir)?.call("GET", "/v0/status", &[])?),
         NodeCommand::Connect { addr } => Client::new(dir)?
             .call("POST", "/v0/dial", addr.as_bytes())
@@ -347,6 +367,48 @@ fn identity(client: &Client, command: Option<IdentityCommand>, dir: &Path) -> Re
     }
 }
 
+/// Waits for Ctrl-C, or (on Unix) for SIGTERM, which service managers send.
+async fn stopped() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        if let Ok(mut term) = signal(SignalKind::terminate()) {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = term.recv() => {}
+            }
+            return;
+        }
+    }
+    let _ = tokio::signal::ctrl_c().await;
+}
+
+fn curl(dir: &Path, mut args: Vec<String>) -> Result<(), Error> {
+    let config = dir.join("gateway.curl");
+    let addr = std::fs::read_to_string(dir.join("gateway.addr"))
+        .ok()
+        .filter(|_| config.exists())
+        .ok_or_else(|| {
+            Error(format!(
+                "no node is running for {}: start it with `fos node run`",
+                dir.display()
+            ))
+        })?;
+    let port = addr.trim().rsplit(':').next().unwrap_or_default();
+    if let Some(last) = args.last_mut()
+        && last.starts_with('/')
+    {
+        *last = format!("http://fos.localhost:{port}{last}");
+    }
+    let status = std::process::Command::new("curl")
+        .arg("--config")
+        .arg(&config)
+        .args(&args)
+        .status()
+        .map_err(|e| Error(format!("fos curl needs curl: {e}")))?;
+    std::process::exit(status.code().unwrap_or(1));
+}
+
 fn print(data: &[u8]) -> Result<(), Error> {
     std::io::stdout()
         .write_all(data)
@@ -357,7 +419,7 @@ fn serve(
     dir: &Path,
     listen: Vec<String>,
     peers: Vec<String>,
-    gateway: &str,
+    port: u16,
     mdns: bool,
 ) -> Result<(), Error> {
     let parse = |list: Vec<String>| {
@@ -373,21 +435,18 @@ fn serve(
         peers: parse(peers)?,
         mdns,
     };
-    let gateway = gateway
-        .parse()
-        .map_err(|e| Error(format!("{gateway}: {e}")))?;
     let runtime = tokio::runtime::Runtime::new().map_err(|e| Error(e.to_string()))?;
     runtime.block_on(async {
         let node = Node::open(dir)?;
         let token = fos_node::token(dir)?;
         node.start_net(config)?;
-        let addr = fos_gateway::start(node.clone(), gateway, token).await?;
-        fos_node::write_gateway_addr(dir, Some(addr))?;
+        let port = fos_gateway::start(node.clone(), port, token).await?;
+        fos_node::write_gateway_addr(dir, Some(port))?;
         eprintln!(
-            "node {}\ngateway http://{addr}\n(stop with Ctrl-C)",
+            "node {}\ngateway http://fos.localhost:{port}\n(stop with Ctrl-C)",
             node.key()
         );
-        let _ = tokio::signal::ctrl_c().await;
+        stopped().await;
         fos_node::write_gateway_addr(dir, None)
     })
 }

@@ -1,10 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! The fileOS gateway: a small HTTP API for local clients, such as the `fos`
-//! command.
+//! The fileOS gateway: the HTTP front of a node, on this machine only.
 //!
-//! Every request needs `Authorization: Bearer <token>`, with the token from
-//! the data directory. Requests act with the node key.
+//! It listens on `127.0.0.1` and `::1`, on [`DEFAULT_PORT`] unless told
+//! otherwise. Each request goes by its host name (see "HTTP and the browser"
+//! in the docs):
+//!
+//! - `fos.localhost`, `localhost`, `127.0.0.1` and `::1`: the kernel API below.
+//! - `<app-id>.localhost`: the app with that ID.
+//! - Any other name: `421 Misdirected Request`, so that DNS rebinding does
+//!   not work.
+//!
+//! The kernel API takes no requests that a browser says are cross-site
+//! (`Sec-Fetch-Site`). Every answer has safe default headers, and the
+//! answers of apps can set no cookies.
+//!
+//! Every request to the kernel API needs `Authorization: Bearer <token>`,
+//! with the token from the data directory. Requests act with the node key.
 //!
 //! | Request                                      | What it does                         |
 //! | -------------------------------------------- | ------------------------------------ |
@@ -22,26 +34,119 @@
 //! | `GET /v0/kv/<app>`                           | An app's key-value store, as text    |
 //! | `POST /v0/dial`                              | Connect to a multiaddr (the body)    |
 //!
-//! Later, requests for other paths will go to the `handle-http` of apps.
 
 use std::collections::BTreeMap;
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 
 use bytes::Bytes;
 use fos_core::Error;
 use fos_node::{Node, parse_abilities};
+use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt as _, Full};
 use hyper::body::Incoming;
+use hyper::header::{self, HeaderMap, HeaderValue};
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
 use tokio::net::TcpListener;
 
-type Reply = Response<Full<Bytes>>;
+/// An error in the body of an answer.
+type BodyError = Box<dyn std::error::Error + Send + Sync>;
+
+/// The body of an answer: bytes that the gateway made, or the stream that an
+/// app gives.
+type Body = UnsyncBoxBody<Bytes, BodyError>;
+
+type Reply = Response<Body>;
+
+/// The port of the gateway when no other is given.
+pub const DEFAULT_PORT: u16 = 7341;
+
+/// Who a request is for, by its host name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// The kernel API.
+    Kernel,
+    /// The app with this ID.
+    App(String),
+}
+
+/// Says who a request is for, from its `Host`. `None` for a host name that
+/// is not one of ours.
+pub fn target(host: &str) -> Option<Target> {
+    let host = host.trim().to_ascii_lowercase();
+    // Take the port away: "[::1]:7341", "fos.localhost:7341".
+    let name = if let Some(rest) = host.strip_prefix('[') {
+        rest.split(']').next().unwrap_or_default()
+    } else {
+        host.rsplit_once(':')
+            .map_or(host.as_str(), |(name, _)| name)
+    };
+    let name = name.trim_end_matches('.');
+    match name {
+        "fos.localhost" | "localhost" | "127.0.0.1" | "::1" => Some(Target::Kernel),
+        _ => {
+            let label = name.strip_suffix(".localhost")?;
+            let good = !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+            good.then(|| Target::App(label.to_string()))
+        }
+    }
+}
+
+/// Puts in the default headers that every answer has.
+fn safe_headers(headers: &mut HeaderMap, target: &Target) {
+    let mut set = |name: &'static str, value: &'static str| {
+        if !headers.contains_key(name) {
+            headers.insert(name, HeaderValue::from_static(value));
+        }
+    };
+    set("x-content-type-options", "nosniff");
+    set("referrer-policy", "same-origin");
+    set("cross-origin-opener-policy", "same-origin");
+    set("cross-origin-resource-policy", "same-origin");
+    match target {
+        Target::Kernel => {
+            set(
+                "content-security-policy",
+                "default-src 'none'; frame-ancestors 'none'",
+            );
+            set("cache-control", "no-store");
+        }
+        Target::App(_) => {
+            set(
+                "content-security-policy",
+                "default-src 'self'; frame-ancestors 'self'",
+            );
+        }
+    }
+}
+
+/// Makes the answer of an app safe: it may set no cookies, because the
+/// kernel signs people in, with no cookies at all.
+pub fn clean_app_headers(headers: &mut HeaderMap) {
+    headers.remove(header::SET_COOKIE);
+    safe_headers(headers, &Target::App(String::new()));
+}
+
+/// Says if a browser sent the request from another site.
+fn cross_site(headers: &HeaderMap) -> bool {
+    headers
+        .get("sec-fetch-site")
+        .is_some_and(|v| v.as_bytes() == b"cross-site")
+}
 
 fn reply(status: StatusCode, body: impl Into<Bytes>) -> Reply {
-    let mut response = Response::new(Full::new(body.into()));
+    let body = Full::new(body.into())
+        .map_err(|never| match never {})
+        .boxed_unsync();
+    let mut response = Response::new(body);
     *response.status_mut() = status;
     response
 }
@@ -50,37 +155,50 @@ fn decode(text: &str) -> String {
     percent_decode_str(text).decode_utf8_lossy().into_owned()
 }
 
-/// Starts the gateway on `addr`. Gives the address it listens on.
+/// Starts the gateway on `port` (0 for any free port), on `127.0.0.1` and,
+/// when this machine has it, `::1`. Gives the port it listens on.
 ///
 /// # Errors
 ///
-/// When it cannot listen on the address.
-pub async fn start(node: Node, addr: SocketAddr, token: String) -> Result<SocketAddr, Error> {
-    let listener = TcpListener::bind(addr)
+/// When it cannot listen on 127.0.0.1.
+pub async fn start(node: Node, port: u16, token: String) -> Result<u16, Error> {
+    let v4 = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    let listener = TcpListener::bind(v4)
         .await
-        .map_err(|e| Error(format!("gateway: {addr}: {e}")))?;
-    let local = listener
+        .map_err(|e| Error(format!("gateway: {v4}: {e}")))?;
+    let port = listener
         .local_addr()
-        .map_err(|e| Error(format!("gateway: {e}")))?;
-    tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                continue;
-            };
-            let (node, token) = (node.clone(), token.clone());
-            tokio::spawn(async move {
-                let service =
-                    hyper::service::service_fn(move |req| serve(node.clone(), token.clone(), req));
-                if let Err(e) = hyper::server::conn::http1::Builder::new()
-                    .serve_connection(TokioIo::new(stream), service)
-                    .await
-                {
-                    tracing::debug!("gateway connection: {e}");
-                }
-            });
-        }
-    });
-    Ok(local)
+        .map_err(|e| Error(format!("gateway: {e}")))?
+        .port();
+    let mut listeners = vec![listener];
+    let v6 = SocketAddr::from((Ipv6Addr::LOCALHOST, port));
+    match TcpListener::bind(v6).await {
+        Ok(listener) => listeners.push(listener),
+        Err(e) => tracing::debug!("gateway: not on {v6}: {e}"),
+    }
+    for listener in listeners {
+        let (node, token) = (node.clone(), token.clone());
+        tokio::spawn(async move {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    continue;
+                };
+                let (node, token) = (node.clone(), token.clone());
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |req| {
+                        serve(node.clone(), token.clone(), req)
+                    });
+                    if let Err(e) = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(TokioIo::new(stream), service)
+                        .await
+                    {
+                        tracing::debug!("gateway connection: {e}");
+                    }
+                });
+            }
+        });
+    }
+    Ok(port)
 }
 
 async fn serve(
@@ -88,13 +206,71 @@ async fn serve(
     token: String,
     req: Request<Incoming>,
 ) -> Result<Reply, std::convert::Infallible> {
+    let host = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+        .or_else(|| req.uri().authority().map(ToString::to_string))
+        .unwrap_or_default();
+    let Some(target) = target(&host) else {
+        let mut answer = reply(
+            StatusCode::MISDIRECTED_REQUEST,
+            format!("this node does not answer for the host {host:?}\n"),
+        );
+        safe_headers(answer.headers_mut(), &Target::Kernel);
+        return Ok(answer);
+    };
+    let mut answer = match &target {
+        Target::Kernel => kernel(node, token, req).await,
+        Target::App(id) => app(&node, id, req).await,
+    };
+    safe_headers(answer.headers_mut(), &target);
+    Ok(answer)
+}
+
+/// The headers that only the kernel may give an app. The kernel signs
+/// people in, so an app gets no cookies or credentials, and no person that
+/// the kernel did not say.
+const KERNEL_HEADERS: [&str; 3] = ["cookie", "authorization", "fos-user"];
+
+/// A request for an app.
+async fn app(node: &Node, id: &str, req: Request<Incoming>) -> Reply {
+    let Some(app) = node.http_app(id) else {
+        let mut answer = reply(
+            StatusCode::NOT_FOUND,
+            format!("no app {id:?} on this node\n"),
+        );
+        clean_app_headers(answer.headers_mut());
+        return answer;
+    };
+    let (mut parts, body) = req.into_parts();
+    for name in KERNEL_HEADERS {
+        parts.headers.remove(name);
+    }
+    let mut answer = match app.handle(Request::from_parts(parts, body)).await {
+        Ok(answer) => answer.map(|body| body.map_err(|e| Box::new(e) as BodyError).boxed_unsync()),
+        Err(e) => {
+            tracing::warn!("{e}");
+            reply(StatusCode::BAD_GATEWAY, format!("{e}\n"))
+        }
+    };
+    clean_app_headers(answer.headers_mut());
+    answer
+}
+
+/// A request for the kernel API.
+async fn kernel(node: Node, token: String, req: Request<Incoming>) -> Reply {
+    if cross_site(req.headers()) {
+        return reply(StatusCode::FORBIDDEN, "no requests from other sites\n");
+    }
     let authorized = req
         .headers()
         .get(hyper::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.strip_prefix("Bearer ") == Some(token.as_str()));
     if !authorized {
-        return Ok(reply(StatusCode::UNAUTHORIZED, "a token is needed\n"));
+        return reply(StatusCode::UNAUTHORIZED, "a token is needed\n");
     }
     let method = req.method().clone();
     let path = decode(req.uri().path());
@@ -111,17 +287,17 @@ async fn serve(
         .collect();
     let body = match req.into_body().collect().await {
         Ok(body) => body.to_bytes().to_vec(),
-        Err(e) => return Ok(reply(StatusCode::BAD_REQUEST, format!("{e}\n"))),
+        Err(e) => return reply(StatusCode::BAD_REQUEST, format!("{e}\n")),
     };
     // Node calls may run WebAssembly and touch the disk, so they run on a
     // thread for blocking work.
     let result =
         tokio::task::spawn_blocking(move || route(&node, &method, &path, &query, body)).await;
-    Ok(match result {
+    match result {
         Ok(Ok(reply)) => reply,
         Ok(Err(e)) => reply(StatusCode::BAD_REQUEST, format!("{e}\n")),
         Err(e) => reply(StatusCode::INTERNAL_SERVER_ERROR, format!("{e}\n")),
-    })
+    }
 }
 
 fn route(
@@ -197,12 +373,77 @@ fn route(
             ok(String::new())
         }
         (&Method::POST, "/v0/install") => {
-            ok(format!("{}\n", node.install(&PathBuf::from(arg("dir")?))?))
+            let app = node.install(&PathBuf::from(arg("dir")?))?;
+            ok(format!("{}\n{}\n", app.key, app.id))
         }
         (&Method::POST, "/v0/dial") => {
             node.dial(text(body)?.trim())?;
             ok(String::new())
         }
         _ => Ok(reply(StatusCode::NOT_FOUND, "no such request\n")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn requests_go_by_host_name() {
+        for host in [
+            "fos.localhost",
+            "fos.localhost:7341",
+            "localhost:7341",
+            "127.0.0.1:7341",
+            "[::1]:7341",
+            "FOS.LOCALHOST.",
+        ] {
+            assert_eq!(target(host), Some(Target::Kernel), "{host}");
+        }
+        assert_eq!(
+            target("photos-k3x9q2m7ab.localhost:7341"),
+            Some(Target::App("photos-k3x9q2m7ab".into()))
+        );
+        // Names that are not ours: DNS rebinding, other sites, bad labels.
+        for host in [
+            "evil.example",
+            "evil.example:7341",
+            "a.b.localhost",
+            "-x.localhost",
+            ".localhost",
+            "x_y.localhost",
+            "",
+        ] {
+            assert_eq!(target(host), None, "{host}");
+        }
+    }
+
+    #[test]
+    fn apps_set_no_cookies() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::SET_COOKIE, HeaderValue::from_static("session=1"));
+        headers.append(
+            header::SET_COOKIE,
+            HeaderValue::from_static("other=2; Domain=localhost"),
+        );
+        headers.insert(
+            "content-security-policy",
+            HeaderValue::from_static("default-src 'none'"),
+        );
+        clean_app_headers(&mut headers);
+        assert!(headers.get(header::SET_COOKIE).is_none());
+        // An app may make the policy stricter: its own one stays.
+        assert_eq!(headers["content-security-policy"], "default-src 'none'");
+        assert_eq!(headers["x-content-type-options"], "nosniff");
+    }
+
+    #[test]
+    fn requests_from_other_sites_are_seen() {
+        let mut headers = HeaderMap::new();
+        assert!(!cross_site(&headers));
+        headers.insert("sec-fetch-site", HeaderValue::from_static("same-origin"));
+        assert!(!cross_site(&headers));
+        headers.insert("sec-fetch-site", HeaderValue::from_static("cross-site"));
+        assert!(cross_site(&headers));
     }
 }
