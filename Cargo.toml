@@ -50,6 +50,9 @@ toml = { version = "1.2.3", default-features = false, features = [
   "parse",
   "serde",
 ] }
+# base58btc, for did:key. libp2p-identity uses the same crate, so it is
+# already built.
+bs58 = { version = "0.5.1", default-features = false, features = ["alloc"] }
 getrandom = { version = "0.3.4", default-features = false, features = ["std"] }
 
 # The app runtime. We do not make our own (see the fileOS design page).

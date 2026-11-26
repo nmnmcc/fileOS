@@ -93,9 +93,9 @@ enum Command {
 
 #[derive(Subcommand)]
 enum IdCommand {
-    /// Make a new identity. This node holds its key and is its first node.
+    /// Make a new identity (a did:fos DID). This node holds its keys and is its first node.
     New,
-    /// Add a node to the identity. Only the node that holds the key can.
+    /// Add a node to the identity. Only the node that holds the signing key can.
     AddNode { key: String },
     /// Take a node away from the identity.
     RemoveNode { key: String },
@@ -246,11 +246,13 @@ fn id(client: &Client, command: Option<IdCommand>, dir: &Path) -> Result<(), Err
     match command {
         None => print(&client.call("GET", "/v0/id", &[])?),
         Some(IdCommand::New) => {
-            let key = text(client.call("POST", "/v0/id/new", &[])?);
+            let did = text(client.call("POST", "/v0/id/new", &[])?);
             println!(
-                "identity {key}\nThis node holds the key of the identity, in {}.\n\
-                 Keep a copy of that file in a safe place.",
-                dir.join("identity.key").display()
+                "identity {did}\nThis node holds the keys of the identity:\n  {}\n  {}\n\
+                 Keep a copy of them in a safe place. With the rotation key you can \
+                 change everything; without it, the identity cannot be changed.",
+                dir.join("identity-rotation.key").display(),
+                dir.join("identity-signing.key").display()
             );
             Ok(())
         }

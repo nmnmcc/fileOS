@@ -64,8 +64,9 @@ To share `/photos` with another node: `fos grant /photos <its node key> all` her
   - [ ] QUIC
   - [ ] Folders encrypted with MLS (RFC 9420)
 - [ ] **Identity**
-  - [x] One identity for a person, apart from the keys of their nodes
-  - [x] Node certificates, signed by the identity, in an identity folder
+  - [x] One identity for a person: a DID (`did:fos`, the `did:plc` method with no directory), apart from the keys of their nodes
+  - [x] Rotation keys and a signing key; node certificates in an identity folder
+  - [ ] Domain names as other names of an identity (as AT Protocol handles)
   - [ ] Finding all the nodes of an identity through rendezvous nodes
 - [x] **Running a node**
   - [x] One program (`fos`) and one data directory

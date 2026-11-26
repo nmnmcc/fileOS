@@ -590,7 +590,7 @@ crates/
   fos-store      disk: the node key, blobs, logs, local key-value stores
   fos-sync       the sync protocol (sans-IO, portable)
   fos-fs         folders, logs, order, forks, mounts (sans-IO, portable)
-  fos-id         identities: node certificates and identity links (portable)
+  fos-id         identities: did:fos, node certificates, identity links (portable)
   fos-core       formats: CBOR, ed25519, BLAKE3 (portable, at the bottom)
   fos-sim        deterministic simulation of many nodes; tests the core only
 apps/            a second workspace, built for wasm32-unknown-unknown

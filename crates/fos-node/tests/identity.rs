@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! One identity with two nodes, over libp2p, with the capability engine from
+//! One identity (a did:fos DID) with two nodes, over libp2p, with the capability engine from
 //! `target/apps` (run `apps` first).
 
 use std::path::{Path, PathBuf};
@@ -59,16 +59,17 @@ async fn an_identity_has_its_nodes() {
     })
     .await;
 
-    // The laptop makes the identity and holds its key. It is the first node.
+    // The laptop makes the identity and holds its keys. It is the first node.
     assert!(laptop.identity().is_none());
-    let identity = laptop.identity_new().unwrap();
-    assert_ne!(identity, laptop.key());
+    let did = laptop.identity_new().unwrap();
+    assert!(did.starts_with("did:fos:"));
     let id = laptop.identity().unwrap();
-    assert_eq!(id.key, Some(identity));
-    assert!(id.holder);
+    assert_eq!(id.did.as_deref(), Some(did.as_str()));
+    assert!(id.holds_rotation_key && id.holds_signing_key);
+    assert_eq!(id.rotation_keys.len(), 1);
     assert_eq!(id.nodes, [laptop.key()]);
     let link: Link = id.link.unwrap().parse().unwrap();
-    assert_eq!(link.identity, identity);
+    assert_eq!(link.did, did);
     assert_eq!(link.hints, laptop.status().listening);
     laptop.identity_new().unwrap_err();
 
@@ -81,21 +82,21 @@ async fn an_identity_has_its_nodes() {
     })
     .await;
     let on_vps = vps.identity().unwrap();
-    assert_eq!(on_vps.key, Some(identity));
-    assert!(!on_vps.holder);
+    assert_eq!(on_vps.did.as_deref(), Some(did.as_str()));
+    assert!(!on_vps.holds_rotation_key && !on_vps.holds_signing_key);
     assert!(on_vps.nodes.contains(&laptop.key()) && on_vps.nodes.contains(&vps.key()));
 
-    // Only the node that holds the key can add nodes. The VPS cannot, and
+    // Only the node that holds the signing key can add nodes. The VPS cannot, and
     // cannot write into the identity folder.
     let stranger = SecretKey::from_seed(&[7; 32]).public();
     vps.identity_add_node(stranger).unwrap_err();
     vps.put("/identity/nodes/x", b"x").unwrap_err();
     assert_eq!(vps.list("/identity/nodes").unwrap().len(), 2);
 
-    // After a restart, the laptop still holds the key and can take the VPS away.
+    // After a restart, the laptop still holds the keys and can take the VPS away.
     drop(laptop);
     let laptop = start(dir_a.path());
-    assert!(laptop.identity().unwrap().holder);
+    assert!(laptop.identity().unwrap().holds_signing_key);
     until("the laptop listens", || {
         !laptop.status().listening.is_empty()
     })

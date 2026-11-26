@@ -489,7 +489,7 @@ crates/
   fos-store      磁盘：节点密钥、blob、日志、本地键值存储
   fos-sync       同步协议（sans-IO，portable）
   fos-fs         文件夹、日志、顺序、分叉、挂载（sans-IO，portable）
-  fos-id         身份：节点证书和身份链接（portable）
+  fos-id         身份：did:fos、节点证书、身份链接（portable）
   fos-core       格式：CBOR、ed25519、BLAKE3（portable，最底层）
   fos-sim        多节点的确定性模拟，只测内核
 apps/            第二个 workspace，编译成 wasm32-unknown-unknown
