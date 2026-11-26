@@ -122,32 +122,32 @@ homeserver 是一台个人服务器。一个程序 `hs` 加一个数据目录，
 
 ## 3. 术语
 
-| 术语 | 含义 |
-| --- | --- |
-| 个人（person） | 节点的所有者。 |
-| 个人密钥 | 代表这个人的 Ed25519 密钥对。它不保存在节点上，恢复码就是它的种子。 |
-| 身份 ID | 第一个个人密钥的文本形式，永不改变。 |
-| 身份日志 | 一份简短的签名日志，说明当前的个人密钥是哪个、哪些节点为此人服务、通过哪些地址访问。 |
-| 节点 | 一个运行中的 `hs` 及其数据目录。 |
-| 节点密钥 | 一个节点的 Ed25519 密钥对，用于签署日志条目、提案和 HTTP 请求。 |
-| 存储密钥 | 由个人密钥种子派生的 32 字节密钥，用于加密副本。 |
-| 空间 | 数据与共享的单位，有成员和一份日志。 |
-| 私有空间 | `init` 创建的空间，保存该节点的授权、密码库、通行密钥等机密。 |
-| 成员 | 在某个空间中拥有角色的节点密钥。 |
-| 角色 | `reader`、`writer` 或 `owner`，权限依次递增。 |
-| 主节点 | 为空间日志排序的成员节点。 |
-| home | 可以访问空间主节点的 URL。 |
-| 提案 | 一次变更，由希望变更的节点签名。 |
-| 条目 | 经主节点排序并由主节点签名的提案。 |
-| seq | 条目的序号。第一个条目（genesis，创世条目）的 seq 为 0。 |
-| 目标（target） | 资源在空间内的名字：`type/id`，例如 `note/shopping`。 |
-| 资源 | 位于某个目标上的数据，其当前字节称为载荷。 |
-| 载荷 | 提案通过哈希指向的字节。 |
-| 二进制对象（blob） | 按其 BLAKE3 哈希保存的字节。 |
-| 授权（grant） | 赋予某个令牌（或会话）某个角色的记录。 |
-| 令牌 | 客户端发送以使用某个授权的秘密字符串。 |
-| 副本 | 节点数据目录在别处的加密拷贝。 |
-| 索引 | 由日志生成的 SQLite 数据库。 |
+| 术语               | 含义                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------ |
+| 个人（person）     | 节点的所有者。                                                                       |
+| 个人密钥           | 代表这个人的 Ed25519 密钥对。它不保存在节点上，恢复码就是它的种子。                  |
+| 身份 ID            | 第一个个人密钥的文本形式，永不改变。                                                 |
+| 身份日志           | 一份简短的签名日志，说明当前的个人密钥是哪个、哪些节点为此人服务、通过哪些地址访问。 |
+| 节点               | 一个运行中的 `hs` 及其数据目录。                                                     |
+| 节点密钥           | 一个节点的 Ed25519 密钥对，用于签署日志条目、提案和 HTTP 请求。                      |
+| 存储密钥           | 由个人密钥种子派生的 32 字节密钥，用于加密副本。                                     |
+| 空间               | 数据与共享的单位，有成员和一份日志。                                                 |
+| 私有空间           | `init` 创建的空间，保存该节点的授权、密码库、通行密钥等机密。                        |
+| 成员               | 在某个空间中拥有角色的节点密钥。                                                     |
+| 角色               | `reader`、`writer` 或 `owner`，权限依次递增。                                        |
+| 主节点             | 为空间日志排序的成员节点。                                                           |
+| home               | 可以访问空间主节点的 URL。                                                           |
+| 提案               | 一次变更，由希望变更的节点签名。                                                     |
+| 条目               | 经主节点排序并由主节点签名的提案。                                                   |
+| seq                | 条目的序号。第一个条目（genesis，创世条目）的 seq 为 0。                             |
+| 目标（target）     | 资源在空间内的名字：`type/id`，例如 `note/shopping`。                                |
+| 资源               | 位于某个目标上的数据，其当前字节称为载荷。                                           |
+| 载荷               | 提案通过哈希指向的字节。                                                             |
+| 二进制对象（blob） | 按其 BLAKE3 哈希保存的字节。                                                         |
+| 授权（grant）      | 赋予某个令牌（或会话）某个角色的记录。                                               |
+| 令牌               | 客户端发送以使用某个授权的秘密字符串。                                               |
+| 副本               | 节点数据目录在别处的加密拷贝。                                                       |
+| 索引               | 由日志生成的 SQLite 数据库。                                                         |
 
 ## 4. 各部分如何协同工作
 
@@ -251,10 +251,10 @@ DID 文档（第 13 节）把 Ed25519 公钥写成 Multikey：`z` 后接字节 `
 - **哈希。** 字节 `b` 的哈希就是对 `b` 的普通 BLAKE3，输出 32 字节，不带密钥和上下文。哈希写成 hex（64 个字符）。本文档中的“……的哈希”总是指这个，除非明确指出其他函数。
 - **派生密钥。** `derive_key(context, material)` 是带给定上下文字符串的 BLAKE3 密钥派生模式。节点使用以下上下文：
 
-  | 上下文字符串 | 材料 | 用途 |
-  | --- | --- | --- |
+  | 上下文字符串                     | 材料            | 用途                 |
+  | -------------------------------- | --------------- | -------------------- |
   | `homeserver 2025 storage key v1` | 32 字节个人种子 | 存储密钥（第 10 节） |
-  | `homeserver 2025 token v1` | 令牌的字节 | 令牌哈希（第 29 节） |
+  | `homeserver 2025 token v1`       | 令牌的字节      | 令牌哈希（第 29 节） |
 
 - **带密钥哈希。** `keyed(key, msg)` 是 BLAKE3 的带密钥模式，密钥 32 字节。副本加密使用它（第 46 节）。
 - **SHA-256**（FIPS 180-4）只在外部标准要求时使用：HTTP `Content-Digest`、S3 签名版本 4、WebAuthn、PKCE、JOSE 密钥指纹、OAuth 客户端密钥和 Bitwarden 密码哈希。
@@ -265,15 +265,15 @@ DID 文档（第 13 节）把 Ed25519 公钥写成 Multikey：`z` 后接字节 `
 
 ### 7.1 数据模型
 
-| 主类型 | 取值 |
-| --- | --- |
-| 0 | 无符号整数，0 到 2^64−1 |
-| 1 | 负整数，−1 到 −2^64 |
-| 2 | 字节串 |
-| 3 | 文本串（UTF-8） |
-| 4 | 数组 |
-| 5 | 映射（键可以是本表中的任意类型） |
-| 7 | 只有 `false`（0xf4）、`true`（0xf5）、`null`（0xf6） |
+| 主类型 | 取值                                                 |
+| ------ | ---------------------------------------------------- |
+| 0      | 无符号整数，0 到 2^64−1                              |
+| 1      | 负整数，−1 到 −2^64                                  |
+| 2      | 字节串                                               |
+| 3      | 文本串（UTF-8）                                      |
+| 4      | 数组                                                 |
+| 5      | 映射（键可以是本表中的任意类型）                     |
+| 7      | 只有 `false`（0xf4）、`true`（0xf5）、`null`（0xf6） |
 
 不支持浮点数、标签（主类型 6）、`undefined`、其他简单值和不定长度。
 
@@ -359,11 +359,11 @@ JSON 即 RFC 8259。
 
 节点使用三个秘密。
 
-| 密钥 | 来源 | 保存位置 | 用途 |
-| --- | --- | --- | --- |
-| 个人密钥 | 32 个随机字节（个人种子） | **不在节点上**；个人以恢复码形式保管 | 签署身份日志；身份 ID 是它的第一个公钥 |
-| 节点密钥 | 32 个随机字节 | 数据目录中的 `keys/node` | 签署提案、条目和 HTTP 请求 |
-| 存储密钥 | `derive_key("homeserver 2025 storage key v1", 个人种子)` | `keys/storage` | 加密副本（第 46 节） |
+| 密钥     | 来源                                                     | 保存位置                             | 用途                                   |
+| -------- | -------------------------------------------------------- | ------------------------------------ | -------------------------------------- |
+| 个人密钥 | 32 个随机字节（个人种子）                                | **不在节点上**；个人以恢复码形式保管 | 签署身份日志；身份 ID 是它的第一个公钥 |
+| 节点密钥 | 32 个随机字节                                            | 数据目录中的 `keys/node`             | 签署提案、条目和 HTTP 请求             |
+| 存储密钥 | `derive_key("homeserver 2025 storage key v1", 个人种子)` | `keys/storage`                       | 加密副本（第 46 节）                   |
 
 随机字节必须来自操作系统的安全随机数生成器。
 
@@ -382,7 +382,7 @@ JSON 即 RFC 8259。
 
 ### 11.2 恢复分片
 
-恢复码可以用 Shamir 秘密共享分给朋友，任意 *k* 份（共 *n* 份）即可还原。
+恢复码可以用 Shamir 秘密共享分给朋友，任意 _k_ 份（共 _n_ 份）即可还原。
 
 **域。** GF(2^8)，多项式为 x^8 + x^4 + x^3 + x + 1（0x11b，即 AES 的域）。加法为异或，`a` 的逆为 `a^254`。
 
@@ -415,22 +415,22 @@ hs-share-{x}-{check}-{y}
 
 载荷是一个 CBOR 映射：
 
-| 键 | 字段 | 类型 |
-| --- | --- | --- |
-| 1 | seq | 无符号整数；第一个条目为 0 |
-| 2 | prev | 32 字节字节串：前一个条目签名字节的哈希；第一个条目为 32 个零字节 |
-| 3 | time | 无符号整数，ms |
-| 4 | kind | 文本，取下表之一 |
-| 5 | value | 取决于 kind |
+| 键  | 字段  | 类型                                                              |
+| --- | ----- | ----------------------------------------------------------------- |
+| 1   | seq   | 无符号整数；第一个条目为 0                                        |
+| 2   | prev  | 32 字节字节串：前一个条目签名字节的哈希；第一个条目为 32 个零字节 |
+| 3   | time  | 无符号整数，ms                                                    |
+| 4   | kind  | 文本，取下表之一                                                  |
+| 5   | value | 取决于 kind                                                       |
 
-| kind | value | 含义 |
-| --- | --- | --- |
-| `create` | `null`（读取时不检查） | 身份开始；只允许作为第一个条目 |
-| `add-node` | 32 字节节点公钥 | 该节点为此身份服务 |
-| `remove-node` | 32 字节节点公钥 | 该节点不再为其服务 |
-| `address` | 文本：URL，例如 `https://home.example.org` | 可以访问这些节点的地址 |
-| `alias` | 文本：域名 | 身份的别名 |
-| `rotate` | 32 字节公钥 | 从下一个条目起，此密钥为个人密钥 |
+| kind          | value                                      | 含义                             |
+| ------------- | ------------------------------------------ | -------------------------------- |
+| `create`      | `null`（读取时不检查）                     | 身份开始；只允许作为第一个条目   |
+| `add-node`    | 32 字节节点公钥                            | 该节点为此身份服务               |
+| `remove-node` | 32 字节节点公钥                            | 该节点不再为其服务               |
+| `address`     | 文本：URL，例如 `https://home.example.org` | 可以访问这些节点的地址           |
+| `alias`       | 文本：域名                                 | 身份的别名                       |
+| `rotate`      | 32 字节公钥                                | 从下一个条目起，此密钥为个人密钥 |
 
 未知的 kind 使条目无效。
 
@@ -467,19 +467,34 @@ hs-share-{x}-{check}-{y}
 
 ```json
 {
-  "@context": ["https://www.w3.org/ns/did/v1", "https://w3id.org/security/multikey/v1"],
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/multikey/v1"
+  ],
   "id": "did:hs:{身份 ID}",
   "alsoKnownAs": ["https://{alias}", "…"],
   "verificationMethod": [
-    {"id": "did:hs:{id}#personal", "type": "Multikey",
-     "controller": "did:hs:{id}", "publicKeyMultibase": "{当前个人密钥的 multikey}"},
-    {"id": "did:hs:{id}#node-{i}", "type": "Multikey",
-     "controller": "did:hs:{id}", "publicKeyMultibase": "{第 i 个节点的 multikey}"}
+    {
+      "id": "did:hs:{id}#personal",
+      "type": "Multikey",
+      "controller": "did:hs:{id}",
+      "publicKeyMultibase": "{当前个人密钥的 multikey}"
+    },
+    {
+      "id": "did:hs:{id}#node-{i}",
+      "type": "Multikey",
+      "controller": "did:hs:{id}",
+      "publicKeyMultibase": "{第 i 个节点的 multikey}"
+    }
   ],
   "authentication": ["did:hs:{id}#personal"],
   "assertionMethod": ["did:hs:{id}#personal"],
   "service": [
-    {"id": "did:hs:{id}#hs-{i}", "type": "Homeserver", "serviceEndpoint": "{第 i 个地址}"}
+    {
+      "id": "did:hs:{id}#hs-{i}",
+      "type": "Homeserver",
+      "serviceEndpoint": "{第 i 个地址}"
+    }
   ]
 }
 ```
@@ -497,16 +512,16 @@ hs-share-{x}-{check}-{y}
 
 **空间**是一组资源，带有成员和一份日志。它的状态完全由按顺序应用其日志条目得出（第 18 节）。状态包含：
 
-| 部分 | 内容 |
-| --- | --- |
-| id | 空间 ID，32 字节哈希（第 16.3 节） |
-| info | 创世载荷的 JSON 值 |
-| primary | 为日志排序的节点密钥 |
-| members | 从节点密钥到 `{identity, role, home}` 的映射 |
+| 部分      | 内容                                                        |
+| --------- | ----------------------------------------------------------- |
+| id        | 空间 ID，32 字节哈希（第 16.3 节）                          |
+| info      | 创世载荷的 JSON 值                                          |
+| primary   | 为日志排序的节点密钥                                        |
+| members   | 从节点密钥到 `{identity, role, home}` 的映射                |
 | resources | 从目标到 `{payload, media type, seq, time, history}` 的映射 |
-| grants | 从授权 ID 到 `{body, revoked}` 的映射 |
-| seq, head | 最后一个条目的 seq 和哈希 |
-| nonces | 从 (作者密钥, nonce) 到该提案所在 seq 的映射 |
+| grants    | 从授权 ID 到 `{body, revoked}` 的映射                       |
+| seq, head | 最后一个条目的 seq 和哈希                                   |
+| nonces    | 从 (作者密钥, nonce) 到该提案所在 seq 的映射                |
 
 空间的**名字**是字符串 `info.name`，没有则为空串。
 
@@ -518,12 +533,12 @@ hs-share-{x}-{check}-{y}
 
 角色为 `reader` < `writer` < `owner`，文本形式就是这些小写单词。
 
-| 提案类型 | 所需最低角色 |
-| --- | --- |
-| `mls` | reader |
-| `put`、`delete`、`erase` | writer |
-| `member`、`grant`、`revoke`、`handover` | owner |
-| `genesis` | 空间开始后不允许 |
+| 提案类型                                | 所需最低角色     |
+| --------------------------------------- | ---------------- |
+| `mls`                                   | reader           |
+| `put`、`delete`、`erase`                | writer           |
+| `member`、`grant`、`revoke`、`handover` | owner            |
+| `genesis`                               | 空间开始后不允许 |
 
 不是成员的节点不能提出任何提案。只有密钥等于空间 `primary` 的节点可以追加条目；是否是主节点与角色无关。
 
@@ -533,17 +548,17 @@ hs-share-{x}-{check}-{y}
 
 **提案**是修改空间的请求。它是一个 COSE_Sign1（第 8.2 节），载荷为下列 CBOR 映射：
 
-| 键 | 字段 | 类型 | 说明 |
-| --- | --- | --- | --- |
-| 1 | space | 32 字节字节串 | 空间 ID；创世提案中为 32 个零字节 |
-| 2 | kind | 文本 | 第 15.1 节中的类型之一 |
-| 3 | target | 文本 | 合法目标（第 15.2 节） |
-| 4 | payload | 32 字节字节串或 `null` | 载荷的哈希；该键必须存在 |
-| 5 | media_type | 文本 | 例如 `application/json`；可以为空 |
-| 6 | time | 无符号整数 | ms，按作者的时钟 |
-| 7 | nonce | 字节串 | 任意长度；写入方随机生成，或按第 20.2 节派生 |
-| 8 | grant | 文本或 `null` | 此变更所依据的授权 ID；该键必须存在 |
-| 9 | request | 32 字节字节串 | HTTP 请求的指纹（第 20.2 节）；没有时省略该键，`null` 无效 |
+| 键  | 字段       | 类型                   | 说明                                                       |
+| --- | ---------- | ---------------------- | ---------------------------------------------------------- |
+| 1   | space      | 32 字节字节串          | 空间 ID；创世提案中为 32 个零字节                          |
+| 2   | kind       | 文本                   | 第 15.1 节中的类型之一                                     |
+| 3   | target     | 文本                   | 合法目标（第 15.2 节）                                     |
+| 4   | payload    | 32 字节字节串或 `null` | 载荷的哈希；该键必须存在                                   |
+| 5   | media_type | 文本                   | 例如 `application/json`；可以为空                          |
+| 6   | time       | 无符号整数             | ms，按作者的时钟                                           |
+| 7   | nonce      | 字节串                 | 任意长度；写入方随机生成，或按第 20.2 节派生               |
+| 8   | grant      | 文本或 `null`          | 此变更所依据的授权 ID；该键必须存在                        |
+| 9   | request    | 32 字节字节串          | HTTP 请求的指纹（第 20.2 节）；没有时省略该键，`null` 无效 |
 
 签名者（kid）为**作者**。本版本中作者总是节点密钥，即代表其客户端生成提案的节点。
 
@@ -551,17 +566,17 @@ hs-share-{x}-{check}-{y}
 
 ### 15.1 类型
 
-| 类型 | 含义 | 载荷 |
-| --- | --- | --- |
-| `genesis` | 开始一个空间 | JSON（第 17.1 节） |
-| `put` | 设置资源的字节 | 资源的字节 |
-| `delete` | 删除资源 | 无（若给出，会记入历史） |
-| `erase` | 删除资源及其所有旧字节 | 无（若给出，不使用） |
-| `member` | 添加、修改或移除成员 | JSON（第 17.2 节） |
-| `grant` | 记录一个授权 | JSON（第 17.3 节） |
-| `revoke` | 撤销一个授权 | 无 |
-| `mls` | MLS 消息；本版本中对状态无影响 | MLS 字节 |
-| `handover` | 指定新的主节点 | JSON（第 17.4 节） |
+| 类型       | 含义                           | 载荷                     |
+| ---------- | ------------------------------ | ------------------------ |
+| `genesis`  | 开始一个空间                   | JSON（第 17.1 节）       |
+| `put`      | 设置资源的字节                 | 资源的字节               |
+| `delete`   | 删除资源                       | 无（若给出，会记入历史） |
+| `erase`    | 删除资源及其所有旧字节         | 无（若给出，不使用）     |
+| `member`   | 添加、修改或移除成员           | JSON（第 17.2 节）       |
+| `grant`    | 记录一个授权                   | JSON（第 17.3 节）       |
+| `revoke`   | 撤销一个授权                   | 无                       |
+| `mls`      | MLS 消息；本版本中对状态无影响 | MLS 字节                 |
+| `handover` | 指定新的主节点                 | JSON（第 17.4 节）       |
 
 ### 15.2 目标
 
@@ -580,12 +595,12 @@ hs-share-{x}-{check}-{y}
 
 **条目**是由主节点签名的 COSE_Sign1，载荷为下列 CBOR 映射：
 
-| 键 | 字段 | 类型 |
-| --- | --- | --- |
-| 1 | seq | 无符号整数；创世条目为 0 |
-| 2 | prev | 32 字节字节串：前一个条目签名字节的哈希；seq 0 为 32 个零字节 |
-| 3 | time | 无符号整数，ms，按主节点的时钟 |
-| 4 | proposal | 字节串：作者完整的 COSE_Sign1 字节 |
+| 键  | 字段     | 类型                                                          |
+| --- | -------- | ------------------------------------------------------------- |
+| 1   | seq      | 无符号整数；创世条目为 0                                      |
+| 2   | prev     | 32 字节字节串：前一个条目签名字节的哈希；seq 0 为 32 个零字节 |
+| 3   | time     | 无符号整数，ms，按主节点的时钟                                |
+| 4   | proposal | 字节串：作者完整的 COSE_Sign1 字节                            |
 
 四个键都必须存在（错误 `entry: bad field {name}`）。
 
@@ -625,7 +640,13 @@ hs-share-{x}-{check}-{y}
 ### 17.2 成员
 
 ```json
-{"node": "{节点密钥 ID}", "identity": "{身份 ID}", "role": "writer", "home": "https://…", "remove": true}
+{
+  "node": "{节点密钥 ID}",
+  "identity": "{身份 ID}",
+  "role": "writer",
+  "home": "https://…",
+  "remove": true
+}
 ```
 
 - `node` 和 `identity` 必填，且必须是合法的密钥 ID。
@@ -642,7 +663,7 @@ hs-share-{x}-{check}-{y}
 ### 17.4 移交
 
 ```json
-{"primary": "{节点密钥 ID}"}
+{ "primary": "{节点密钥 ID}" }
 ```
 
 节点使用目标 `space/primary`。
@@ -729,13 +750,13 @@ hs-share-{x}-{check}-{y}
 
 **头**是由主节点签名的 COSE_Sign1，CBOR 映射如下：
 
-| 键 | 字段 | 类型 |
-| --- | --- | --- |
-| 1 | space | 32 字节字节串 |
-| 2 | seq | 无符号整数：最后一个条目的 seq |
-| 3 | hash | 32 字节字节串：最后一个条目的哈希 |
-| 4 | segments | 32 字节字节串数组：已封存段的哈希，最旧的在前 |
-| 5 | primary | 32 字节字节串：主节点的密钥 |
+| 键  | 字段     | 类型                                          |
+| --- | -------- | --------------------------------------------- |
+| 1   | space    | 32 字节字节串                                 |
+| 2   | seq      | 无符号整数：最后一个条目的 seq                |
+| 3   | hash     | 32 字节字节串：最后一个条目的哈希             |
+| 4   | segments | 32 字节字节串数组：已封存段的哈希，最旧的在前 |
+| 5   | primary  | 32 字节字节串：主节点的密钥                   |
 
 ### 19.2 段
 
@@ -749,16 +770,16 @@ hs-share-{x}-{check}-{y}
 
 **检查点**是空间在某个 seq 处的状态。本版本定义了其格式，但节点尚不生成或读取检查点。它是由主节点签名的 COSE_Sign1，CBOR 映射如下：
 
-| 键 | 内容 |
-| --- | --- |
-| 1 | 空间 ID（32 字节） |
-| 2 | seq |
-| 3 | head（32 字节） |
-| 4 | 主节点密钥（32 字节） |
-| 5 | info，JSON 文本 |
-| 6 | 成员：`[node (32 字节), identity (32 字节), role (文本), home (文本或 null)]` 的数组，按节点密钥排序 |
-| 7 | 资源：`[target (文本), payload (32 字节或 null), media type (文本), seq, time, [历史哈希…]]` 的数组，按目标排序 |
-| 8 | 授权：`[授权 ID (文本), body 的 JSON 文本, revoked (bool)]` 的数组，按 ID 排序 |
+| 键  | 内容                                                                                                            |
+| --- | --------------------------------------------------------------------------------------------------------------- |
+| 1   | 空间 ID（32 字节）                                                                                              |
+| 2   | seq                                                                                                             |
+| 3   | head（32 字节）                                                                                                 |
+| 4   | 主节点密钥（32 字节）                                                                                           |
+| 5   | info，JSON 文本                                                                                                 |
+| 6   | 成员：`[node (32 字节), identity (32 字节), role (文本), home (文本或 null)]` 的数组，按节点密钥排序            |
+| 7   | 资源：`[target (文本), payload (32 字节或 null), media type (文本), seq, time, [历史哈希…]]` 的数组，按目标排序 |
+| 8   | 授权：`[授权 ID (文本), body 的 JSON 文本, revoked (bool)]` 的数组，按 ID 排序                                  |
 
 检查点不包含 `nonces`。
 
@@ -768,12 +789,12 @@ hs-share-{x}-{check}-{y}
 
 一次写入可以带条件。主节点在排序那一刻（第 18.2 节第 4 步），针对目标当前的载荷哈希 `c`（或无）检查它们：
 
-| 条件 | 来源 | 何时失败 | 结果 |
-| --- | --- | --- | --- |
-| expected | 节点自身（PATCH） | 已设置且不等于 `c` | 412 `the resource has changed` |
-| If-Match | HTTP 头，原样 | 没有 `c`，或列表中没有任何一项等于 `*` 或 `c` 的 ETag | 412 `the resource has changed` |
-| If-None-Match | HTTP 头，原样 | 有 `c`，且某一项（去掉 `W/` 后）为 `*` 或等于 `c` 的 ETag | 412 `the resource already exists` |
-| must exist | 节点自身（DELETE） | 已设置且没有 `c` | 404 `resource not found` |
+| 条件          | 来源               | 何时失败                                                  | 结果                              |
+| ------------- | ------------------ | --------------------------------------------------------- | --------------------------------- |
+| expected      | 节点自身（PATCH）  | 已设置且不等于 `c`                                        | 412 `the resource has changed`    |
+| If-Match      | HTTP 头，原样      | 没有 `c`，或列表中没有任何一项等于 `*` 或 `c` 的 ETag     | 412 `the resource has changed`    |
+| If-None-Match | HTTP 头，原样      | 有 `c`，且某一项（去掉 `W/` 后）为 `*` 或等于 `c` 的 ETag | 412 `the resource already exists` |
+| must exist    | 节点自身（DELETE） | 已设置且没有 `c`                                          | 404 `resource not found`          |
 
 按表中顺序检查。列表按 `,` 拆分，每项去掉两端空白。If-Match 使用强比较，因此 `W/` 标签永远不匹配。
 
@@ -803,22 +824,22 @@ hs-share-{x}-{check}-{y}
 
 节点的全部状态都在一个目录中。它的一份拷贝（不含索引）就是完整的备份。
 
-| 路径 | 内容 |
-| --- | --- |
-| `config.json` | 配置（第 22 节） |
-| `identity` | 身份日志（第 12.2 节） |
-| `keys/node` | 节点密钥的种子：64 个 hex 字符，无换行 |
-| `keys/storage` | 存储密钥：64 个 hex 字符，无换行 |
-| `keys/oidc` | OIDC 签名密钥，PKCS#8（首次需要时生成） |
-| `keys/forward` | 转发认证密钥，32 字节（首次需要时生成） |
-| `keys/vapid` | Web Push 密钥，PKCS#8（首次需要时生成） |
-| `keys/self-signed.pem`、`keys/self-signed.key` | TLS 证书和私钥（首次需要时生成） |
-| `node.lock` | 空文件；运行中的进程对它持有排他锁 |
-| `logs/{空间 ID}/` | 一个空间的日志（第 25 节） |
-| `blobs/{h0h1}/{h2…h63}` | 一个二进制对象，以其哈希的 hex 命名（第 24 节） |
-| `index.db`、`index.db-wal`、`index.db-shm` | 派生索引（第 27 节） |
-| `access.log` | HTTP 访问日志（第 30.6 节） |
-| `buckets/{bucket}/…` | 其他节点通过 S3 端点存放在此的对象（第 49.2 节） |
+| 路径                                           | 内容                                             |
+| ---------------------------------------------- | ------------------------------------------------ |
+| `config.json`                                  | 配置（第 22 节）                                 |
+| `identity`                                     | 身份日志（第 12.2 节）                           |
+| `keys/node`                                    | 节点密钥的种子：64 个 hex 字符，无换行           |
+| `keys/storage`                                 | 存储密钥：64 个 hex 字符，无换行                 |
+| `keys/oidc`                                    | OIDC 签名密钥，PKCS#8（首次需要时生成）          |
+| `keys/forward`                                 | 转发认证密钥，32 字节（首次需要时生成）          |
+| `keys/vapid`                                   | Web Push 密钥，PKCS#8（首次需要时生成）          |
+| `keys/self-signed.pem`、`keys/self-signed.key` | TLS 证书和私钥（首次需要时生成）                 |
+| `node.lock`                                    | 空文件；运行中的进程对它持有排他锁               |
+| `logs/{空间 ID}/`                              | 一个空间的日志（第 25 节）                       |
+| `blobs/{h0h1}/{h2…h63}`                        | 一个二进制对象，以其哈希的 hex 命名（第 24 节）  |
+| `index.db`、`index.db-wal`、`index.db-shm`     | 派生索引（第 27 节）                             |
+| `access.log`                                   | HTTP 访问日志（第 30.6 节）                      |
+| `buckets/{bucket}/…`                           | 其他节点通过 S3 端点存放在此的对象（第 49.2 节） |
 
 在 Unix 上，`keys/` 下的文件以 0600 权限创建，但 TLS 文件 `keys/self-signed.pem` 和 `keys/self-signed.key` 除外，它们使用进程的默认权限。临时文件以 `.tmp-` 开头；正在构建的目录以 `.space-` 或 `.restore-` 开头。读取方必须跳过它们。
 
@@ -828,17 +849,17 @@ hs-share-{x}-{check}-{y}
 
 `config.json` 是一个美化输出的 JSON 对象。节点保留所有成员，并使用以下成员：
 
-| 成员 | 类型 | 含义 |
-| --- | --- | --- |
-| `identity` | 文本，密钥 ID | 身份 ID；必填 |
-| `private` | 文本，64 位 hex | 私有空间的 ID；必填 |
-| `name` | 文本 | 节点的名字，给人看；默认 `""` |
-| `url` | 文本或 null | 节点的公开基础 URL，例如 `https://home.example.org`；默认无 |
-| `replicas` | 文本数组 | 副本地址（第 45 节）；非文本项被跳过 |
-| `s3_keys` | 对象数组 | S3 端点的密钥（第 49.2 节） |
-| `bitwarden_register` | bool | `true` 时允许创建一个密码库账户（第 33 节） |
-| `forward_domain` | 文本 | 转发认证所覆盖应用的域名（第 35.5 节） |
-| `push_subject` | 文本 | VAPID 的 subject（第 36.2 节） |
+| 成员                 | 类型            | 含义                                                        |
+| -------------------- | --------------- | ----------------------------------------------------------- |
+| `identity`           | 文本，密钥 ID   | 身份 ID；必填                                               |
+| `private`            | 文本，64 位 hex | 私有空间的 ID；必填                                         |
+| `name`               | 文本            | 节点的名字，给人看；默认 `""`                               |
+| `url`                | 文本或 null     | 节点的公开基础 URL，例如 `https://home.example.org`；默认无 |
+| `replicas`           | 文本数组        | 副本地址（第 45 节）；非文本项被跳过                        |
+| `s3_keys`            | 对象数组        | S3 端点的密钥（第 49.2 节）                                 |
+| `bitwarden_register` | bool            | `true` 时允许创建一个密码库账户（第 33 节）                 |
+| `forward_domain`     | 文本            | 转发认证所覆盖应用的域名（第 35.5 节）                      |
+| `push_subject`       | 文本            | VAPID 的 subject（第 36.2 节）                              |
 
 设置某个成员时，节点会重新检查整个对象：`identity` 必须是密钥 ID，`private` 必须是 64 个 hex 字符。若检查或写入失败，一切不变。该文件原子写入。
 
@@ -888,12 +909,12 @@ hs-share-{x}-{check}-{y}
 
 `logs/{空间 ID}/` 包含：
 
-| 文件 | 内容 |
-| --- | --- |
-| `tail` | 尚未封存的条目，各自**分帧**（见下）后首尾相接 |
-| `segments/{hash}` | 一个已封存的段（第 19.2 节），以其哈希的 hex 命名 |
-| `segments.txt` | 已封存段的列表：每行一个 64 位 hex 哈希，每行以 `\n` 结尾，最旧的在前 |
-| `home` | 只在非主节点上存在：主节点的 URL，UTF-8（两端空白不使用） |
+| 文件              | 内容                                                                  |
+| ----------------- | --------------------------------------------------------------------- |
+| `tail`            | 尚未封存的条目，各自**分帧**（见下）后首尾相接                        |
+| `segments/{hash}` | 一个已封存的段（第 19.2 节），以其哈希的 hex 命名                     |
+| `segments.txt`    | 已封存段的列表：每行一个 64 位 hex 哈希，每行以 `\n` 结尾，最旧的在前 |
+| `home`            | 只在非主节点上存在：主节点的 URL，UTF-8（两端空白不使用）             |
 
 **帧**是一个无符号整数（条目长度）的 CBOR 头，后接条目字节，与段中的分帧相同。
 
@@ -1020,23 +1041,23 @@ CREATE VIRTUAL TABLE places USING rtree(id, min_lat, max_lat, min_lon, max_lon);
 `unicode61` 分词器不会把 CJK 文本切成词。因此节点在建立索引和搜索时都先让文本经过 `bigrams`：
 
 - 以下码点算作 CJK：U+3040–U+30FF、U+3400–U+4DBF、U+4E00–U+9FFF、U+AC00–U+D7AF、U+F900–U+FAFF、U+20000–U+3134F。
-- 改写每段最长的连续 CJK 字符。只有一个字符 `c` 的段变成 ` c `。更长的段变成每对相邻字符，每对前面加一个空格，最后再加一个空格。其他字符保持不变。
-- 示例：`人民公园` → ` 人民 民公 公园 `；`去a` → ` 去 a`。
+- 改写每段最长的连续 CJK 字符。只有一个字符 `c` 的段变成 `c`。更长的段变成每对相邻字符，每对前面加一个空格，最后再加一个空格。其他字符保持不变。
+- 示例：`人民公园` → `人民 民公 公园`；`去a` → ` 去 a`。
 
 **查询。** 节点让查询经过 `bigrams`，然后在每个非字母、非数字的字符处切分，丢弃空词。每个词变成 `"word"`（去掉其中的 `"`）。不含 CJK 字符的词还加上 `*`（前缀搜索）。各词以空格连接，因此必须全部匹配，顺序不限。没有词时搜索无结果。示例：`公园 walk` → `"公园" "walk"*`。
 
 ### 27.5 查询
 
-| 查询 | 规则 |
-| --- | --- |
-| 单行 | `space` 与 `target` 相等 |
-| 列表 | 一个空间中的行，可限定一个类型，也可限定为给定的若干类型；`ORDER BY time DESC, target`；带 limit 和 offset |
-| 搜索 | 给定空间中与 FTS 查询匹配的行；按 `bm25` 最佳在前；带 limit，无 offset |
-| 附近（lat, lon, km） | 给定空间中点位于矩形 lat ± km/111、lon ± km/(111 · max(\|cos lat\|, 0.01)) 内的行；按以度为单位的 (Δlat² + Δlon²) 最近在前；带 limit |
-| 时间线 | 给定空间中 `time` < before 的行（无 before 则全部），不含类型 `grant`、`push`、`cipher`、`credential`、`oauth-client`、`vault-folder`、`vault-account`；`ORDER BY time DESC, space, target`；带 limit 和 offset |
-| 相关（space, target） | 链接到此目标的行，加上此资源所链接到的行（可在任何空间）；`time` 最新在前；带 limit |
-| 计数 | 每种类型的行数 |
-| 健康 | `PRAGMA quick_check` 返回 `ok` |
+| 查询                  | 规则                                                                                                                                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 单行                  | `space` 与 `target` 相等                                                                                                                                                                                        |
+| 列表                  | 一个空间中的行，可限定一个类型，也可限定为给定的若干类型；`ORDER BY time DESC, target`；带 limit 和 offset                                                                                                      |
+| 搜索                  | 给定空间中与 FTS 查询匹配的行；按 `bm25` 最佳在前；带 limit，无 offset                                                                                                                                          |
+| 附近（lat, lon, km）  | 给定空间中点位于矩形 lat ± km/111、lon ± km/(111 · max(\|cos lat\|, 0.01)) 内的行；按以度为单位的 (Δlat² + Δlon²) 最近在前；带 limit                                                                            |
+| 时间线                | 给定空间中 `time` < before 的行（无 before 则全部），不含类型 `grant`、`push`、`cipher`、`credential`、`oauth-client`、`vault-folder`、`vault-account`；`ORDER BY time DESC, space, target`；带 limit 和 offset |
+| 相关（space, target） | 链接到此目标的行，加上此资源所链接到的行（可在任何空间）；`time` 最新在前；带 limit                                                                                                                             |
+| 计数                  | 每种类型的行数                                                                                                                                                                                                  |
+| 健康                  | `PRAGMA quick_check` 返回 `ok`                                                                                                                                                                                  |
 
 # 第六部分 访问控制
 
@@ -1044,10 +1065,10 @@ CREATE VIRTUAL TABLE places USING rtree(id, min_lat, max_lat, min_lon, max_lon);
 
 每个 HTTP 请求都来自以下三类调用者之一：
 
-| 类别 | 如何识别 | 可以做什么 |
-| --- | --- | --- |
-| 公开 | 没有有效令牌，也没有有效签名 | 只能访问公开端点 |
-| 授权 | 令牌与某个授权匹配 | 该授权所允许的（第 29.3 节） |
+| 类别 | 如何识别                                                                 | 可以做什么                                             |
+| ---- | ------------------------------------------------------------------------ | ------------------------------------------------------ |
+| 公开 | 没有有效令牌，也没有有效签名                                             | 只能访问公开端点                                       |
+| 授权 | 令牌与某个授权匹配                                                       | 该授权所允许的（第 29.3 节）                           |
 | 节点 | 有效的 HTTP 消息签名（第 40 节），签名的节点密钥至少是一个本地空间的成员 | 在每个这样的空间中拥有其成员角色；只用于联邦端点和 API |
 
 节点按如下方式判断类别：
@@ -1066,17 +1087,17 @@ CREATE VIRTUAL TABLE places USING rtree(id, min_lat, max_lat, min_lon, max_lon);
 
 授权是**私有空间**中目标为 `grant/{id}` 的 `grant` 条目（第 17.3 节）。其 JSON 内容包含以下成员：
 
-| 成员 | 类型 | 含义 |
-| --- | --- | --- |
-| `id` | 文本 | 授权 ID：10 个随机字节的 base32（16 个字符） |
-| `role` | 文本 | `reader`、`writer` 或 `owner` |
-| `label` | 文本 | 给人看的说明 |
-| `token` | 文本 | 令牌哈希（第 29.2 节） |
-| `created` | ms | 创建时间 |
-| `spaces` | hex 空间 ID 数组 | 若存在，授权只覆盖这些空间；不合法的 ID 被跳过 |
-| `types` | 文本数组 | 若存在，授权只覆盖这些类型的资源 |
-| `expires` | ms | 若存在，此时间之后授权失效 |
-| `session` | bool | 登录会话为 `true`（会话登出时撤销） |
+| 成员      | 类型             | 含义                                           |
+| --------- | ---------------- | ---------------------------------------------- |
+| `id`      | 文本             | 授权 ID：10 个随机字节的 base32（16 个字符）   |
+| `role`    | 文本             | `reader`、`writer` 或 `owner`                  |
+| `label`   | 文本             | 给人看的说明                                   |
+| `token`   | 文本             | 令牌哈希（第 29.2 节）                         |
+| `created` | ms               | 创建时间                                       |
+| `spaces`  | hex 空间 ID 数组 | 若存在，授权只覆盖这些空间；不合法的 ID 被跳过 |
+| `types`   | 文本数组         | 若存在，授权只覆盖这些类型的资源               |
+| `expires` | ms               | 若存在，此时间之后授权失效                     |
+| `session` | bool             | 登录会话为 `true`（会话登出时撤销）            |
 
 其他成员会保留但不使用。授权由私有空间中目标为 `grant/{id}` 的 `revoke` 条目撤销。撤销后的授权立即失效。
 
@@ -1134,19 +1155,19 @@ hs_session={token}; Path=/; HttpOnly; SameSite=Lax[; Secure][; Max-Age={s}]
 
 路径按 `/` 拆分，空段被丢弃，因此 `//api//spaces/` 等同于 `/api/spaces`。每段都做百分号解码（`+` 仍是 `+`），因此 `%2F` 仍留在一段之内。查询串不参与路由。由第一段决定去向：
 
-| 路径 | 去向 |
-| --- | --- |
-| `/api/…` | REST API（第 31 节） |
-| `/fed/…` | 联邦端点（第 41 节） |
-| `/dav/…` | CardDAV 与 CalDAV（第 32 节） |
-| `/.well-known/carddav`、`/.well-known/caldav` | 任意方法：301 到 `/dav/` |
-| `/mcp` | MCP（第 34 节） |
-| `/s3/…` | S3 端点（第 49.2 节） |
-| `/bitwarden/…` | 密码库（第 33 节） |
-| `/.well-known/homeserver` | 任意方法：节点信息（第 39.1 节） |
-| `/auth/…`、`/oauth/…`、`/.well-known/openid-configuration` | 登录（第 35 节） |
-| 其他，GET 或 HEAD | Web 应用文件（第 38 节） |
-| 其他 | 405 `method not allowed` |
+| 路径                                                       | 去向                             |
+| ---------------------------------------------------------- | -------------------------------- |
+| `/api/…`                                                   | REST API（第 31 节）             |
+| `/fed/…`                                                   | 联邦端点（第 41 节）             |
+| `/dav/…`                                                   | CardDAV 与 CalDAV（第 32 节）    |
+| `/.well-known/carddav`、`/.well-known/caldav`              | 任意方法：301 到 `/dav/`         |
+| `/mcp`                                                     | MCP（第 34 节）                  |
+| `/s3/…`                                                    | S3 端点（第 49.2 节）            |
+| `/bitwarden/…`                                             | 密码库（第 33 节）               |
+| `/.well-known/homeserver`                                  | 任意方法：节点信息（第 39.1 节） |
+| `/auth/…`、`/oauth/…`、`/.well-known/openid-configuration` | 登录（第 35 节）                 |
+| 其他，GET 或 HEAD                                          | Web 应用文件（第 38 节）         |
+| 其他                                                       | 405 `method not allowed`         |
 
 ### 30.3 通用响应头
 
@@ -1156,21 +1177,21 @@ hs_session={token}; Path=/; HttpOnly; SameSite=Lax[; Secure][; Max-Age={s}]
 
 除非某节另有说明，错误为 JSON `{"error": "{message}"}`，`Content-Type: application/json`。`/dav` 下路径的 401 还带有 `WWW-Authenticate: Basic realm="homeserver"`。
 
-| 状态码 | 何时 |
-| --- | --- |
-| 400 | 错误的请求：`bad request: …`（JSON 请求体）、`bad JSON: …`、`bad query: …`，或端点自己的消息 |
-| 401 | `sign in first`：端点要求非公开的调用者 |
-| 403 | 调用者没有权限：`no access to this space`、`needs {role}`、`grant does not cover {type}`、`only the owner can do this` |
-| 404 | `not found`、`space {name}`、`resource not found` |
-| 409 | `idempotency key already used for a different request` |
-| 410 | `deleted`：资源已被删除，或其字节不在本节点上 |
-| 412 | `the resource has changed`、`the resource already exists` |
-| 415 | 请求体或资源是端点无法处理的类型 |
-| 421 | `this node is not the primary of {space}`：写入需要主节点，而本节点不知道它在哪里 |
-| 422 | 空间规则拒绝了变更（第 18 节中的消息），或 `{name} matches more than one space` |
-| 500 | 磁盘或索引故障（`index: …`） |
-| 502 | 无法访问另一个节点，或它给出了错误的答复 |
-| 503 | 所需的密钥或工作进程不存在 |
+| 状态码 | 何时                                                                                                                   |
+| ------ | ---------------------------------------------------------------------------------------------------------------------- |
+| 400    | 错误的请求：`bad request: …`（JSON 请求体）、`bad JSON: …`、`bad query: …`，或端点自己的消息                           |
+| 401    | `sign in first`：端点要求非公开的调用者                                                                                |
+| 403    | 调用者没有权限：`no access to this space`、`needs {role}`、`grant does not cover {type}`、`only the owner can do this` |
+| 404    | `not found`、`space {name}`、`resource not found`                                                                      |
+| 409    | `idempotency key already used for a different request`                                                                 |
+| 410    | `deleted`：资源已被删除，或其字节不在本节点上                                                                          |
+| 412    | `the resource has changed`、`the resource already exists`                                                              |
+| 415    | 请求体或资源是端点无法处理的类型                                                                                       |
+| 421    | `this node is not the primary of {space}`：写入需要主节点，而本节点不知道它在哪里                                      |
+| 422    | 空间规则拒绝了变更（第 18 节中的消息），或 `{name} matches more than one space`                                        |
+| 500    | 磁盘或索引故障（`index: …`）                                                                                           |
+| 502    | 无法访问另一个节点，或它给出了错误的答复                                                                               |
+| 503    | 所需的密钥或工作进程不存在                                                                                             |
 
 ### 30.5 在路径中指明空间
 
@@ -1186,7 +1207,15 @@ hs_session={token}; Path=/; HttpOnly; SameSite=Lax[; Secure][; Max-Age={s}]
 每个请求（包括错误和 Web 文件）在处理结束后，节点向 `access.log` 追加一行 JSON：
 
 ```json
-{"event.name":"http.request.completed","message.template":"{{http.request.method}} {{http.route}} returned {{http.response.status_code}} in {{ms}} ms","time":1764079380000,"http.request.method":"GET","http.route":"/api","http.response.status_code":200,"ms":3}
+{
+  "event.name": "http.request.completed",
+  "message.template": "{{http.request.method}} {{http.route}} returned {{http.response.status_code}} in {{ms}} ms",
+  "time": 1764079380000,
+  "http.request.method": "GET",
+  "http.route": "/api",
+  "http.response.status_code": 200,
+  "ms": 3
+}
 ```
 
 - `time` 是请求开始的时间（ms），`ms` 是处理耗时。
@@ -1203,31 +1232,31 @@ hs_session={token}; Path=/; HttpOnly; SameSite=Lax[; Secure][; Max-Age={s}]
 
 ### 31.1 会话、节点与身份
 
-| 方法与路径 | 谁 | 请求 | 响应 |
-| --- | --- | --- | --- |
-| `GET /api/session` | 已登录 | – | 200 Session |
-| `POST /api/session` | 任何人 | `{"token"}` | 200 Session，并设置无 Max-Age 的 cookie `hs_session`；401 `unknown token` |
-| `DELETE /api/session` | 任何人 | – | 204，并清除 cookie；若调用者的授权带有 `session: true`，将其撤销 |
-| `GET /api/node` | 任何人 | – | 200 NodeInfo（第 39.1 节） |
-| `GET /api/identity` | 任何人 | – | 200 DID 文档（第 13 节），`Content-Type: application/did+json` |
-| `GET /api/health` | 已登录 | – | 200 Health |
-| `GET /api/openapi.json` | 任何人 | – | 200 OpenAPI 文档 |
+| 方法与路径              | 谁     | 请求        | 响应                                                                      |
+| ----------------------- | ------ | ----------- | ------------------------------------------------------------------------- |
+| `GET /api/session`      | 已登录 | –           | 200 Session                                                               |
+| `POST /api/session`     | 任何人 | `{"token"}` | 200 Session，并设置无 Max-Age 的 cookie `hs_session`；401 `unknown token` |
+| `DELETE /api/session`   | 任何人 | –           | 204，并清除 cookie；若调用者的授权带有 `session: true`，将其撤销          |
+| `GET /api/node`         | 任何人 | –           | 200 NodeInfo（第 39.1 节）                                                |
+| `GET /api/identity`     | 任何人 | –           | 200 DID 文档（第 13 节），`Content-Type: application/did+json`            |
+| `GET /api/health`       | 已登录 | –           | 200 Health                                                                |
+| `GET /api/openapi.json` | 任何人 | –           | 200 OpenAPI 文档                                                          |
 
 - **Session**：`{"role": "reader"|"writer"|"owner"|null, "grant"?, "owner"?, "spaces"?, "types"?, "node"?, "roles"?}`。对授权调用者：`grant`（其 ID）、`role`、`owner`（bool）、`spaces`（若有限制，为 hex ID）、`types`（若有限制）。对节点调用者：`role` 为 null，`node` 为其密钥 ID，`roles` 为 `[{"space", "role"}]`。标 `?` 的成员没有值时省略。
 - **Health**：`{"ok", "index", "counts", "spaces", "time"}`。`index` 为索引检查（第 27.5 节）的结果，`ok` 与之相同；`counts` 给出每种类型的资源数；`spaces` 为空间数；`time` 为当前时间（ms）。
 
 ### 31.2 空间与成员
 
-| 方法与路径 | 谁 | 请求 | 响应 |
-| --- | --- | --- | --- |
-| `GET /api/spaces` | 已登录 | – | 200 `[Space]`：调用者可读的空间 |
-| `POST /api/spaces` | 所有者 | `{"name", "info"?}` | 201 Space |
-| `POST /api/spaces/join` | 所有者 | `{"home", "space"}` | 201 Space（第 42.3 节） |
-| `GET /api/spaces/{space}` | reader | – | 200 Space |
-| `POST /api/spaces/{space}/members` | 空间中的 owner 角色 | NewMember | 201 `{"seq", "member"}` |
-| `DELETE /api/spaces/{space}/members/{node}` | owner 角色 | – | 204 |
-| `POST /api/spaces/{space}/handover` | owner 角色 | `{"node"}` | 200 `{"seq"}` |
-| `POST /api/spaces/{space}/sync` | reader | – | 200 `{"pulled"}`：从主节点取得的条目数（第 42.6 节） |
+| 方法与路径                                  | 谁                  | 请求                | 响应                                                 |
+| ------------------------------------------- | ------------------- | ------------------- | ---------------------------------------------------- |
+| `GET /api/spaces`                           | 已登录              | –                   | 200 `[Space]`：调用者可读的空间                      |
+| `POST /api/spaces`                          | 所有者              | `{"name", "info"?}` | 201 Space                                            |
+| `POST /api/spaces/join`                     | 所有者              | `{"home", "space"}` | 201 Space（第 42.3 节）                              |
+| `GET /api/spaces/{space}`                   | reader              | –                   | 200 Space                                            |
+| `POST /api/spaces/{space}/members`          | 空间中的 owner 角色 | NewMember           | 201 `{"seq", "member"}`                              |
+| `DELETE /api/spaces/{space}/members/{node}` | owner 角色          | –                   | 204                                                  |
+| `POST /api/spaces/{space}/handover`         | owner 角色          | `{"node"}`          | 200 `{"seq"}`                                        |
+| `POST /api/spaces/{space}/sync`             | reader              | –                   | 200 `{"pulled"}`：从主节点取得的条目数（第 42.6 节） |
 
 - **Space**：`{"id", "name", "info", "seq", "primary", "is_primary", "home", "members"}`。`id` 为 hex；`primary` 为密钥 ID；`is_primary` 表示本节点是否为主节点；`home` 为本节点所知的主节点 URL，或 null；`members` 为 `[{"node", "identity", "role", "home"}]`，其中 `home` 可以为 null。
 - **创建空间。** 空的 `name` 得到 400 `name missing`。info 取 `info`（必须是对象，否则为 `{}`）并设置 `name`。节点生成创世（第 16.3 节）并成为主节点。随后若配置中设置了 `url`，节点为自己在 `member/{自己的密钥 ID}` 写入一个带 `"home": url` 的成员条目，以便其他成员能找到它。
@@ -1239,14 +1268,14 @@ hs_session={token}; Path=/; HttpOnly; SameSite=Lax[; Secure][; Max-Age={s}]
 
 路径：`/api/spaces/{space}/resources/{type}/{id}`。目标 `{type}/{id}` 必须合法（第 15.2 节），否则 400 `bad type or id`。
 
-| 方法 | 谁 | 响应 |
-| --- | --- | --- |
-| `GET`、`HEAD` | 空间的 reader，且类型被允许 | 200 表示形式；304；404；410 |
-| `PUT` | writer | 201（新建）或 200（修改），`{"seq", "etag"}` |
-| `PATCH` | writer | 200 `{"seq", "etag"}` |
-| `DELETE` | writer | 204 |
-| 其他 | – | 405 |
-| `POST /api/spaces/{space}/erase/{type}/{id}` | writer | 204 |
+| 方法                                         | 谁                          | 响应                                         |
+| -------------------------------------------- | --------------------------- | -------------------------------------------- |
+| `GET`、`HEAD`                                | 空间的 reader，且类型被允许 | 200 表示形式；304；404；410                  |
+| `PUT`                                        | writer                      | 201（新建）或 200（修改），`{"seq", "etag"}` |
+| `PATCH`                                      | writer                      | 200 `{"seq", "etag"}`                        |
+| `DELETE`                                     | writer                      | 204                                          |
+| 其他                                         | –                           | 405                                          |
+| `POST /api/spaces/{space}/erase/{type}/{id}` | writer                      | 204                                          |
 
 **GET 与 HEAD。**
 
@@ -1334,13 +1363,13 @@ END:VCALENDAR
 
 `GET /api/spaces/{space}/resources`（reader）和 `GET /api/timeline`（已登录）接受：
 
-| 查询参数 | 含义 |
-| --- | --- |
-| `type` | 只取此类型（仅资源列表） |
-| `before` | 只取 `time` < 此值（ms）（仅时间线） |
-| `limit` | 最多这么多条；默认 100（资源）或 50（时间线）；不超过 1000 |
-| `offset` | 跳过这么多条；默认 0 |
-| `page` | `1` 表示要求分页对象；其他值（0 到 255）表示要求普通数组 |
+| 查询参数 | 含义                                                       |
+| -------- | ---------------------------------------------------------- |
+| `type`   | 只取此类型（仅资源列表）                                   |
+| `before` | 只取 `time` < 此值（ms）（仅时间线）                       |
+| `limit`  | 最多这么多条；默认 100（资源）或 50（时间线）；不超过 1000 |
+| `offset` | 跳过这么多条；默认 0                                       |
+| `page`   | `1` 表示要求分页对象；其他值（0 到 255）表示要求普通数组   |
 
 `page=1` 时答复为 `{"items": [Row], "next_offset"}`。节点向索引多取一行；若存在，`next_offset` 为 offset + limit，否则为 null。授权的类型限制包含在查询中。
 
@@ -1352,20 +1381,20 @@ END:VCALENDAR
 
 ### 31.6 查找
 
-| 方法与路径 | 谁 | 查询参数 | 响应 |
-| --- | --- | --- | --- |
-| `GET /api/search` | 已登录 | `q`（必填）、`limit`（默认 50，不超过 1000） | `[Row]`，在所有可读空间中，最佳在前 |
-| `GET /api/near` | 已登录 | `lat`、`lon`（必填）、`km`（默认 1）、`limit`（默认 50，不超过 1000） | `[Row]`，最近在前 |
-| `GET /api/related/{space}/{type}/{id}` | reader | `limit`（默认 100，不超过 1000） | `[{"rel", "row"}]`，最新在前 |
+| 方法与路径                             | 谁     | 查询参数                                                              | 响应                                |
+| -------------------------------------- | ------ | --------------------------------------------------------------------- | ----------------------------------- |
+| `GET /api/search`                      | 已登录 | `q`（必填）、`limit`（默认 50，不超过 1000）                          | `[Row]`，在所有可读空间中，最佳在前 |
+| `GET /api/near`                        | 已登录 | `lat`、`lon`（必填）、`km`（默认 1）、`limit`（默认 50，不超过 1000） | `[Row]`，最近在前                   |
+| `GET /api/related/{space}/{type}/{id}` | reader | `limit`（默认 100，不超过 1000）                                      | `[{"rel", "row"}]`，最新在前        |
 
 调用者不可见的行（类型不被允许；对“相关”还包括无法读取的空间中的行）在 limit 之后才去掉。
 
 ### 31.7 二进制对象
 
-| 方法与路径 | 谁 | 响应 |
-| --- | --- | --- |
-| `POST /api/blobs` | 任一空间中的 writer | 201 `{"hash", "size"}`，`Location: /api/blobs/{hash}` |
-| `GET`、`HEAD /api/blobs/{hash}` | 已登录 | 200、206、304、404、416 |
+| 方法与路径                      | 谁                  | 响应                                                  |
+| ------------------------------- | ------------------- | ----------------------------------------------------- |
+| `POST /api/blobs`               | 任一空间中的 writer | 201 `{"hash", "size"}`，`Location: /api/blobs/{hash}` |
+| `GET`、`HEAD /api/blobs/{hash}` | 已登录              | 200、206、304、404、416                               |
 
 **上传。** 请求体就是字节，不使用 `Content-Type`。角色为 writer 或 owner 的授权可以上传，不论其空间列表。节点调用者必须是某个空间中的 writer。
 
@@ -1381,11 +1410,11 @@ END:VCALENDAR
 
 ### 31.8 授权
 
-| 方法与路径 | 谁 | 请求 | 响应 |
-| --- | --- | --- | --- |
-| `GET /api/grants` | 所有者 | – | 200 `[Grant]`：未撤销的授权 |
-| `POST /api/grants` | 所有者 | NewGrant | 201 `{"token", "id"}` |
-| `DELETE /api/grants/{id}` | 所有者 | – | 204 |
+| 方法与路径                | 谁     | 请求     | 响应                        |
+| ------------------------- | ------ | -------- | --------------------------- |
+| `GET /api/grants`         | 所有者 | –        | 200 `[Grant]`：未撤销的授权 |
+| `POST /api/grants`        | 所有者 | NewGrant | 201 `{"token", "id"}`       |
+| `DELETE /api/grants/{id}` | 所有者 | –        | 204                         |
 
 - **Grant**（输出）：`{"id", "role", "label", "created", "spaces"?, "types"?, "expires"?, "session"?}`，不返回令牌哈希。
 - **NewGrant**：`{"role", "label"?, "spaces"?, "types"?, "expires"?, "session"?}`。`spaces` 的每一项指明一个空间（第 30.5 节）。节点生成授权（第 29 节）并只返回一次令牌。
@@ -1404,25 +1433,26 @@ END:VCALENDAR
    ```
 
    没有 `event:` 行。
+
 3. 若 25 秒内没有事件，节点发送 `: keep-alive\n\n`。
 
 调用者的访问权限在流开始时确定。不使用 `Last-Event-ID`，错过的事件也不会重发；客户端重新连接后应重新列出。
 
 ### 31.10 备份
 
-| 方法与路径 | 谁 | 响应 |
-| --- | --- | --- |
-| `GET /api/export` | 所有者 | 200 一个 tar 文件（第 50 节） |
-| `GET /api/replicas` | 所有者 | 200 `[文本]`：副本地址，秘密已隐藏（第 45.1 节） |
-| `POST /api/replicas/sync` | 所有者 | 200 `[ReplicaSync]`（第 47.3 节） |
+| 方法与路径                | 谁     | 响应                                             |
+| ------------------------- | ------ | ------------------------------------------------ |
+| `GET /api/export`         | 所有者 | 200 一个 tar 文件（第 50 节）                    |
+| `GET /api/replicas`       | 所有者 | 200 `[文本]`：副本地址，秘密已隐藏（第 45.1 节） |
+| `POST /api/replicas/sync` | 所有者 | 200 `[ReplicaSync]`（第 47.3 节）                |
 
 ### 31.11 推送
 
-| 方法与路径 | 谁 | 请求 | 响应 |
-| --- | --- | --- | --- |
-| `GET /api/push/key` | 所有者 | – | 200 `{"key"}`：VAPID 公钥，65 字节点的 base64url；503 `no push key` |
-| `POST /api/push/subscribe` | 所有者 | 浏览器的 PushSubscription | 201 `{"id": "push/{32 位 hex}"}` |
-| `POST /api/push/test` | 所有者 | – | 200 `{"ok": true}` |
+| 方法与路径                 | 谁     | 请求                      | 响应                                                                |
+| -------------------------- | ------ | ------------------------- | ------------------------------------------------------------------- |
+| `GET /api/push/key`        | 所有者 | –                         | 200 `{"key"}`：VAPID 公钥，65 字节点的 base64url；503 `no push key` |
+| `POST /api/push/subscribe` | 所有者 | 浏览器的 PushSubscription | 201 `{"id": "push/{32 位 hex}"}`                                    |
+| `POST /api/push/test`      | 所有者 | –                         | 200 `{"ok": true}`                                                  |
 
 其他调用者在这些路径上得到 401；`/api/push/` 下的其他路径对所有者返回 404。细节见第 36 节。
 
@@ -1469,22 +1499,22 @@ END:VCALENDAR
 
 答复为 207，`Content-Type: application/xml; charset=utf-8`，是一个 `multistatus`（RFC 4918），前缀为 `d`（`DAV:`）、`c`（`urn:ietf:params:xml:ns:caldav`）、`a`（`urn:ietf:params:xml:ns:carddav`）和 `cs`（`http://calendarserver.org/ns/`）。每个 response 有一个状态为 `HTTP/1.1 200 OK` 的 `propstat` 列出找到的属性；若请求中点名了属性，再有一个状态为 `HTTP/1.1 404 Not Found` 的 `propstat` 列出其余属性。
 
-| 属性 | 值 |
-| --- | --- |
-| `d:resourcetype` | 主体：`collection`、`principal`；主目录：`collection`；通讯录：`collection`、`a:addressbook`；日历：`collection`、`c:calendar`；条目：空 |
-| `d:displayname` | 主体：节点名；主目录：`Contacts`、`Calendars`；集合：空间名；条目：未找到 |
-| `d:current-user-principal`、`d:principal-URL`、`d:owner`、`c:calendar-user-address-set` | `<d:href>/dav/</d:href>` |
-| `a:addressbook-home-set` | `/dav/contacts/` |
-| `c:calendar-home-set` | `/dav/calendars/` |
-| `d:current-user-privilege-set` | read、write、write-content、bind、unbind（总是如此） |
-| `d:supported-report-set` | 通讯录：`addressbook-multiget`、`addressbook-query`；日历：`calendar-multiget`、`calendar-query`；主体和主目录：空 |
-| `c:supported-calendar-component-set` | 日历：`<c:comp name="VEVENT"/>` |
-| `a:supported-address-data` | 通讯录：`<a:address-data-type content-type="text/vcard" version="3.0"/>` |
-| `cs:getctag` | 集合：空间的 `"{seq}"` |
-| `d:sync-token` | 集合：`urn:homeserver:{空间 hex}:{seq}` |
-| `d:getetag` | 条目：ETag |
-| `d:getcontenttype` | 条目：该 book 的 media type；其他：`httpd/unix-directory` |
-| `a:address-data`、`c:calendar-data` | 条目，被请求时：vCard 或 iCalendar 文本 |
+| 属性                                                                                    | 值                                                                                                                                       |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `d:resourcetype`                                                                        | 主体：`collection`、`principal`；主目录：`collection`；通讯录：`collection`、`a:addressbook`；日历：`collection`、`c:calendar`；条目：空 |
+| `d:displayname`                                                                         | 主体：节点名；主目录：`Contacts`、`Calendars`；集合：空间名；条目：未找到                                                                |
+| `d:current-user-principal`、`d:principal-URL`、`d:owner`、`c:calendar-user-address-set` | `<d:href>/dav/</d:href>`                                                                                                                 |
+| `a:addressbook-home-set`                                                                | `/dav/contacts/`                                                                                                                         |
+| `c:calendar-home-set`                                                                   | `/dav/calendars/`                                                                                                                        |
+| `d:current-user-privilege-set`                                                          | read、write、write-content、bind、unbind（总是如此）                                                                                     |
+| `d:supported-report-set`                                                                | 通讯录：`addressbook-multiget`、`addressbook-query`；日历：`calendar-multiget`、`calendar-query`；主体和主目录：空                       |
+| `c:supported-calendar-component-set`                                                    | 日历：`<c:comp name="VEVENT"/>`                                                                                                          |
+| `a:supported-address-data`                                                              | 通讯录：`<a:address-data-type content-type="text/vcard" version="3.0"/>`                                                                 |
+| `cs:getctag`                                                                            | 集合：空间的 `"{seq}"`                                                                                                                   |
+| `d:sync-token`                                                                          | 集合：`urn:homeserver:{空间 hex}:{seq}`                                                                                                  |
+| `d:getetag`                                                                             | 条目：ETag                                                                                                                               |
+| `d:getcontenttype`                                                                      | 条目：该 book 的 media type；其他：`httpd/unix-directory`                                                                                |
+| `a:address-data`、`c:calendar-data`                                                     | 条目，被请求时：vCard 或 iCalendar 文本                                                                                                  |
 
 其他属性为未找到。
 
@@ -1516,15 +1546,15 @@ END:VCALENDAR
 
 ### 33.2 无需会话的端点
 
-| 方法与 `/bitwarden` 下的路径 | 答复 |
-| --- | --- |
-| `POST identity/accounts/prelogin`、`POST api/accounts/prelogin` | 来自账户的 `{"kdf", "kdfIterations", "kdfMemory": null, "kdfParallelism": null}`（或 0 与 600000） |
-| `POST identity/accounts/register/send-verification-email` | 一个随机 base64url 的 JSON 字符串；不发送任何东西 |
-| `POST api/accounts/register`、`POST identity/accounts/register/finish` | 创建账户 |
-| `POST identity/connect/token` | 登录（见下） |
-| `GET api/config` | `{"version": "2025.1.0", "gitHash": "", "server": {"name": "homeserver", "url": "https://github.com/"}, "environment": {}, "featureStates": {}, "object": "config"}` |
-| `GET api/accounts/revision-date` | 当前时间，ms |
-| `GET alive`、`GET api/alive` | 当前时间的 JSON 字符串，`"YYYY-MM-DDTHH:MM:SS.mmmZ"` |
+| 方法与 `/bitwarden` 下的路径                                           | 答复                                                                                                                                                                 |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST identity/accounts/prelogin`、`POST api/accounts/prelogin`        | 来自账户的 `{"kdf", "kdfIterations", "kdfMemory": null, "kdfParallelism": null}`（或 0 与 600000）                                                                   |
+| `POST identity/accounts/register/send-verification-email`              | 一个随机 base64url 的 JSON 字符串；不发送任何东西                                                                                                                    |
+| `POST api/accounts/register`、`POST identity/accounts/register/finish` | 创建账户                                                                                                                                                             |
+| `POST identity/connect/token`                                          | 登录（见下）                                                                                                                                                         |
+| `GET api/config`                                                       | `{"version": "2025.1.0", "gitHash": "", "server": {"name": "homeserver", "url": "https://github.com/"}, "environment": {}, "featureStates": {}, "object": "config"}` |
+| `GET api/accounts/revision-date`                                       | 当前时间，ms                                                                                                                                                         |
+| `GET alive`、`GET api/alive`                                           | 当前时间的 JSON 字符串，`"YYYY-MM-DDTHH:MM:SS.mmmZ"`                                                                                                                 |
 
 **注册。** 需要配置中 `bitwarden_register: true`（否则 403 `registration is closed; set bitwarden_register to true`），且尚无账户（否则 403 `this node already has a vault account`）。请求体需要 `email`、`masterPasswordHash` 以及 `key`（或 `userSymmetricKey`）；可以带有含 `publicKey` 和 `encryptedPrivateKey` 的 `keys`（或 `userAsymmetricKeys`）、`kdf`、`kdfIterations`、`name` 和 `masterPasswordHint`。答复为 `{"object": "register", "captchaBypassToken": null}`。
 
@@ -1539,19 +1569,19 @@ END:VCALENDAR
 
 调用者必须持有类型包含 `vault-session` 的授权，或是所有者（否则 401）。没有账户时为 404。
 
-| 方法与路径 | 答复 |
-| --- | --- |
-| `GET api/sync` | `{"object": "sync", "profile", "folders", "collections": [], "ciphers", "domains": null, "policies": [], "sends": []}` |
-| `GET api/accounts/profile` | 个人资料 |
-| `POST api/ciphers`、`POST api/ciphers/create` | 以新 uuid 创建条目 |
-| `PUT` 或 `POST api/ciphers/{id}` | 创建或替换条目 `{id}` |
-| `DELETE api/ciphers/{id}`、`POST api/ciphers/{id}/delete` | 删除；答复 `{}` |
-| `PUT api/ciphers/{id}/delete` | 设置 `deletedDate`（软删除） |
-| `PUT api/ciphers/{id}/restore` | 把 `deletedDate` 设为 null；不存在则 404 |
-| `GET api/folders` | `{"data": [文件夹], "object": "list", "continuationToken": null}` |
-| `POST api/folders` | 创建文件夹 |
-| `PUT` 或 `POST api/folders/{id}` | 创建或替换文件夹 `{id}` |
-| `DELETE api/folders/{id}`、`POST api/folders/{id}/delete` | 删除；答复 `{}` |
+| 方法与路径                                                | 答复                                                                                                                   |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `GET api/sync`                                            | `{"object": "sync", "profile", "folders", "collections": [], "ciphers", "domains": null, "policies": [], "sends": []}` |
+| `GET api/accounts/profile`                                | 个人资料                                                                                                               |
+| `POST api/ciphers`、`POST api/ciphers/create`             | 以新 uuid 创建条目                                                                                                     |
+| `PUT` 或 `POST api/ciphers/{id}`                          | 创建或替换条目 `{id}`                                                                                                  |
+| `DELETE api/ciphers/{id}`、`POST api/ciphers/{id}/delete` | 删除；答复 `{}`                                                                                                        |
+| `PUT api/ciphers/{id}/delete`                             | 设置 `deletedDate`（软删除）                                                                                           |
+| `PUT api/ciphers/{id}/restore`                            | 把 `deletedDate` 设为 null；不存在则 404                                                                               |
+| `GET api/folders`                                         | `{"data": [文件夹], "object": "list", "continuationToken": null}`                                                      |
+| `POST api/folders`                                        | 创建文件夹                                                                                                             |
+| `PUT` 或 `POST api/folders/{id}`                          | 创建或替换文件夹 `{id}`                                                                                                |
+| `DELETE api/folders/{id}`、`POST api/folders/{id}/delete` | 删除；答复 `{}`                                                                                                        |
 
 - **个人资料**：`object: "profile"`，来自账户的 `id`、`name`、`email`，`emailVerified: true`，`premium: true`，`premiumFromOrganization: false`，`masterPasswordHint: null`，`culture: "en-US"`，`twoFactorEnabled: false`，`key`，`privateKey`，`securityStamp`，`forcePasswordReset: false`，`usesKeyConnector: false`，`avatarColor: null`，`creationDate`，`organizations: []`，`providers: []`，`providerOrganizations: []`，`_status: 0`。
 - **保存条目。** 若请求体有成员 `cipher` 则取之，否则取请求体。去掉 `id`、`Id`、`revisionDate`、`RevisionDate`、`lastKnownRevisionDate` 和 `collectionIds`。设置 `created`（沿用旧条目的，否则为现在）和 `title: "Vault item"`。
@@ -1577,16 +1607,16 @@ END:VCALENDAR
 
 调用者的授权限制每个工具。`limit` 是 1 到 200 的整数（默认 20）。
 
-| 工具 | 描述 | 输入 | 结果 |
-| --- | --- | --- | --- |
-| `list_spaces` | The spaces this token can read, with their names and ids. | – | `[Space]` |
-| `search` | Full-text search across readable spaces, best first. | `query`、`limit` | `[Row]` |
-| `timeline` | Resources by the time they are about, newest first. | `before`（ms）、`limit` | `[Row]` |
-| `near` | Resources with a place near a point, nearest first. | `lat`、`lon`、`km`（默认 1）、`limit` | `[Row]` |
-| `get` | Read one resource. | `space`、`target` | Row，或 `not found` |
-| `related` | Everything linked to or from a resource. | `space`、`target`、`limit` | `[{"rel", "resource"}]` |
-| `list` | Resources of one type in a space, newest first. | `space`、`type`、`limit` | `[Row]` |
-| `put` | Create or replace a JSON resource. Needs a writer token. | `space`、`target`、`body`（对象） | `{"seq"}` |
+| 工具          | 描述                                                      | 输入                                  | 结果                    |
+| ------------- | --------------------------------------------------------- | ------------------------------------- | ----------------------- |
+| `list_spaces` | The spaces this token can read, with their names and ids. | –                                     | `[Space]`               |
+| `search`      | Full-text search across readable spaces, best first.      | `query`、`limit`                      | `[Row]`                 |
+| `timeline`    | Resources by the time they are about, newest first.       | `before`（ms）、`limit`               | `[Row]`                 |
+| `near`        | Resources with a place near a point, nearest first.       | `lat`、`lon`、`km`（默认 1）、`limit` | `[Row]`                 |
+| `get`         | Read one resource.                                        | `space`、`target`                     | Row，或 `not found`     |
+| `related`     | Everything linked to or from a resource.                  | `space`、`target`、`limit`            | `[{"rel", "resource"}]` |
+| `list`        | Resources of one type in a space, newest first.           | `space`、`type`、`limit`              | `[Row]`                 |
+| `put`         | Create or replace a JSON resource. Needs a writer token.  | `space`、`target`、`body`（对象）     | `{"seq"}`               |
 
 （描述是协议中原样发送的英文文本。）缺少文本输入时错误为 `{name} is required`；未知工具为 `unknown tool {name}`。
 
@@ -1617,7 +1647,11 @@ END:VCALENDAR
   "id_token_signing_alg_values_supported": ["ES256", "EdDSA"],
   "scopes_supported": ["openid", "profile", "email"],
   "subject_types_supported": ["public"],
-  "token_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
+  "token_endpoint_auth_methods_supported": [
+    "none",
+    "client_secret_post",
+    "client_secret_basic"
+  ],
   "claims_supported": ["iss", "sub", "aud", "exp", "iat", "nonce", "name"]
 }
 ```
@@ -1782,9 +1816,12 @@ END:VCALENDAR
 
 ```html
 <!doctype html>
-<meta charset="utf-8">
+<meta charset="utf-8" />
 <title>homeserver</title>
-<p>This homeserver has no web app yet. Use the <code>hs</code> command line: <code>hs login</code>, then <code>hs --help</code>.</p>
+<p>
+  This homeserver has no web app yet. Use the <code>hs</code> command line:
+  <code>hs login</code>, then <code>hs --help</code>.
+</p>
 ```
 
 1. 路径（各段以 `/` 连接，为空则为 `index.html`）指明一个文件。若没有该文件，且路径只有一段且不含 `.`，则为 `index.html`；否则 404。
@@ -1860,14 +1897,14 @@ END:VCALENDAR
 
 所有路径以 `/fed/` 开头，只有节点调用者（第 28 节）可以使用，其他人得到 401 `sign in first`。这里的 `{space}` 必须是 64 个 hex 字符（否则 404），且调用者必须是其成员，角色不限（否则 403 `not a member of this space`）。错误按第 30.4 节。
 
-| 方法与路径 | 请求体 | 答复 |
-| --- | --- | --- |
-| `GET /fed/spaces/{space}/log?after={n}` | – | 200 `application/cbor`：字节串数组，即 seq > n 的条目（`after` 缺失或不是数字时为全部），最多 1000 个 |
-| `GET /fed/spaces/{space}/head` | – | 200 `application/cose`：签名头（第 19.1 节）；本节点不是主节点时为 421 `not the primary` |
-| `GET /fed/blobs/{hash}` | – | 200 `application/octet-stream`：二进制对象，前提是调用者作为成员的某个空间中有条目指向它；否则 404 |
-| `POST /fed/spaces/{space}/inbox` | CBOR `[proposal, payload 或 null]` | 200 `{"seq", "created"}` |
-| `POST /fed/spaces/{space}/inbox/conditional` | CBOR `[proposal, payload 或 null, conditions]` | 200 `{"seq", "created"}`；“must exist” 失败时为 404 并带 `hs-conditional-write: 1` |
-| `POST /fed/spaces/{space}/push` | CBOR `[entry, payload 或 null]` | 200 `{"seq"}`：推送之后本节点的 seq |
+| 方法与路径                                   | 请求体                                         | 答复                                                                                                  |
+| -------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `GET /fed/spaces/{space}/log?after={n}`      | –                                              | 200 `application/cbor`：字节串数组，即 seq > n 的条目（`after` 缺失或不是数字时为全部），最多 1000 个 |
+| `GET /fed/spaces/{space}/head`               | –                                              | 200 `application/cose`：签名头（第 19.1 节）；本节点不是主节点时为 421 `not the primary`              |
+| `GET /fed/blobs/{hash}`                      | –                                              | 200 `application/octet-stream`：二进制对象，前提是调用者作为成员的某个空间中有条目指向它；否则 404    |
+| `POST /fed/spaces/{space}/inbox`             | CBOR `[proposal, payload 或 null]`             | 200 `{"seq", "created"}`                                                                              |
+| `POST /fed/spaces/{space}/inbox/conditional` | CBOR `[proposal, payload 或 null, conditions]` | 200 `{"seq", "created"}`；“must exist” 失败时为 404 并带 `hs-conditional-write: 1`                    |
+| `POST /fed/spaces/{space}/push`              | CBOR `[entry, payload 或 null]`                | 200 `{"seq"}`：推送之后本节点的 seq                                                                   |
 
 - 在这些请求体中，`proposal` 和 `entry` 是字节串。对 `…/inbox` 和 `…/push`，不是字节串的载荷视为没有，第二项之后的项不使用。对 `…/inbox/conditional`，数组必须恰好有三项，载荷必须是字节串或 `null`。形式错误的请求体得到 400（`expected [proposal, payload]`、`expected [proposal, payload, conditions]`、`expected [entry, payload]`）。
 - `conditions` 是第 20.1 节的四项数组。
@@ -1996,10 +2033,10 @@ END:VCALENDAR
 
 ### 45.1 地址
 
-| 地址 | 存储 |
-| --- | --- |
-| 以 `/` 或 `.` 开头的路径，或 `dir:{path}` | 本地目录 |
-| `s3://{key}:{secret}@{host[:port]}/{bucket}[/{prefix}][?{options}]` | 兼容 S3 的存储桶 |
+| 地址                                                                | 存储                               |
+| ------------------------------------------------------------------- | ---------------------------------- |
+| 以 `/` 或 `.` 开头的路径，或 `dir:{path}`                           | 本地目录                           |
+| `s3://{key}:{secret}@{host[:port]}/{bucket}[/{prefix}][?{options}]` | 兼容 S3 的存储桶                   |
 | `hs://{key}:{secret}@{host[:port]}/{bucket}[/{prefix}][?{options}]` | 另一个节点的 S3 端点（第 49.2 节） |
 
 - key 和 secret 做百分号解码。用户部分止于最后一个 `@`。
@@ -2011,11 +2048,11 @@ END:VCALENDAR
 
 ### 45.2 存储上的操作
 
-| 操作 | 目录 | S3 |
-| --- | --- | --- |
-| get | 读取文件 | `GET`：200 为字节，404 为无，其他为错误 |
-| put | 持久写入 | `PUT`：2xx 为成功 |
-| delete | 删除文件（不存在也可以） | `DELETE`：2xx 或 404 为成功 |
+| 操作   | 目录                     | S3                                      |
+| ------ | ------------------------ | --------------------------------------- |
+| get    | 读取文件                 | `GET`：200 为字节，404 为无，其他为错误 |
+| put    | 持久写入                 | `PUT`：2xx 为成功                       |
+| delete | 删除文件（不存在也可以） | `DELETE`：2xx 或 404 为成功             |
 
 每个 S3 请求都签名（第 49.1 节），并带头 `x-amz-content-sha256` = 请求体 SHA-256 的 hex。
 
@@ -2051,7 +2088,13 @@ END:VCALENDAR
 逻辑名 `manifest` 保存 JSON：
 
 ```json
-{"version": 2, "time": 1764079380000, "files": {"{path}": {"hash": "{hex}", "size": 123, "generation": "{32 位 hex}"}}}
+{
+  "version": 2,
+  "time": 1764079380000,
+  "files": {
+    "{path}": { "hash": "{hex}", "size": 123, "generation": "{32 位 hex}" }
+  }
+}
 ```
 
 - `files` 按路径排序。`hash` 为文件的哈希。`generation` 指明上传该文件此版本的同步轮次。
@@ -2073,7 +2116,7 @@ END:VCALENDAR
    - 目录：持有锁文件 `.tmp-cas.lock`，只在当前文件的哈希仍等于修订号时写入；
    - 有 ETag 的 S3：`PUT` 并带 `If-Match: {etag}`；没有时带 `If-None-Match: *`；412 或 409 表示另一次同步抢先；
    - legacy：普通 `PUT`。
-   若另一次同步抢先，以 `another sync published a replica snapshot first; run the sync again` 停止。
+     若另一次同步抢先，以 `another sync published a replica snapshot first; run the sync again` 停止。
 7. 若修订号不是 legacy，删除不再需要的对象：变更文件的旧版本，以及已不存在的文件。删除失败只记为警告。
 
 每个副本的结果为 `{"replica": "{地址，秘密已隐藏}", "ok": bool, "sent"?, "bytes"?, "unchanged"?, "deleted"?, "error"?}`。`sent` 为上传的文件数，`bytes` 为其明文大小，`unchanged` 为保留的文件数，`deleted` 为删除的对象数。
@@ -2128,14 +2171,14 @@ S3 请求用 AWS 签名版本 4 签名，服务为 `s3`：
 
 **操作。**
 
-| 请求 | 答复 |
-| --- | --- |
-| `GET /s3/{bucket}`（任意查询串） | ListObjectsV2（见下） |
-| `HEAD` 或 `PUT /s3/{bucket}` | 200 |
-| `PUT /s3/{bucket}/{key}` | 写入；200，带 `ETag: "{请求体哈希的 hex}"` |
+| 请求                               | 答复                                                                                           |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `GET /s3/{bucket}`（任意查询串）   | ListObjectsV2（见下）                                                                          |
+| `HEAD` 或 `PUT /s3/{bucket}`       | 200                                                                                            |
+| `PUT /s3/{bucket}/{key}`           | 写入；200，带 `ETag: "{请求体哈希的 hex}"`                                                     |
 | `GET` 或 `HEAD /s3/{bucket}/{key}` | 200（范围请求为 206），`ETag: "{哈希 hex}"`；404 `NoSuchKey`；两者都带 `hs-conditional-put: 1` |
-| `DELETE /s3/{bucket}/{key}` | 204，不存在时也一样 |
-| 其他 | 405 `MethodNotAllowed` |
+| `DELETE /s3/{bucket}/{key}`        | 204，不存在时也一样                                                                            |
+| 其他                               | 405 `MethodNotAllowed`                                                                         |
 
 - **条件写入。** 只有 `If-Match: "{64 位 hex}"`（带引号）时，仅当当前对象具有该哈希才写入。只有 `If-None-Match: *` 时，仅当对象不存在才写入。条件失败，或 `If-Match` 为其他形式，得到 412 `PreconditionFailed`。两个头都有，或 `If-None-Match` 为其他值，得到 400 `InvalidArgument`。两者都没有时无条件写入。
 - **范围**同第 31.7 节，`Content-Type: application/octet-stream`。无效的范围得到完整对象和 200。
@@ -2177,11 +2220,11 @@ S3 请求用 AWS 签名版本 4 签名，服务为 `s3`：
 
 可以放在命令之前或之后。
 
-| 选项 | 环境变量 | 含义 |
-| --- | --- | --- |
-| `--dir DIR` | `HS_DIR` | 数据目录 |
-| `--server URL` | `HS_SERVER` | 要通信的节点 |
-| `--json` | – | 以 JSON 打印 API 的答复 |
+| 选项           | 环境变量    | 含义                    |
+| -------------- | ----------- | ----------------------- |
+| `--dir DIR`    | `HS_DIR`    | 数据目录                |
+| `--server URL` | `HS_SERVER` | 要通信的节点            |
+| `--json`       | –           | 以 JSON 打印 API 的答复 |
 
 其他环境变量：`HS_TOKEN`（优先于已保存令牌的令牌）、`HS_RECOVERY_CODE`（用于 `restore`）、`VISUAL` 和 `EDITOR`（用于 `edit`）、`COMPLETE`（用于 shell 补全）、`XDG_DATA_HOME`、`XDG_CONFIG_HOME` 和 `HOME`。
 
@@ -2197,7 +2240,7 @@ S3 请求用 AWS 签名版本 4 签名，服务为 `s3`：
 {
   "default": "http://127.0.0.1:8080",
   "servers": {
-    "http://127.0.0.1:8080": {"insecure": false, "token": "hs_…"}
+    "http://127.0.0.1:8080": { "insecure": false, "token": "hs_…" }
   }
 }
 ```
@@ -2231,35 +2274,35 @@ S3 请求用 AWS 签名版本 4 签名，服务为 `s3`：
 
 ### 52.1 `hs`
 
-| 命令 | 位置 | 作用 |
-| --- | --- | --- |
-| `login [URL] [--insecure]` | API | 读取令牌（`HS_TOKEN`，或不回显地询问），用 `GET /api/session` 和 `GET /api/node` 检查，保存为默认；打印 `Signed in to {name} ({url}) as {role}` |
-| `logout [URL]` | 文件 | 从 `cli.json` 删除该登录（不撤销令牌） |
-| `status` | API | 节点、身份、版本、角色、索引健康状况、计数 |
-| `ls SPACE [TYPE] [--limit N] [--offset N] [--all]` | API | 列出资源（使用 `page=1` 分页；`--all` 取得所有页） |
-| `get SPACE TYPE/ID [-o FILE]` | API | 打印或保存一个资源 |
-| `put SPACE TYPE/ID [FILE] [--media-type T] [--new] [--if-match ETAG]` | API | 从文件或标准输入 PUT；`--new` 发送 `If-None-Match: *` |
-| `edit SPACE TYPE/ID` | API | 取得资源，打开编辑器，带 `If-Match`（新资源则 `If-None-Match: *`）PUT 回去 |
-| `patch SPACE TYPE/ID PATCH` | API | JSON Merge Patch（`-` 表示读标准输入） |
-| `rm SPACE TYPE/ID [--erase]` | API | DELETE，或擦除 |
-| `upload SPACE FILE…` | API | 对每个文件：作为二进制对象 POST，再 PUT `file/{哈希前 16 位}`（第 37.3 节） |
-| `search WORDS… [--limit N]` | API | `GET /api/search` |
-| `timeline [--before YYYY-MM-DD] [--limit N]` | API | `GET /api/timeline` |
-| `near LAT LON [--km K] [--limit N]` | API | `GET /api/near` |
-| `related SPACE TYPE/ID` | API | `GET /api/related/…` |
-| `blob put FILE [--media-type T]` / `blob get HASH [-o FILE]` | API | 上传或下载二进制对象 |
-| `watch` | API | 打印来自 `GET /api/events` 的事件，直到停止 |
-| `space list` / `space create NAME` | 本地或 API | 列出或创建空间 |
-| `space show SPACE` | API | 空间及其成员 |
-| `space join --home URL SPACE` | API | `POST /api/spaces/join` |
-| `space member add SPACE (--url URL \| --node ID --identity ID) [--role R]` | API | 添加成员（角色默认 `writer`） |
-| `space member remove SPACE NODE` | API | 移除成员 |
-| `space handover SPACE NODE` | API | 让另一个成员成为主节点 |
-| `space sync SPACE` | API | 立即拉取 |
-| `identity` | 本地或 API | 打印 DID 文档 |
-| `openapi` | – | 打印 OpenAPI 文档 |
-| `completion SHELL` | – | 打印 `hs` 和 `hsctl` 的补全脚本（bash、zsh、fish、elvish、powershell） |
-| `ctl …` | | 第 52.2 节 |
+| 命令                                                                       | 位置       | 作用                                                                                                                                            |
+| -------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `login [URL] [--insecure]`                                                 | API        | 读取令牌（`HS_TOKEN`，或不回显地询问），用 `GET /api/session` 和 `GET /api/node` 检查，保存为默认；打印 `Signed in to {name} ({url}) as {role}` |
+| `logout [URL]`                                                             | 文件       | 从 `cli.json` 删除该登录（不撤销令牌）                                                                                                          |
+| `status`                                                                   | API        | 节点、身份、版本、角色、索引健康状况、计数                                                                                                      |
+| `ls SPACE [TYPE] [--limit N] [--offset N] [--all]`                         | API        | 列出资源（使用 `page=1` 分页；`--all` 取得所有页）                                                                                              |
+| `get SPACE TYPE/ID [-o FILE]`                                              | API        | 打印或保存一个资源                                                                                                                              |
+| `put SPACE TYPE/ID [FILE] [--media-type T] [--new] [--if-match ETAG]`      | API        | 从文件或标准输入 PUT；`--new` 发送 `If-None-Match: *`                                                                                           |
+| `edit SPACE TYPE/ID`                                                       | API        | 取得资源，打开编辑器，带 `If-Match`（新资源则 `If-None-Match: *`）PUT 回去                                                                      |
+| `patch SPACE TYPE/ID PATCH`                                                | API        | JSON Merge Patch（`-` 表示读标准输入）                                                                                                          |
+| `rm SPACE TYPE/ID [--erase]`                                               | API        | DELETE，或擦除                                                                                                                                  |
+| `upload SPACE FILE…`                                                       | API        | 对每个文件：作为二进制对象 POST，再 PUT `file/{哈希前 16 位}`（第 37.3 节）                                                                     |
+| `search WORDS… [--limit N]`                                                | API        | `GET /api/search`                                                                                                                               |
+| `timeline [--before YYYY-MM-DD] [--limit N]`                               | API        | `GET /api/timeline`                                                                                                                             |
+| `near LAT LON [--km K] [--limit N]`                                        | API        | `GET /api/near`                                                                                                                                 |
+| `related SPACE TYPE/ID`                                                    | API        | `GET /api/related/…`                                                                                                                            |
+| `blob put FILE [--media-type T]` / `blob get HASH [-o FILE]`               | API        | 上传或下载二进制对象                                                                                                                            |
+| `watch`                                                                    | API        | 打印来自 `GET /api/events` 的事件，直到停止                                                                                                     |
+| `space list` / `space create NAME`                                         | 本地或 API | 列出或创建空间                                                                                                                                  |
+| `space show SPACE`                                                         | API        | 空间及其成员                                                                                                                                    |
+| `space join --home URL SPACE`                                              | API        | `POST /api/spaces/join`                                                                                                                         |
+| `space member add SPACE (--url URL \| --node ID --identity ID) [--role R]` | API        | 添加成员（角色默认 `writer`）                                                                                                                   |
+| `space member remove SPACE NODE`                                           | API        | 移除成员                                                                                                                                        |
+| `space handover SPACE NODE`                                                | API        | 让另一个成员成为主节点                                                                                                                          |
+| `space sync SPACE`                                                         | API        | 立即拉取                                                                                                                                        |
+| `identity`                                                                 | 本地或 API | 打印 DID 文档                                                                                                                                   |
+| `openapi`                                                                  | –          | 打印 OpenAPI 文档                                                                                                                               |
+| `completion SHELL`                                                         | –          | 打印 `hs` 和 `hsctl` 的补全脚本（bash、zsh、fish、elvish、powershell）                                                                          |
+| `ctl …`                                                                    |            | 第 52.2 节                                                                                                                                      |
 
 默认值：`--limit` 为 50，`--km` 为 1。
 
@@ -2267,19 +2310,19 @@ S3 请求用 AWS 签名版本 4 签名，服务为 `s3`：
 
 ### 52.2 `hs ctl`（以及 `hsctl`）
 
-| 命令 | 位置 | 作用 |
-| --- | --- | --- |
-| `init --name NAME [--url URL]` | 目录 | 创建节点（第 23.1 节）；打印身份、恢复码和所有者令牌；若没有已保存的登录，为 `URL`（或 `http://127.0.0.1:8080`）保存一个 |
-| `serve [--listen ADDR] [--tls off\|self-signed] [--domain D]… [--map-port]` | 目录 | 运行节点（第 30.1 节）；`--listen` 默认 `127.0.0.1:8080` |
-| `config get [KEY]` / `config set KEY VALUE` | 目录 | 读取或设置 `config.json` 的顶层成员；VALUE 为 JSON，否则视为字符串 |
-| `token create [--role R] [--label L] [--space S]… [--type T]… [--expires-in D]` | 本地或 API | 生成授权并打印令牌（角色默认 `writer`） |
-| `token list` / `token revoke ID` | 本地或 API | 列出或撤销授权 |
-| `export` | 本地或 API | 把 tar 写到标准输出（不能是终端） |
-| `replica list` / `replica sync` | 本地或 API | 列出副本，或立即同步 |
-| `restore --from REPLICA` | 目录 | 第 48 节 |
-| `recovery split --threshold K --count N` | – | 读取恢复码并打印 N 个分片（第 11.2 节） |
-| `recovery combine` | – | 读取分片（每行一个），打印恢复码 |
-| `rebuild-index` | 目录 | 删除索引并重建 |
+| 命令                                                                            | 位置       | 作用                                                                                                                     |
+| ------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `init --name NAME [--url URL]`                                                  | 目录       | 创建节点（第 23.1 节）；打印身份、恢复码和所有者令牌；若没有已保存的登录，为 `URL`（或 `http://127.0.0.1:8080`）保存一个 |
+| `serve [--listen ADDR] [--tls off\|self-signed] [--domain D]… [--map-port]`     | 目录       | 运行节点（第 30.1 节）；`--listen` 默认 `127.0.0.1:8080`                                                                 |
+| `config get [KEY]` / `config set KEY VALUE`                                     | 目录       | 读取或设置 `config.json` 的顶层成员；VALUE 为 JSON，否则视为字符串                                                       |
+| `token create [--role R] [--label L] [--space S]… [--type T]… [--expires-in D]` | 本地或 API | 生成授权并打印令牌（角色默认 `writer`）                                                                                  |
+| `token list` / `token revoke ID`                                                | 本地或 API | 列出或撤销授权                                                                                                           |
+| `export`                                                                        | 本地或 API | 把 tar 写到标准输出（不能是终端）                                                                                        |
+| `replica list` / `replica sync`                                                 | 本地或 API | 列出副本，或立即同步                                                                                                     |
+| `restore --from REPLICA`                                                        | 目录       | 第 48 节                                                                                                                 |
+| `recovery split --threshold K --count N`                                        | –          | 读取恢复码并打印 N 个分片（第 11.2 节）                                                                                  |
+| `recovery combine`                                                              | –          | 读取分片（每行一个），打印恢复码                                                                                         |
+| `rebuild-index`                                                                 | 目录       | 删除索引并重建                                                                                                           |
 
 `--expires-in` 为数字加单位：`s`、`m` 或 `min`、`h`、`d`、`w`。过期时间按客户端时钟计算。
 
@@ -2299,62 +2342,62 @@ S3 请求用 AWS 签名版本 4 签名，服务为 `s3`：
 
 ## 附录 A. 常量
 
-| 名称 | 值 | 章节 |
-| --- | --- | --- |
-| COSE alg | −8（EdDSA） | 8.2 |
-| COSE 受保护头 | `a1 01 27` | 8.2 |
-| CBOR 嵌套上限 | 32 | 7.3 |
-| 存储密钥上下文 | `homeserver 2025 storage key v1` | 6 |
-| 令牌哈希上下文 | `homeserver 2025 token v1` | 6 |
-| 副本名上下文 | `hs name v1` | 46 |
-| 副本密钥上下文 | `hs key v1` | 46 |
-| 副本魔数 | `HSE1` | 46 |
-| 目标每部分长度 | 1–128 字节 | 15.2 |
-| 提案 nonce（节点生成） | 16 个随机字节 | 15 |
-| 令牌 | `hs_` + 20 字节的 base32 | 29.2 |
-| 授权 ID、OAuth 客户端 ID | 10 字节的 base32 | 29.1、35.2 |
-| 每段条目数 | 256 | 19.2 |
-| 事件通道 | 1024 个事件 | 26.4 |
-| 索引模式版本 | 1 | 27.1 |
-| 搜索文本上限 | 64 KiB | 27.3 |
-| 标题长度 | 200 / 80 个字符 | 27.3 |
-| 默认监听地址 | `127.0.0.1:8080` | 30.1 |
-| 请求体上限 | 256 MiB | 30.1 |
-| 响应体上限（出站客户端） | 256 MiB | 43 |
-| CLI 响应体上限 | 64 MiB | 51.6 |
-| TLS 握手时限 | 10 s | 30.1 |
-| 出站请求时限 | 30 s | 43 |
-| 访问日志队列 / 批量 | 1024 / 64 | 30.6 |
-| 列表数量 | 默认 100（资源）、50（其他）；最多 1000 | 31.5、31.6 |
-| 二进制对象分块 | 64 KiB | 31.7 |
-| 事件流 retry / 保活 | 3000 ms / 25 s | 31.9 |
-| 签名标签 | `sig1` | 40 |
-| 签名时间窗 | 300 s | 40.3 |
-| 日志分页 | 1000 个条目 | 41 |
-| 拉取间隔 | 60 s | 42.6 |
-| 副本同步间隔 | 3600 s | 47.4 |
-| S3 时钟窗 | 900 s | 49.2 |
-| S3 列表分页 | 1000 | 49.2 |
-| 会话授权有效期 | 30 天 | 33.2、35.4 |
-| 转发认证 cookie 有效期 | 604800 s（7 天） | 35.5 |
-| OAuth 授权码有效期 | 60 s | 35.2 |
-| OIDC 令牌有效期 | 3600 s | 35.2 |
-| 通行密钥挑战有效期 | 300 s | 35.4 |
-| PBKDF2 轮数（密码库） | 100000 | 33.1 |
-| 密码库默认 KDF 轮数 | 600000 | 33.1 |
-| VAPID JWT 有效期 | 43200 s | 36.2 |
-| 推送 TTL | 86400 s | 36.3 |
-| 推送归并等待 | 5 s | 36.3 |
-| 推送消息上限 | 3993 字节 | 36.3 |
-| 缩略图边长 | 16–1024 | 37.4 |
-| 缩略图进程数 / 时限 / 输出 | 2 / 15 s / 8 MiB | 37.4 |
-| 缩略图像素上限 | 64,000,000 | 37.4 |
-| JPEG 质量 | 80 | 37.4 |
-| PCP/NAT-PMP 端口 | 5351 | 44 |
-| 端口映射生存期 | 7200 s | 44 |
-| MCP 协议版本 | `2025-06-18` | 34 |
-| MCP 工具 limit | 默认 20，1–200 | 34 |
-| 补全等待 | 2 s | 52.4 |
+| 名称                       | 值                                      | 章节       |
+| -------------------------- | --------------------------------------- | ---------- |
+| COSE alg                   | −8（EdDSA）                             | 8.2        |
+| COSE 受保护头              | `a1 01 27`                              | 8.2        |
+| CBOR 嵌套上限              | 32                                      | 7.3        |
+| 存储密钥上下文             | `homeserver 2025 storage key v1`        | 6          |
+| 令牌哈希上下文             | `homeserver 2025 token v1`              | 6          |
+| 副本名上下文               | `hs name v1`                            | 46         |
+| 副本密钥上下文             | `hs key v1`                             | 46         |
+| 副本魔数                   | `HSE1`                                  | 46         |
+| 目标每部分长度             | 1–128 字节                              | 15.2       |
+| 提案 nonce（节点生成）     | 16 个随机字节                           | 15         |
+| 令牌                       | `hs_` + 20 字节的 base32                | 29.2       |
+| 授权 ID、OAuth 客户端 ID   | 10 字节的 base32                        | 29.1、35.2 |
+| 每段条目数                 | 256                                     | 19.2       |
+| 事件通道                   | 1024 个事件                             | 26.4       |
+| 索引模式版本               | 1                                       | 27.1       |
+| 搜索文本上限               | 64 KiB                                  | 27.3       |
+| 标题长度                   | 200 / 80 个字符                         | 27.3       |
+| 默认监听地址               | `127.0.0.1:8080`                        | 30.1       |
+| 请求体上限                 | 256 MiB                                 | 30.1       |
+| 响应体上限（出站客户端）   | 256 MiB                                 | 43         |
+| CLI 响应体上限             | 64 MiB                                  | 51.6       |
+| TLS 握手时限               | 10 s                                    | 30.1       |
+| 出站请求时限               | 30 s                                    | 43         |
+| 访问日志队列 / 批量        | 1024 / 64                               | 30.6       |
+| 列表数量                   | 默认 100（资源）、50（其他）；最多 1000 | 31.5、31.6 |
+| 二进制对象分块             | 64 KiB                                  | 31.7       |
+| 事件流 retry / 保活        | 3000 ms / 25 s                          | 31.9       |
+| 签名标签                   | `sig1`                                  | 40         |
+| 签名时间窗                 | 300 s                                   | 40.3       |
+| 日志分页                   | 1000 个条目                             | 41         |
+| 拉取间隔                   | 60 s                                    | 42.6       |
+| 副本同步间隔               | 3600 s                                  | 47.4       |
+| S3 时钟窗                  | 900 s                                   | 49.2       |
+| S3 列表分页                | 1000                                    | 49.2       |
+| 会话授权有效期             | 30 天                                   | 33.2、35.4 |
+| 转发认证 cookie 有效期     | 604800 s（7 天）                        | 35.5       |
+| OAuth 授权码有效期         | 60 s                                    | 35.2       |
+| OIDC 令牌有效期            | 3600 s                                  | 35.2       |
+| 通行密钥挑战有效期         | 300 s                                   | 35.4       |
+| PBKDF2 轮数（密码库）      | 100000                                  | 33.1       |
+| 密码库默认 KDF 轮数        | 600000                                  | 33.1       |
+| VAPID JWT 有效期           | 43200 s                                 | 36.2       |
+| 推送 TTL                   | 86400 s                                 | 36.3       |
+| 推送归并等待               | 5 s                                     | 36.3       |
+| 推送消息上限               | 3993 字节                               | 36.3       |
+| 缩略图边长                 | 16–1024                                 | 37.4       |
+| 缩略图进程数 / 时限 / 输出 | 2 / 15 s / 8 MiB                        | 37.4       |
+| 缩略图像素上限             | 64,000,000                              | 37.4       |
+| JPEG 质量                  | 80                                      | 37.4       |
+| PCP/NAT-PMP 端口           | 5351                                    | 44         |
+| 端口映射生存期             | 7200 s                                  | 44         |
+| MCP 协议版本               | `2025-06-18`                            | 34         |
+| MCP 工具 limit             | 默认 20，1–200                          | 34         |
+| 补全等待                   | 2 s                                     | 52.4       |
 
 ## 附录 B. 本版本尚未包含的功能
 

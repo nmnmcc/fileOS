@@ -171,32 +171,32 @@ These ideas shape every later part.
 
 ## 3. Words used in this document
 
-| Word | Meaning |
-| --- | --- |
-| person | The owner of a node. |
-| personal key | An Ed25519 key pair that is the person. It is not kept on the node. The recovery code is its seed. |
-| identity ID | The text form of the first personal key. It never changes. |
-| identity log | A short signed log that says which personal key is current, which nodes serve the person, and at which addresses. |
-| node | One running `hs` with its data directory. |
-| node key | The Ed25519 key pair of one node. It signs log entries, proposals and HTTP requests. |
-| storage key | A 32-byte key made from the personal key's seed. It encrypts replicas. |
-| space | A unit of data and sharing, with members and one log. |
-| private space | The space made by `init`. It keeps grants, the vault, passkeys and other secrets of the node. |
-| member | A node key with a role in a space. |
-| role | `reader`, `writer` or `owner`, in that order of power. |
-| primary | The member node that orders a space's log. |
-| home | The URL at which a space's primary can be reached. |
-| proposal | A change, signed by the node that wants it. |
-| entry | A proposal put in order by the primary, signed by the primary. |
-| seq | The sequence number of an entry. The first entry (genesis) has seq 0. |
-| target | The name of a resource inside a space: `type/id`, such as `note/shopping`. |
-| resource | The data at a target. Its current bytes are its payload. |
-| payload | The bytes that a proposal names by hash. |
-| blob | Bytes kept under their BLAKE3 hash. |
-| grant | A record that gives a token (or a session) a role. |
-| token | A secret string that a client sends to use a grant. |
-| replica | An encrypted copy of a node's data directory, somewhere else. |
-| index | The SQLite database that is made from the logs. |
+| Word          | Meaning                                                                                                           |
+| ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| person        | The owner of a node.                                                                                              |
+| personal key  | An Ed25519 key pair that is the person. It is not kept on the node. The recovery code is its seed.                |
+| identity ID   | The text form of the first personal key. It never changes.                                                        |
+| identity log  | A short signed log that says which personal key is current, which nodes serve the person, and at which addresses. |
+| node          | One running `hs` with its data directory.                                                                         |
+| node key      | The Ed25519 key pair of one node. It signs log entries, proposals and HTTP requests.                              |
+| storage key   | A 32-byte key made from the personal key's seed. It encrypts replicas.                                            |
+| space         | A unit of data and sharing, with members and one log.                                                             |
+| private space | The space made by `init`. It keeps grants, the vault, passkeys and other secrets of the node.                     |
+| member        | A node key with a role in a space.                                                                                |
+| role          | `reader`, `writer` or `owner`, in that order of power.                                                            |
+| primary       | The member node that orders a space's log.                                                                        |
+| home          | The URL at which a space's primary can be reached.                                                                |
+| proposal      | A change, signed by the node that wants it.                                                                       |
+| entry         | A proposal put in order by the primary, signed by the primary.                                                    |
+| seq           | The sequence number of an entry. The first entry (genesis) has seq 0.                                             |
+| target        | The name of a resource inside a space: `type/id`, such as `note/shopping`.                                        |
+| resource      | The data at a target. Its current bytes are its payload.                                                          |
+| payload       | The bytes that a proposal names by hash.                                                                          |
+| blob          | Bytes kept under their BLAKE3 hash.                                                                               |
+| grant         | A record that gives a token (or a session) a role.                                                                |
+| token         | A secret string that a client sends to use a grant.                                                               |
+| replica       | An encrypted copy of a node's data directory, somewhere else.                                                     |
+| index         | The SQLite database that is made from the logs.                                                                   |
 
 ## 4. How the parts work together
 
@@ -351,10 +351,10 @@ big-endian change of base, and each leading `0x00` byte becomes one leading
 - **Derived key.** `derive_key(context, material)` is the BLAKE3 key
   derivation mode with the given context string. The node uses these contexts:
 
-  | Context string | Material | Use |
-  | --- | --- | --- |
+  | Context string                   | Material                  | Use                      |
+  | -------------------------------- | ------------------------- | ------------------------ |
   | `homeserver 2025 storage key v1` | the 32-byte personal seed | storage key (section 10) |
-  | `homeserver 2025 token v1` | the bytes of a token | token hash (section 29) |
+  | `homeserver 2025 token v1`       | the bytes of a token      | token hash (section 29)  |
 
 - **Keyed hash.** `keyed(key, msg)` is BLAKE3 in keyed mode, with a 32-byte
   key. Replica encryption uses it (section 46).
@@ -370,15 +370,15 @@ section 4.2.1.
 
 ### 7.1 Data model
 
-| Major type | Values |
-| --- | --- |
-| 0 | unsigned integer, 0 to 2^64−1 |
-| 1 | negative integer, −1 to −2^64 |
-| 2 | byte string |
-| 3 | text string (UTF-8) |
-| 4 | array |
-| 5 | map (keys may be of any type in this list) |
-| 7 | only `false` (0xf4), `true` (0xf5), `null` (0xf6) |
+| Major type | Values                                            |
+| ---------- | ------------------------------------------------- |
+| 0          | unsigned integer, 0 to 2^64−1                     |
+| 1          | negative integer, −1 to −2^64                     |
+| 2          | byte string                                       |
+| 3          | text string (UTF-8)                               |
+| 4          | array                                             |
+| 5          | map (keys may be of any type in this list)        |
+| 7          | only `false` (0xf4), `true` (0xf5), `null` (0xf6) |
 
 There are no floating-point numbers, no tags (major type 6), no `undefined`,
 no other simple values, and no indefinite lengths.
@@ -490,11 +490,11 @@ JSON is RFC 8259.
 
 A node uses three secrets.
 
-| Key | Made from | Kept | Use |
-| --- | --- | --- | --- |
-| personal key | 32 random bytes (the personal seed) | **not on the node**; the person keeps it as the recovery code | signs the identity log; the identity ID is its first public key |
-| node key | 32 random bytes | `keys/node` in the data directory | signs proposals, entries and HTTP requests |
-| storage key | `derive_key("homeserver 2025 storage key v1", personal seed)` | `keys/storage` | encrypts replicas (section 46) |
+| Key          | Made from                                                     | Kept                                                          | Use                                                             |
+| ------------ | ------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------- |
+| personal key | 32 random bytes (the personal seed)                           | **not on the node**; the person keeps it as the recovery code | signs the identity log; the identity ID is its first public key |
+| node key     | 32 random bytes                                               | `keys/node` in the data directory                             | signs proposals, entries and HTTP requests                      |
+| storage key  | `derive_key("homeserver 2025 storage key v1", personal seed)` | `keys/storage`                                                | encrypts replicas (section 46)                                  |
 
 Random bytes MUST come from a secure random number generator of the operating
 system.
@@ -521,7 +521,7 @@ exactly 32 bytes.
 ### 11.2 Recovery shares
 
 The recovery code can be split between friends with Shamir secret sharing, so
-that any *k* of *n* shares give it back.
+that any _k_ of _n_ shares give it back.
 
 **The field.** GF(2^8) with the polynomial x^8 + x^4 + x^3 + x + 1 (0x11b, the
 field of AES). Addition is XOR. The inverse of `a` is `a^254`.
@@ -566,22 +566,22 @@ that is current at that point.
 
 The payload is a CBOR map:
 
-| Key | Field | Type |
-| --- | --- | --- |
-| 1 | seq | unsigned; the first entry has 0 |
-| 2 | prev | 32-byte byte string: the hash of the signed bytes of the entry before; 32 zero bytes in the first entry |
-| 3 | time | unsigned, ms |
-| 4 | kind | text, one of the kinds below |
-| 5 | value | depends on the kind |
+| Key | Field | Type                                                                                                    |
+| --- | ----- | ------------------------------------------------------------------------------------------------------- |
+| 1   | seq   | unsigned; the first entry has 0                                                                         |
+| 2   | prev  | 32-byte byte string: the hash of the signed bytes of the entry before; 32 zero bytes in the first entry |
+| 3   | time  | unsigned, ms                                                                                            |
+| 4   | kind  | text, one of the kinds below                                                                            |
+| 5   | value | depends on the kind                                                                                     |
 
-| Kind | Value | Meaning |
-| --- | --- | --- |
-| `create` | `null` (not checked when read) | the identity starts; only allowed as the first entry |
-| `add-node` | 32-byte node public key | this node serves the identity |
-| `remove-node` | 32-byte node public key | this node no longer serves it |
-| `address` | text: a URL, such as `https://home.example.org` | an address where the nodes can be reached |
-| `alias` | text: a domain name | another name for the identity |
-| `rotate` | 32-byte public key | from the next entry on, this key is the personal key |
+| Kind          | Value                                           | Meaning                                              |
+| ------------- | ----------------------------------------------- | ---------------------------------------------------- |
+| `create`      | `null` (not checked when read)                  | the identity starts; only allowed as the first entry |
+| `add-node`    | 32-byte node public key                         | this node serves the identity                        |
+| `remove-node` | 32-byte node public key                         | this node no longer serves it                        |
+| `address`     | text: a URL, such as `https://home.example.org` | an address where the nodes can be reached            |
+| `alias`       | text: a domain name                             | another name for the identity                        |
+| `rotate`      | 32-byte public key                              | from the next entry on, this key is the personal key |
 
 An unknown kind makes the entry not valid.
 
@@ -630,19 +630,34 @@ A node shows the identity as a W3C DID document (DID Core 1.0).
 
 ```json
 {
-  "@context": ["https://www.w3.org/ns/did/v1", "https://w3id.org/security/multikey/v1"],
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/multikey/v1"
+  ],
   "id": "did:hs:{identity ID}",
   "alsoKnownAs": ["https://{alias}", "…"],
   "verificationMethod": [
-    {"id": "did:hs:{id}#personal", "type": "Multikey",
-     "controller": "did:hs:{id}", "publicKeyMultibase": "{multikey of the current personal key}"},
-    {"id": "did:hs:{id}#node-{i}", "type": "Multikey",
-     "controller": "did:hs:{id}", "publicKeyMultibase": "{multikey of node i}"}
+    {
+      "id": "did:hs:{id}#personal",
+      "type": "Multikey",
+      "controller": "did:hs:{id}",
+      "publicKeyMultibase": "{multikey of the current personal key}"
+    },
+    {
+      "id": "did:hs:{id}#node-{i}",
+      "type": "Multikey",
+      "controller": "did:hs:{id}",
+      "publicKeyMultibase": "{multikey of node i}"
+    }
   ],
   "authentication": ["did:hs:{id}#personal"],
   "assertionMethod": ["did:hs:{id}#personal"],
   "service": [
-    {"id": "did:hs:{id}#hs-{i}", "type": "Homeserver", "serviceEndpoint": "{address i}"}
+    {
+      "id": "did:hs:{id}#hs-{i}",
+      "type": "Homeserver",
+      "serviceEndpoint": "{address i}"
+    }
   ]
 }
 ```
@@ -665,16 +680,16 @@ A **space** is a set of resources with members and one log. Its state is
 exactly what comes from applying its log entries in order (section 18). The
 state has these parts:
 
-| Part | Content |
-| --- | --- |
-| id | the space ID, a 32-byte hash (section 16.3) |
-| info | the JSON value of the genesis payload |
-| primary | the node key that orders the log |
-| members | a map from node key to `{identity, role, home}` |
-| resources | a map from target to `{payload, media type, seq, time, history}` |
-| grants | a map from grant ID to `{body, revoked}` |
-| seq, head | the seq and the hash of the last entry |
-| nonces | a map from (author key, nonce) to the seq where that proposal went in |
+| Part      | Content                                                               |
+| --------- | --------------------------------------------------------------------- |
+| id        | the space ID, a 32-byte hash (section 16.3)                           |
+| info      | the JSON value of the genesis payload                                 |
+| primary   | the node key that orders the log                                      |
+| members   | a map from node key to `{identity, role, home}`                       |
+| resources | a map from target to `{payload, media type, seq, time, history}`      |
+| grants    | a map from grant ID to `{body, revoked}`                              |
+| seq, head | the seq and the hash of the last entry                                |
+| nonces    | a map from (author key, nonce) to the seq where that proposal went in |
 
 The **name** of a space is the string `info.name`, or the empty string if
 there is none.
@@ -692,12 +707,12 @@ was deleted or erased. `time` is the time of the entry that last changed it.
 The roles are `reader` < `writer` < `owner`. Their text forms are exactly these
 lowercase words.
 
-| Kind of proposal | Lowest role needed |
-| --- | --- |
-| `mls` | reader |
-| `put`, `delete`, `erase` | writer |
-| `member`, `grant`, `revoke`, `handover` | owner |
-| `genesis` | not allowed after the space starts |
+| Kind of proposal                        | Lowest role needed                 |
+| --------------------------------------- | ---------------------------------- |
+| `mls`                                   | reader                             |
+| `put`, `delete`, `erase`                | writer                             |
+| `member`, `grant`, `revoke`, `handover` | owner                              |
+| `genesis`                               | not allowed after the space starts |
 
 A node that is not a member cannot propose anything. Only the node whose key
 is the space's `primary` can add entries. Being primary does not depend on
@@ -710,17 +725,17 @@ A space MUST always have at least one owner (section 18.3).
 A **proposal** is a request to change a space. It is a COSE_Sign1
 (section 8.2) whose payload is this CBOR map:
 
-| Key | Field | Type | Notes |
-| --- | --- | --- | --- |
-| 1 | space | 32-byte byte string | the space ID; 32 zero bytes in a genesis |
-| 2 | kind | text | one of the kinds in section 15.1 |
-| 3 | target | text | a valid target (section 15.2) |
-| 4 | payload | 32-byte byte string, or `null` | hash of the payload; the key MUST be there |
-| 5 | media_type | text | such as `application/json`; may be empty |
-| 6 | time | unsigned | ms, by the author's clock |
-| 7 | nonce | byte string | any length; the writer makes it random, or derives it (section 20.2) |
-| 8 | grant | text, or `null` | ID of the grant that the change was made under; the key MUST be there |
-| 9 | request | 32-byte byte string | fingerprint of the HTTP request (section 20.2); the key is left out when there is none, and `null` is not valid |
+| Key | Field      | Type                           | Notes                                                                                                           |
+| --- | ---------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| 1   | space      | 32-byte byte string            | the space ID; 32 zero bytes in a genesis                                                                        |
+| 2   | kind       | text                           | one of the kinds in section 15.1                                                                                |
+| 3   | target     | text                           | a valid target (section 15.2)                                                                                   |
+| 4   | payload    | 32-byte byte string, or `null` | hash of the payload; the key MUST be there                                                                      |
+| 5   | media_type | text                           | such as `application/json`; may be empty                                                                        |
+| 6   | time       | unsigned                       | ms, by the author's clock                                                                                       |
+| 7   | nonce      | byte string                    | any length; the writer makes it random, or derives it (section 20.2)                                            |
+| 8   | grant      | text, or `null`                | ID of the grant that the change was made under; the key MUST be there                                           |
+| 9   | request    | 32-byte byte string            | fingerprint of the HTTP request (section 20.2); the key is left out when there is none, and `null` is not valid |
 
 The signer (the kid) is the **author**. In this version the author is always a
 node key: the node that made the proposal for its client.
@@ -731,17 +746,17 @@ space, payload, media type, time, nonce, grant, request.
 
 ### 15.1 Kinds
 
-| Kind | Meaning | Payload |
-| --- | --- | --- |
-| `genesis` | starts a space | JSON (section 17.1) |
-| `put` | sets a resource's bytes | the resource's bytes |
-| `delete` | removes a resource | none (if one is given, it is put in the history) |
-| `erase` | removes a resource and all of its old bytes | none (if one is given, it is not used) |
-| `member` | adds, changes or removes a member | JSON (section 17.2) |
-| `grant` | records a grant | JSON (section 17.3) |
-| `revoke` | revokes a grant | none |
-| `mls` | an MLS message; it does nothing to the state in this version | MLS bytes |
-| `handover` | names a new primary | JSON (section 17.4) |
+| Kind       | Meaning                                                      | Payload                                          |
+| ---------- | ------------------------------------------------------------ | ------------------------------------------------ |
+| `genesis`  | starts a space                                               | JSON (section 17.1)                              |
+| `put`      | sets a resource's bytes                                      | the resource's bytes                             |
+| `delete`   | removes a resource                                           | none (if one is given, it is put in the history) |
+| `erase`    | removes a resource and all of its old bytes                  | none (if one is given, it is not used)           |
+| `member`   | adds, changes or removes a member                            | JSON (section 17.2)                              |
+| `grant`    | records a grant                                              | JSON (section 17.3)                              |
+| `revoke`   | revokes a grant                                              | none                                             |
+| `mls`      | an MLS message; it does nothing to the state in this version | MLS bytes                                        |
+| `handover` | names a new primary                                          | JSON (section 17.4)                              |
 
 ### 15.2 Targets
 
@@ -762,12 +777,12 @@ part is the resource's **type**.
 An **entry** is a COSE_Sign1 signed by the primary. Its payload is this CBOR
 map:
 
-| Key | Field | Type |
-| --- | --- | --- |
-| 1 | seq | unsigned; 0 for the genesis |
-| 2 | prev | 32-byte byte string: the hash of the signed bytes of the entry before; 32 zero bytes for seq 0 |
-| 3 | time | unsigned, ms, by the primary's clock |
-| 4 | proposal | byte string: the author's whole COSE_Sign1 bytes |
+| Key | Field    | Type                                                                                           |
+| --- | -------- | ---------------------------------------------------------------------------------------------- |
+| 1   | seq      | unsigned; 0 for the genesis                                                                    |
+| 2   | prev     | 32-byte byte string: the hash of the signed bytes of the entry before; 32 zero bytes for seq 0 |
+| 3   | time     | unsigned, ms, by the primary's clock                                                           |
+| 4   | proposal | byte string: the author's whole COSE_Sign1 bytes                                               |
 
 All four keys MUST be there (error `entry: bad field {name}`).
 
@@ -820,7 +835,13 @@ Other members are kept and have no meaning.
 ### 17.2 Member
 
 ```json
-{"node": "{node key ID}", "identity": "{identity ID}", "role": "writer", "home": "https://…", "remove": true}
+{
+  "node": "{node key ID}",
+  "identity": "{identity ID}",
+  "role": "writer",
+  "home": "https://…",
+  "remove": true
+}
 ```
 
 - `node` and `identity` are required, and MUST be valid key IDs.
@@ -842,7 +863,7 @@ Section 29 gives the members that the node uses. The node uses the target
 ### 17.4 Handover
 
 ```json
-{"primary": "{node key ID}"}
+{ "primary": "{node key ID}" }
 ```
 
 The node uses the target `space/primary`.
@@ -910,7 +931,7 @@ member when it gets the entry):
    - `erase`: an erase;
    - `member`: read the payload (else `member payload missing`) and parse it
      (else `bad member`). If the result is not a removal and its role is
-     `owner`, it is allowed. Otherwise there MUST be some *other* member that
+     `owner`, it is allowed. Otherwise there MUST be some _other_ member that
      is an owner (else `a space needs an owner`);
    - `grant`: read the payload (else `grant payload missing`); it MUST have a
      text `id` (else `grant has no id`);
@@ -972,13 +993,13 @@ and apply each entry in order. A log with no entries is not valid
 
 A **head** is a COSE_Sign1 signed by the primary, with this CBOR map:
 
-| Key | Field | Type |
-| --- | --- | --- |
-| 1 | space | 32-byte byte string |
-| 2 | seq | unsigned: the seq of the last entry |
-| 3 | hash | 32-byte byte string: the hash of the last entry |
-| 4 | segments | array of 32-byte byte strings: the hashes of the sealed segments, oldest first |
-| 5 | primary | 32-byte byte string: the primary's key |
+| Key | Field    | Type                                                                           |
+| --- | -------- | ------------------------------------------------------------------------------ |
+| 1   | space    | 32-byte byte string                                                            |
+| 2   | seq      | unsigned: the seq of the last entry                                            |
+| 3   | hash     | 32-byte byte string: the hash of the last entry                                |
+| 4   | segments | array of 32-byte byte strings: the hashes of the sealed segments, oldest first |
+| 5   | primary  | 32-byte byte string: the primary's key                                         |
 
 ### 19.2 Segment
 
@@ -1000,16 +1021,16 @@ A **checkpoint** is the state of a space at one seq. This version defines its
 format, but nodes do not make or read checkpoints yet. It is a COSE_Sign1
 signed by the primary, with this CBOR map:
 
-| Key | Content |
-| --- | --- |
-| 1 | space ID (32 bytes) |
-| 2 | seq |
-| 3 | head (32 bytes) |
-| 4 | primary key (32 bytes) |
-| 5 | info, as JSON text |
-| 6 | members: array of `[node (32 bytes), identity (32 bytes), role (text), home (text or null)]`, sorted by node key |
-| 7 | resources: array of `[target (text), payload (32 bytes or null), media type (text), seq, time, [history hashes…]]`, sorted by target |
-| 8 | grants: array of `[grant ID (text), body as JSON text, revoked (bool)]`, sorted by ID |
+| Key | Content                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | space ID (32 bytes)                                                                                                                  |
+| 2   | seq                                                                                                                                  |
+| 3   | head (32 bytes)                                                                                                                      |
+| 4   | primary key (32 bytes)                                                                                                               |
+| 5   | info, as JSON text                                                                                                                   |
+| 6   | members: array of `[node (32 bytes), identity (32 bytes), role (text), home (text or null)]`, sorted by node key                     |
+| 7   | resources: array of `[target (text), payload (32 bytes or null), media type (text), seq, time, [history hashes…]]`, sorted by target |
+| 8   | grants: array of `[grant ID (text), body as JSON text, revoked (bool)]`, sorted by ID                                                |
 
 A checkpoint does not hold `nonces`.
 
@@ -1021,12 +1042,12 @@ A write can carry conditions. The primary checks them at the moment it orders
 the proposal (step 4 of section 18.2), against the target's current payload
 hash `c` (or nothing). They are:
 
-| Condition | From | Fails when | Result |
-| --- | --- | --- | --- |
-| expected | the node itself (PATCH) | it is set and is not `c` | 412 `the resource has changed` |
-| If-Match | the HTTP header, as is | there is no `c`, or no item of the list equals `*` or the ETag of `c` exactly | 412 `the resource has changed` |
-| If-None-Match | the HTTP header, as is | there is a `c`, and an item (with any `W/` taken off) is `*` or equals the ETag of `c` | 412 `the resource already exists` |
-| must exist | the node itself (DELETE) | it is set and there is no `c` | 404 `resource not found` |
+| Condition     | From                     | Fails when                                                                             | Result                            |
+| ------------- | ------------------------ | -------------------------------------------------------------------------------------- | --------------------------------- |
+| expected      | the node itself (PATCH)  | it is set and is not `c`                                                               | 412 `the resource has changed`    |
+| If-Match      | the HTTP header, as is   | there is no `c`, or no item of the list equals `*` or the ETag of `c` exactly          | 412 `the resource has changed`    |
+| If-None-Match | the HTTP header, as is   | there is a `c`, and an item (with any `W/` taken off) is `*` or equals the ETag of `c` | 412 `the resource already exists` |
+| must exist    | the node itself (DELETE) | it is set and there is no `c`                                                          | 404 `resource not found`          |
 
 They are checked in the order of the table. A list is split on `,`, and each
 item is trimmed. If-Match compares strongly, so a `W/` tag never matches.
@@ -1072,22 +1093,22 @@ request`. Keys do not expire.
 All of a node's state is in one directory. A copy of it (without the index)
 is a full backup.
 
-| Path | Content |
-| --- | --- |
-| `config.json` | configuration (section 22) |
-| `identity` | the identity log (section 12.2) |
-| `keys/node` | the node key's seed: 64 hex characters, no newline |
-| `keys/storage` | the storage key: 64 hex characters, no newline |
-| `keys/oidc` | the OIDC signing key, PKCS#8 (made when first needed) |
-| `keys/forward` | the forward-auth secret, 32 bytes (made when first needed) |
-| `keys/vapid` | the Web Push key, PKCS#8 (made when first needed) |
-| `keys/self-signed.pem`, `keys/self-signed.key` | the TLS certificate and key (made when first needed) |
-| `node.lock` | an empty file; the running process holds an exclusive lock on it |
-| `logs/{space ID}/` | the log of one space (section 25) |
-| `blobs/{h0h1}/{h2…h63}` | a blob, named by the hex of its hash (section 24) |
-| `index.db`, `index.db-wal`, `index.db-shm` | the derived index (section 27) |
-| `access.log` | the HTTP access log (section 30.6) |
-| `buckets/{bucket}/…` | objects that other nodes keep here through the S3 endpoint (section 49.2) |
+| Path                                           | Content                                                                   |
+| ---------------------------------------------- | ------------------------------------------------------------------------- |
+| `config.json`                                  | configuration (section 22)                                                |
+| `identity`                                     | the identity log (section 12.2)                                           |
+| `keys/node`                                    | the node key's seed: 64 hex characters, no newline                        |
+| `keys/storage`                                 | the storage key: 64 hex characters, no newline                            |
+| `keys/oidc`                                    | the OIDC signing key, PKCS#8 (made when first needed)                     |
+| `keys/forward`                                 | the forward-auth secret, 32 bytes (made when first needed)                |
+| `keys/vapid`                                   | the Web Push key, PKCS#8 (made when first needed)                         |
+| `keys/self-signed.pem`, `keys/self-signed.key` | the TLS certificate and key (made when first needed)                      |
+| `node.lock`                                    | an empty file; the running process holds an exclusive lock on it          |
+| `logs/{space ID}/`                             | the log of one space (section 25)                                         |
+| `blobs/{h0h1}/{h2…h63}`                        | a blob, named by the hex of its hash (section 24)                         |
+| `index.db`, `index.db-wal`, `index.db-shm`     | the derived index (section 27)                                            |
+| `access.log`                                   | the HTTP access log (section 30.6)                                        |
+| `buckets/{bucket}/…`                           | objects that other nodes keep here through the S3 endpoint (section 49.2) |
 
 Files under `keys/` are made with mode 0600 on Unix, but not the TLS files
 `keys/self-signed.pem` and `keys/self-signed.key`, which get the default mode
@@ -1106,17 +1127,17 @@ to the root of that store.
 `config.json` is a JSON object, written pretty. The node keeps every member,
 and it uses these:
 
-| Member | Type | Meaning |
-| --- | --- | --- |
-| `identity` | text, a key ID | the identity ID; required |
-| `private` | text, 64 hex | the ID of the private space; required |
-| `name` | text | the node's name, shown to people; default `""` |
-| `url` | text or null | the public base URL of the node, such as `https://home.example.org`; default none |
-| `replicas` | array of text | replica addresses (section 45); items that are not text are skipped |
-| `s3_keys` | array of objects | keys for the S3 endpoint (section 49.2) |
-| `bitwarden_register` | bool | `true` lets one vault account be made (section 33) |
-| `forward_domain` | text | the domain whose apps forward auth covers (section 35.5) |
-| `push_subject` | text | the VAPID subject (section 36.2) |
+| Member               | Type             | Meaning                                                                           |
+| -------------------- | ---------------- | --------------------------------------------------------------------------------- |
+| `identity`           | text, a key ID   | the identity ID; required                                                         |
+| `private`            | text, 64 hex     | the ID of the private space; required                                             |
+| `name`               | text             | the node's name, shown to people; default `""`                                    |
+| `url`                | text or null     | the public base URL of the node, such as `https://home.example.org`; default none |
+| `replicas`           | array of text    | replica addresses (section 45); items that are not text are skipped               |
+| `s3_keys`            | array of objects | keys for the S3 endpoint (section 49.2)                                           |
+| `bitwarden_register` | bool             | `true` lets one vault account be made (section 33)                                |
+| `forward_domain`     | text             | the domain whose apps forward auth covers (section 35.5)                          |
+| `push_subject`       | text             | the VAPID subject (section 36.2)                                                  |
 
 When a member is set, the node checks the whole object again: `identity` MUST
 be a key ID and `private` MUST be 64 hex characters. If the check or the write
@@ -1186,12 +1207,12 @@ characters}` of its hash.
 
 `logs/{space ID}/` holds:
 
-| File | Content |
-| --- | --- |
-| `tail` | the entries that are not sealed yet, each **framed** (below), end to end |
-| `segments/{hash}` | a sealed segment (section 19.2), named by the hex of its hash |
-| `segments.txt` | the list of sealed segments: one 64-hex hash per line, each line ending in `\n`, oldest first |
-| `home` | only on a node that is not the primary: the URL of the primary, UTF-8 (white space at the ends is not used) |
+| File              | Content                                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| `tail`            | the entries that are not sealed yet, each **framed** (below), end to end                                    |
+| `segments/{hash}` | a sealed segment (section 19.2), named by the hex of its hash                                               |
+| `segments.txt`    | the list of sealed segments: one 64-hex hash per line, each line ending in `\n`, oldest first               |
+| `home`            | only on a node that is not the primary: the URL of the primary, UTF-8 (white space at the ends is not used) |
 
 A **frame** is the CBOR head of an unsigned integer (the entry's length), then
 the entry's bytes. It is the same framing as in a segment.
@@ -1392,10 +1413,10 @@ the text through `bigrams` both when it indexes and when it searches:
 - These code points count as CJK: U+3040–U+30FF, U+3400–U+4DBF,
   U+4E00–U+9FFF, U+AC00–U+D7AF, U+F900–U+FAFF, U+20000–U+3134F.
 - Each longest run of CJK characters is changed. A run of one character `c`
-  becomes ` c `. A longer run becomes each pair of side-by-side characters,
+  becomes `c`. A longer run becomes each pair of side-by-side characters,
   each pair with a space before it, and then one space. Other characters stay
   as they are.
-- Example: `人民公园` → ` 人民 民公 公园 `; `去a` → ` 去 a`.
+- Example: `人民公园` → `人民 民公 公园`; `去a` → ` 去 a`.
 
 **Query.** The node puts the query through `bigrams`, then splits it at every
 character that is not a letter or digit, and drops empty words. Each word
@@ -1406,16 +1427,16 @@ Example: `公园 walk` → `"公园" "walk"*`.
 
 ### 27.5 Queries
 
-| Query | Rule |
-| --- | --- |
-| one row | `space` and `target` equal |
-| list | rows of one space, maybe of one type, maybe only of given types; `ORDER BY time DESC, target`; limit and offset |
-| search | rows in the given spaces that match the FTS query; best first by `bm25`; a limit, no offset |
-| near (lat, lon, km) | rows in the given spaces whose point is in the box lat ± km/111, lon ± km/(111 · max(\|cos lat\|, 0.01)); nearest first by (Δlat² + Δlon²) in degrees; a limit |
-| timeline | rows in the given spaces with `time` < before (no before: all), not of the types `grant`, `push`, `cipher`, `credential`, `oauth-client`, `vault-folder`, `vault-account`; `ORDER BY time DESC, space, target`; limit and offset |
-| related (space, target) | the rows that link to this target, together with the rows (in any space) that this resource links to; newest `time` first; a limit |
-| counts | the number of rows of each type |
-| healthy | `PRAGMA quick_check` gives `ok` |
+| Query                   | Rule                                                                                                                                                                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| one row                 | `space` and `target` equal                                                                                                                                                                                                       |
+| list                    | rows of one space, maybe of one type, maybe only of given types; `ORDER BY time DESC, target`; limit and offset                                                                                                                  |
+| search                  | rows in the given spaces that match the FTS query; best first by `bm25`; a limit, no offset                                                                                                                                      |
+| near (lat, lon, km)     | rows in the given spaces whose point is in the box lat ± km/111, lon ± km/(111 · max(\|cos lat\|, 0.01)); nearest first by (Δlat² + Δlon²) in degrees; a limit                                                                   |
+| timeline                | rows in the given spaces with `time` < before (no before: all), not of the types `grant`, `push`, `cipher`, `credential`, `oauth-client`, `vault-folder`, `vault-account`; `ORDER BY time DESC, space, target`; limit and offset |
+| related (space, target) | the rows that link to this target, together with the rows (in any space) that this resource links to; newest `time` first; a limit                                                                                               |
+| counts                  | the number of rows of each type                                                                                                                                                                                                  |
+| healthy                 | `PRAGMA quick_check` gives `ok`                                                                                                                                                                                                  |
 
 # Part VI. Access
 
@@ -1423,11 +1444,11 @@ Example: `公园 walk` → `"公园" "walk"*`.
 
 Every HTTP request is from one of three kinds of caller:
 
-| Kind | How it is known | What it may do |
-| --- | --- | --- |
-| public | no good token and no good signature | public endpoints only |
-| grant | a token that matches a grant | what the grant gives (section 29.3) |
-| node | a good HTTP Message Signature (section 40) by a node key that is a member of at least one local space | in each such space, its member role; only the federation endpoints and the API |
+| Kind   | How it is known                                                                                       | What it may do                                                                 |
+| ------ | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| public | no good token and no good signature                                                                   | public endpoints only                                                          |
+| grant  | a token that matches a grant                                                                          | what the grant gives (section 29.3)                                            |
+| node   | a good HTTP Message Signature (section 40) by a node key that is a member of at least one local space | in each such space, its member role; only the federation endpoints and the API |
 
 The node decides the kind like this:
 
@@ -1455,17 +1476,17 @@ The node decides the kind like this:
 A grant is a `grant` entry (section 17.3) in the **private space**, at target
 `grant/{id}`. Its JSON body has these members:
 
-| Member | Type | Meaning |
-| --- | --- | --- |
-| `id` | text | the grant ID: base32 of 10 random bytes (16 characters) |
-| `role` | text | `reader`, `writer` or `owner` |
-| `label` | text | words for people |
-| `token` | text | the token hash (section 29.2) |
-| `created` | ms | when it was made |
-| `spaces` | array of hex space IDs | if there, the grant covers only these spaces; items that are not valid IDs are skipped |
-| `types` | array of text | if there, the grant covers only resources of these types |
-| `expires` | ms | if there, the grant does not work after this time |
-| `session` | bool | `true` for a sign-in session (it is revoked when the session signs out) |
+| Member    | Type                   | Meaning                                                                                |
+| --------- | ---------------------- | -------------------------------------------------------------------------------------- |
+| `id`      | text                   | the grant ID: base32 of 10 random bytes (16 characters)                                |
+| `role`    | text                   | `reader`, `writer` or `owner`                                                          |
+| `label`   | text                   | words for people                                                                       |
+| `token`   | text                   | the token hash (section 29.2)                                                          |
+| `created` | ms                     | when it was made                                                                       |
+| `spaces`  | array of hex space IDs | if there, the grant covers only these spaces; items that are not valid IDs are skipped |
+| `types`   | array of text          | if there, the grant covers only resources of these types                               |
+| `expires` | ms                     | if there, the grant does not work after this time                                      |
+| `session` | bool                   | `true` for a sign-in session (it is revoked when the session signs out)                |
 
 Other members are kept and are not used. A grant is revoked by a `revoke`
 entry at `grant/{id}` in the private space. A revoked grant stops working at
@@ -1551,19 +1572,19 @@ The path is split on `/`. Empty parts are dropped, so `//api//spaces/` is
 `/api/spaces`. Each part is percent-decoded (`+` stays `+`), so `%2F` stays
 inside one part. The query is not used for routing. The first part chooses:
 
-| Path | Goes to |
-| --- | --- |
-| `/api/…` | the REST API (section 31) |
-| `/fed/…` | the federation endpoints (section 41) |
-| `/dav/…` | CardDAV and CalDAV (section 32) |
-| `/.well-known/carddav`, `/.well-known/caldav` | any method: 301 to `/dav/` |
-| `/mcp` | MCP (section 34) |
-| `/s3/…` | the S3 endpoint (section 49.2) |
-| `/bitwarden/…` | the vault (section 33) |
-| `/.well-known/homeserver` | any method: the node information (section 39.1) |
-| `/auth/…`, `/oauth/…`, `/.well-known/openid-configuration` | sign-in (section 35) |
-| anything else, GET or HEAD | the web app files (section 38) |
-| anything else | 405 `method not allowed` |
+| Path                                                       | Goes to                                         |
+| ---------------------------------------------------------- | ----------------------------------------------- |
+| `/api/…`                                                   | the REST API (section 31)                       |
+| `/fed/…`                                                   | the federation endpoints (section 41)           |
+| `/dav/…`                                                   | CardDAV and CalDAV (section 32)                 |
+| `/.well-known/carddav`, `/.well-known/caldav`              | any method: 301 to `/dav/`                      |
+| `/mcp`                                                     | MCP (section 34)                                |
+| `/s3/…`                                                    | the S3 endpoint (section 49.2)                  |
+| `/bitwarden/…`                                             | the vault (section 33)                          |
+| `/.well-known/homeserver`                                  | any method: the node information (section 39.1) |
+| `/auth/…`, `/oauth/…`, `/.well-known/openid-configuration` | sign-in (section 35)                            |
+| anything else, GET or HEAD                                 | the web app files (section 38)                  |
+| anything else                                              | 405 `method not allowed`                        |
 
 ### 30.3 Common response headers
 
@@ -1577,21 +1598,21 @@ Unless a section says something different, an error is JSON
 `{"error": "{message}"}` with `Content-Type: application/json`. A 401 on a
 path under `/dav` also gets `WWW-Authenticate: Basic realm="homeserver"`.
 
-| Status | When |
-| --- | --- |
-| 400 | a bad request: `bad request: …` (JSON body), `bad JSON: …`, `bad query: …`, or a message of the endpoint |
-| 401 | `sign in first`: the endpoint needs a caller that is not public |
-| 403 | the caller does not have the right: `no access to this space`, `needs {role}`, `grant does not cover {type}`, `only the owner can do this` |
-| 404 | `not found`, `space {name}`, `resource not found` |
-| 409 | `idempotency key already used for a different request` |
-| 410 | `deleted`: the resource was deleted, or its bytes are not on this node |
-| 412 | `the resource has changed`, `the resource already exists` |
-| 415 | the body or resource is of a kind the endpoint cannot use |
-| 421 | `this node is not the primary of {space}`: the write needs the primary, and this node does not know where it is |
-| 422 | the space rules refused the change (a message of section 18) or `{name} matches more than one space` |
-| 500 | a disk or index failure (`index: …`) |
-| 502 | another node could not be reached, or gave a bad answer |
-| 503 | a needed key or worker is not there |
+| Status | When                                                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400    | a bad request: `bad request: …` (JSON body), `bad JSON: …`, `bad query: …`, or a message of the endpoint                                   |
+| 401    | `sign in first`: the endpoint needs a caller that is not public                                                                            |
+| 403    | the caller does not have the right: `no access to this space`, `needs {role}`, `grant does not cover {type}`, `only the owner can do this` |
+| 404    | `not found`, `space {name}`, `resource not found`                                                                                          |
+| 409    | `idempotency key already used for a different request`                                                                                     |
+| 410    | `deleted`: the resource was deleted, or its bytes are not on this node                                                                     |
+| 412    | `the resource has changed`, `the resource already exists`                                                                                  |
+| 415    | the body or resource is of a kind the endpoint cannot use                                                                                  |
+| 421    | `this node is not the primary of {space}`: the write needs the primary, and this node does not know where it is                            |
+| 422    | the space rules refused the change (a message of section 18) or `{name} matches more than one space`                                       |
+| 500    | a disk or index failure (`index: …`)                                                                                                       |
+| 502    | another node could not be reached, or gave a bad answer                                                                                    |
+| 503    | a needed key or worker is not there                                                                                                        |
 
 ### 30.5 Naming a space in a path
 
@@ -1609,7 +1630,15 @@ The node adds one line of JSON to `access.log` for each request (also errors
 and web files), after the handler ends:
 
 ```json
-{"event.name":"http.request.completed","message.template":"{{http.request.method}} {{http.route}} returned {{http.response.status_code}} in {{ms}} ms","time":1764079380000,"http.request.method":"GET","http.route":"/api","http.response.status_code":200,"ms":3}
+{
+  "event.name": "http.request.completed",
+  "message.template": "{{http.request.method}} {{http.route}} returned {{http.response.status_code}} in {{ms}} ms",
+  "time": 1764079380000,
+  "http.request.method": "GET",
+  "http.route": "/api",
+  "http.response.status_code": 200,
+  "ms": 3
+}
 ```
 
 - `time` is when the request started (ms). `ms` is how long the handler took.
@@ -1633,23 +1662,22 @@ Request and response bodies are JSON, unless a row says something different.
 `GET /api/openapi.json`.
 
 Any method that is not in the tables on a path that starts with `session`,
-`spaces`, `blobs`, `grants` or `replicas` gets 405. Other unknown paths get
-404. HEAD works only where the tables list it.
+`spaces`, `blobs`, `grants` or `replicas` gets 405. Other unknown paths get 404. HEAD works only where the tables list it.
 
 ### 31.1 Session, node and identity
 
-| Method and path | Who | Request | Response |
-| --- | --- | --- | --- |
-| `GET /api/session` | signed in | – | 200 Session |
-| `POST /api/session` | anyone | `{"token"}` | 200 Session, and the cookie `hs_session` with no Max-Age; 401 `unknown token` |
-| `DELETE /api/session` | anyone | – | 204, and the cookie is cleared; if the caller's grant has `session: true`, it is revoked |
-| `GET /api/node` | anyone | – | 200 NodeInfo (section 39.1) |
-| `GET /api/identity` | anyone | – | 200 the DID document (section 13), `Content-Type: application/did+json` |
-| `GET /api/health` | signed in | – | 200 Health |
-| `GET /api/openapi.json` | anyone | – | 200 the OpenAPI document |
+| Method and path         | Who       | Request     | Response                                                                                 |
+| ----------------------- | --------- | ----------- | ---------------------------------------------------------------------------------------- |
+| `GET /api/session`      | signed in | –           | 200 Session                                                                              |
+| `POST /api/session`     | anyone    | `{"token"}` | 200 Session, and the cookie `hs_session` with no Max-Age; 401 `unknown token`            |
+| `DELETE /api/session`   | anyone    | –           | 204, and the cookie is cleared; if the caller's grant has `session: true`, it is revoked |
+| `GET /api/node`         | anyone    | –           | 200 NodeInfo (section 39.1)                                                              |
+| `GET /api/identity`     | anyone    | –           | 200 the DID document (section 13), `Content-Type: application/did+json`                  |
+| `GET /api/health`       | signed in | –           | 200 Health                                                                               |
+| `GET /api/openapi.json` | anyone    | –           | 200 the OpenAPI document                                                                 |
 
 - **Session**: `{"role": "reader"|"writer"|"owner"|null, "grant"?, "owner"?,
-  "spaces"?, "types"?, "node"?, "roles"?}`. For a grant: `grant` (its ID),
+"spaces"?, "types"?, "node"?, "roles"?}`. For a grant: `grant` (its ID),
   `role`, `owner` (bool), `spaces` (hex IDs, if limited), `types` (if limited).
   For a node: `role` is null, `node` is its key ID, and `roles` is
   `[{"space", "role"}]`. Members marked `?` are left out when they have no
@@ -1661,19 +1689,19 @@ Any method that is not in the tables on a path that starts with `session`,
 
 ### 31.2 Spaces and members
 
-| Method and path | Who | Request | Response |
-| --- | --- | --- | --- |
-| `GET /api/spaces` | signed in | – | 200 `[Space]`: the spaces the caller can read |
-| `POST /api/spaces` | owner | `{"name", "info"?}` | 201 Space |
-| `POST /api/spaces/join` | owner | `{"home", "space"}` | 201 Space (section 42.3) |
-| `GET /api/spaces/{space}` | reader | – | 200 Space |
-| `POST /api/spaces/{space}/members` | owner role in the space | NewMember | 201 `{"seq", "member"}` |
-| `DELETE /api/spaces/{space}/members/{node}` | owner role | – | 204 |
-| `POST /api/spaces/{space}/handover` | owner role | `{"node"}` | 200 `{"seq"}` |
-| `POST /api/spaces/{space}/sync` | reader | – | 200 `{"pulled"}`: the number of entries got from the primary (section 42.6) |
+| Method and path                             | Who                     | Request             | Response                                                                    |
+| ------------------------------------------- | ----------------------- | ------------------- | --------------------------------------------------------------------------- |
+| `GET /api/spaces`                           | signed in               | –                   | 200 `[Space]`: the spaces the caller can read                               |
+| `POST /api/spaces`                          | owner                   | `{"name", "info"?}` | 201 Space                                                                   |
+| `POST /api/spaces/join`                     | owner                   | `{"home", "space"}` | 201 Space (section 42.3)                                                    |
+| `GET /api/spaces/{space}`                   | reader                  | –                   | 200 Space                                                                   |
+| `POST /api/spaces/{space}/members`          | owner role in the space | NewMember           | 201 `{"seq", "member"}`                                                     |
+| `DELETE /api/spaces/{space}/members/{node}` | owner role              | –                   | 204                                                                         |
+| `POST /api/spaces/{space}/handover`         | owner role              | `{"node"}`          | 200 `{"seq"}`                                                               |
+| `POST /api/spaces/{space}/sync`             | reader                  | –                   | 200 `{"pulled"}`: the number of entries got from the primary (section 42.6) |
 
 - **Space**: `{"id", "name", "info", "seq", "primary", "is_primary", "home",
-  "members"}`. `id` is hex. `primary` is a key ID. `is_primary` says whether
+"members"}`. `id` is hex. `primary` is a key ID. `is_primary` says whether
   this node is the primary. `home` is the URL of the primary as this node knows
   it, or null. `members` is `[{"node", "identity", "role", "home"}]`, and
   `home` may be null.
@@ -1683,7 +1711,7 @@ Any method that is not in the tables on a path that starts with `session`,
   the configuration, the node writes a member entry for itself at
   `member/{its key ID}` with `"home": url`, so that other members can find it.
 - **Adding a member.** NewMember is `{"node"?, "identity"?, "role"?, "home"?,
-  "url"?}`. If `url` is given and `node` is not, the node asks
+"url"?}`. If `url` is given and `node` is not, the node asks
   `GET {url}/.well-known/homeserver` (section 39.1) and takes `node` and
   `identity` from the answer. A failure gives 502 (`not a homeserver` when the
   answer is not node information). Without a node it is 400
@@ -1701,14 +1729,14 @@ Any method that is not in the tables on a path that starts with `session`,
 Paths: `/api/spaces/{space}/resources/{type}/{id}`. The target `{type}/{id}`
 MUST be valid (section 15.2), else 400 `bad type or id`.
 
-| Method | Who | Response |
-| --- | --- | --- |
-| `GET`, `HEAD` | reader of the space, and the type allowed | 200 representation; 304; 404; 410 |
-| `PUT` | writer | 201 (made) or 200 (changed), `{"seq", "etag"}` |
-| `PATCH` | writer | 200 `{"seq", "etag"}` |
-| `DELETE` | writer | 204 |
-| other | – | 405 |
-| `POST /api/spaces/{space}/erase/{type}/{id}` | writer | 204 |
+| Method                                       | Who                                       | Response                                       |
+| -------------------------------------------- | ----------------------------------------- | ---------------------------------------------- |
+| `GET`, `HEAD`                                | reader of the space, and the type allowed | 200 representation; 304; 404; 410              |
+| `PUT`                                        | writer                                    | 201 (made) or 200 (changed), `{"seq", "etag"}` |
+| `PATCH`                                      | writer                                    | 200 `{"seq", "etag"}`                          |
+| `DELETE`                                     | writer                                    | 204                                            |
+| other                                        | –                                         | 405                                            |
+| `POST /api/spaces/{space}/erase/{type}/{id}` | writer                                    | 204                                            |
 
 **GET and HEAD.**
 
@@ -1852,13 +1880,13 @@ Other lines in the `VEVENT` go into `extra`. Other components (also
 `GET /api/spaces/{space}/resources` (reader) and `GET /api/timeline` (signed
 in) take:
 
-| Query | Meaning |
-| --- | --- |
-| `type` | only this type (resources only) |
-| `before` | only `time` < this (ms) (timeline only) |
-| `limit` | at most this many; default 100 (resources) or 50 (timeline); at most 1000 |
-| `offset` | skip this many; default 0 |
-| `page` | `1` asks for a page object; any other value (0 to 255) asks for a plain array |
+| Query    | Meaning                                                                       |
+| -------- | ----------------------------------------------------------------------------- |
+| `type`   | only this type (resources only)                                               |
+| `before` | only `time` < this (ms) (timeline only)                                       |
+| `limit`  | at most this many; default 100 (resources) or 50 (timeline); at most 1000     |
+| `offset` | skip this many; default 0                                                     |
+| `page`   | `1` asks for a page object; any other value (0 to 255) asks for a plain array |
 
 With `page=1` the answer is `{"items": [Row], "next_offset"}`. The node asks
 the index for one more row than the limit. If there is one, `next_offset` is
@@ -1877,21 +1905,21 @@ the order of both lists.
 
 ### 31.6 Finding
 
-| Method and path | Who | Query | Response |
-| --- | --- | --- | --- |
-| `GET /api/search` | signed in | `q` (required), `limit` (default 50, at most 1000) | `[Row]`, best first, in all readable spaces |
-| `GET /api/near` | signed in | `lat`, `lon` (required), `km` (default 1), `limit` (default 50, at most 1000) | `[Row]`, nearest first |
-| `GET /api/related/{space}/{type}/{id}` | reader | `limit` (default 100, at most 1000) | `[{"rel", "row"}]`, newest first |
+| Method and path                        | Who       | Query                                                                         | Response                                    |
+| -------------------------------------- | --------- | ----------------------------------------------------------------------------- | ------------------------------------------- |
+| `GET /api/search`                      | signed in | `q` (required), `limit` (default 50, at most 1000)                            | `[Row]`, best first, in all readable spaces |
+| `GET /api/near`                        | signed in | `lat`, `lon` (required), `km` (default 1), `limit` (default 50, at most 1000) | `[Row]`, nearest first                      |
+| `GET /api/related/{space}/{type}/{id}` | reader    | `limit` (default 100, at most 1000)                                           | `[{"rel", "row"}]`, newest first            |
 
 Rows that the caller may not see (type not allowed; for related, also a space
 it cannot read) are taken out after the limit.
 
 ### 31.7 Blobs
 
-| Method and path | Who | Response |
-| --- | --- | --- |
-| `POST /api/blobs` | a writer in any space | 201 `{"hash", "size"}`, `Location: /api/blobs/{hash}` |
-| `GET`, `HEAD /api/blobs/{hash}` | signed in | 200, 206, 304, 404, 416 |
+| Method and path                 | Who                   | Response                                              |
+| ------------------------------- | --------------------- | ----------------------------------------------------- |
+| `POST /api/blobs`               | a writer in any space | 201 `{"hash", "size"}`, `Location: /api/blobs/{hash}` |
+| `GET`, `HEAD /api/blobs/{hash}` | signed in             | 200, 206, 304, 404, 416                               |
 
 **Upload.** The body is the bytes; `Content-Type` is not used. A grant with role
 writer or owner may upload, whatever its space list. A node caller must be a
@@ -1923,16 +1951,16 @@ checked per space.
 
 ### 31.8 Grants
 
-| Method and path | Who | Request | Response |
-| --- | --- | --- | --- |
-| `GET /api/grants` | owner | – | 200 `[Grant]`: grants that are not revoked |
-| `POST /api/grants` | owner | NewGrant | 201 `{"token", "id"}` |
-| `DELETE /api/grants/{id}` | owner | – | 204 |
+| Method and path           | Who   | Request  | Response                                   |
+| ------------------------- | ----- | -------- | ------------------------------------------ |
+| `GET /api/grants`         | owner | –        | 200 `[Grant]`: grants that are not revoked |
+| `POST /api/grants`        | owner | NewGrant | 201 `{"token", "id"}`                      |
+| `DELETE /api/grants/{id}` | owner | –        | 204                                        |
 
 - **Grant** (output): `{"id", "role", "label", "created", "spaces"?, "types"?,
-  "expires"?, "session"?}`. The token hash is not given.
+"expires"?, "session"?}`. The token hash is not given.
 - **NewGrant**: `{"role", "label"?, "spaces"?, "types"?, "expires"?,
-  "session"?}`. Each item of `spaces` names a space (section 30.5). The node
+"session"?}`. Each item of `spaces` names a space (section 30.5). The node
   makes a grant (section 29) and gives the token one time.
 
 ### 31.9 Events
@@ -1951,6 +1979,7 @@ Standard), `Content-Type: text/event-stream`, `Cache-Control: no-cache`.
    ```
 
    There is no `event:` line.
+
 3. If no event comes for 25 seconds, the node sends `: keep-alive\n\n`.
 
 The caller's access is fixed when the stream starts. `Last-Event-ID` is not
@@ -1959,19 +1988,19 @@ connects.
 
 ### 31.10 Backups
 
-| Method and path | Who | Response |
-| --- | --- | --- |
-| `GET /api/export` | owner | 200 a tar file (section 50) |
-| `GET /api/replicas` | owner | 200 `[text]`: the replica addresses, with secrets hidden (section 45.1) |
-| `POST /api/replicas/sync` | owner | 200 `[ReplicaSync]` (section 47.3) |
+| Method and path           | Who   | Response                                                                |
+| ------------------------- | ----- | ----------------------------------------------------------------------- |
+| `GET /api/export`         | owner | 200 a tar file (section 50)                                             |
+| `GET /api/replicas`       | owner | 200 `[text]`: the replica addresses, with secrets hidden (section 45.1) |
+| `POST /api/replicas/sync` | owner | 200 `[ReplicaSync]` (section 47.3)                                      |
 
 ### 31.11 Push
 
-| Method and path | Who | Request | Response |
-| --- | --- | --- | --- |
-| `GET /api/push/key` | owner | – | 200 `{"key"}`: the VAPID public key, base64url of the 65-byte point; 503 `no push key` |
-| `POST /api/push/subscribe` | owner | a browser PushSubscription | 201 `{"id": "push/{32 hex}"}` |
-| `POST /api/push/test` | owner | – | 200 `{"ok": true}` |
+| Method and path            | Who   | Request                    | Response                                                                               |
+| -------------------------- | ----- | -------------------------- | -------------------------------------------------------------------------------------- |
+| `GET /api/push/key`        | owner | –                          | 200 `{"key"}`: the VAPID public key, base64url of the 65-byte point; 503 `no push key` |
+| `POST /api/push/subscribe` | owner | a browser PushSubscription | 201 `{"id": "push/{32 hex}"}`                                                          |
+| `POST /api/push/test`      | owner | –                          | 200 `{"ok": true}`                                                                     |
 
 Any other caller gets 401 on these paths, and other paths under `/api/push/`
 get 404 for the owner. Section 36 gives the details.
@@ -2040,22 +2069,22 @@ The answer is 207 with `Content-Type: application/xml; charset=utf-8`, a
 `HTTP/1.1 200 OK` for found properties. When properties were named, it has one
 more with `HTTP/1.1 404 Not Found` for the others.
 
-| Property | Value |
-| --- | --- |
-| `d:resourcetype` | principal: `collection`, `principal`; home: `collection`; address book: `collection`, `a:addressbook`; calendar: `collection`, `c:calendar`; item: empty |
-| `d:displayname` | principal: the node's name; homes: `Contacts`, `Calendars`; collection: the space's name; item: not found |
-| `d:current-user-principal`, `d:principal-URL`, `d:owner`, `c:calendar-user-address-set` | `<d:href>/dav/</d:href>` |
-| `a:addressbook-home-set` | `/dav/contacts/` |
-| `c:calendar-home-set` | `/dav/calendars/` |
-| `d:current-user-privilege-set` | read, write, write-content, bind, unbind (always) |
-| `d:supported-report-set` | address books: `addressbook-multiget`, `addressbook-query`; calendars: `calendar-multiget`, `calendar-query`; principal and homes: empty |
-| `c:supported-calendar-component-set` | calendars: `<c:comp name="VEVENT"/>` |
-| `a:supported-address-data` | address books: `<a:address-data-type content-type="text/vcard" version="3.0"/>` |
-| `cs:getctag` | collections: `"{seq}"` of the space |
-| `d:sync-token` | collections: `urn:homeserver:{space hex}:{seq}` |
-| `d:getetag` | items: the ETag |
-| `d:getcontenttype` | items: the book's media type; others: `httpd/unix-directory` |
-| `a:address-data`, `c:calendar-data` | items, when asked: the vCard or iCalendar text |
+| Property                                                                                | Value                                                                                                                                                    |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `d:resourcetype`                                                                        | principal: `collection`, `principal`; home: `collection`; address book: `collection`, `a:addressbook`; calendar: `collection`, `c:calendar`; item: empty |
+| `d:displayname`                                                                         | principal: the node's name; homes: `Contacts`, `Calendars`; collection: the space's name; item: not found                                                |
+| `d:current-user-principal`, `d:principal-URL`, `d:owner`, `c:calendar-user-address-set` | `<d:href>/dav/</d:href>`                                                                                                                                 |
+| `a:addressbook-home-set`                                                                | `/dav/contacts/`                                                                                                                                         |
+| `c:calendar-home-set`                                                                   | `/dav/calendars/`                                                                                                                                        |
+| `d:current-user-privilege-set`                                                          | read, write, write-content, bind, unbind (always)                                                                                                        |
+| `d:supported-report-set`                                                                | address books: `addressbook-multiget`, `addressbook-query`; calendars: `calendar-multiget`, `calendar-query`; principal and homes: empty                 |
+| `c:supported-calendar-component-set`                                                    | calendars: `<c:comp name="VEVENT"/>`                                                                                                                     |
+| `a:supported-address-data`                                                              | address books: `<a:address-data-type content-type="text/vcard" version="3.0"/>`                                                                          |
+| `cs:getctag`                                                                            | collections: `"{seq}"` of the space                                                                                                                      |
+| `d:sync-token`                                                                          | collections: `urn:homeserver:{space hex}:{seq}`                                                                                                          |
+| `d:getetag`                                                                             | items: the ETag                                                                                                                                          |
+| `d:getcontenttype`                                                                      | items: the book's media type; others: `httpd/unix-directory`                                                                                             |
+| `a:address-data`, `c:calendar-data`                                                     | items, when asked: the vCard or iCalendar text                                                                                                           |
 
 Other properties are not found.
 
@@ -2101,15 +2130,15 @@ node does not keep the master password hash that the app sends. It keeps
 
 ### 33.2 Endpoints without a session
 
-| Method and path under `/bitwarden` | Answer |
-| --- | --- |
-| `POST identity/accounts/prelogin`, `POST api/accounts/prelogin` | `{"kdf", "kdfIterations", "kdfMemory": null, "kdfParallelism": null}` from the account (or 0 and 600000) |
-| `POST identity/accounts/register/send-verification-email` | a JSON string of random base64url; nothing is sent |
-| `POST api/accounts/register`, `POST identity/accounts/register/finish` | makes the account |
-| `POST identity/connect/token` | signs in (below) |
-| `GET api/config` | `{"version": "2025.1.0", "gitHash": "", "server": {"name": "homeserver", "url": "https://github.com/"}, "environment": {}, "featureStates": {}, "object": "config"}` |
-| `GET api/accounts/revision-date` | the time now, in ms |
-| `GET alive`, `GET api/alive` | the time now as a JSON string, `"YYYY-MM-DDTHH:MM:SS.mmmZ"` |
+| Method and path under `/bitwarden`                                     | Answer                                                                                                                                                               |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST identity/accounts/prelogin`, `POST api/accounts/prelogin`        | `{"kdf", "kdfIterations", "kdfMemory": null, "kdfParallelism": null}` from the account (or 0 and 600000)                                                             |
+| `POST identity/accounts/register/send-verification-email`              | a JSON string of random base64url; nothing is sent                                                                                                                   |
+| `POST api/accounts/register`, `POST identity/accounts/register/finish` | makes the account                                                                                                                                                    |
+| `POST identity/connect/token`                                          | signs in (below)                                                                                                                                                     |
+| `GET api/config`                                                       | `{"version": "2025.1.0", "gitHash": "", "server": {"name": "homeserver", "url": "https://github.com/"}, "environment": {}, "featureStates": {}, "object": "config"}` |
+| `GET api/accounts/revision-date`                                       | the time now, in ms                                                                                                                                                  |
+| `GET alive`, `GET api/alive`                                           | the time now as a JSON string, `"YYYY-MM-DDTHH:MM:SS.mmmZ"`                                                                                                          |
 
 **Register.** It needs `bitwarden_register: true` in the configuration (else
 403 `registration is closed; set bitwarden_register to true`), and no account
@@ -2127,7 +2156,7 @@ yet (else 403 `this node already has a vault account`). The body needs
 - `grant_type=refresh_token`: `refresh_token` MUST be the token of a vault
   session that still works. The old grant is revoked.
 - Errors are 400 `{"error": "invalid_grant", "error_description": m,
-  "ErrorModel": {"Message": m, "Object": "error"}}`.
+"ErrorModel": {"Message": m, "Object": "error"}}`.
 - On success the node makes a grant: role writer, only the private space,
   types `cipher`, `vault-folder`, `vault-session`, `session: true`, label
   `Bitwarden app`, and an end 30 days later. The answer (with
@@ -2144,19 +2173,19 @@ yet (else 403 `this node already has a vault account`). The body needs
 The caller MUST have a grant whose types include `vault-session`, or be the
 owner (else 401). With no account, 404.
 
-| Method and path | Answer |
-| --- | --- |
-| `GET api/sync` | `{"object": "sync", "profile", "folders", "collections": [], "ciphers", "domains": null, "policies": [], "sends": []}` |
-| `GET api/accounts/profile` | the profile |
-| `POST api/ciphers`, `POST api/ciphers/create` | makes an item with a new uuid |
-| `PUT` or `POST api/ciphers/{id}` | makes or replaces item `{id}` |
-| `DELETE api/ciphers/{id}`, `POST api/ciphers/{id}/delete` | deletes it; answer `{}` |
-| `PUT api/ciphers/{id}/delete` | sets `deletedDate` (soft delete) |
-| `PUT api/ciphers/{id}/restore` | sets `deletedDate` to null; 404 if missing |
-| `GET api/folders` | `{"data": [folders], "object": "list", "continuationToken": null}` |
-| `POST api/folders` | makes a folder |
-| `PUT` or `POST api/folders/{id}` | makes or replaces folder `{id}` |
-| `DELETE api/folders/{id}`, `POST api/folders/{id}/delete` | deletes it; answer `{}` |
+| Method and path                                           | Answer                                                                                                                 |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `GET api/sync`                                            | `{"object": "sync", "profile", "folders", "collections": [], "ciphers", "domains": null, "policies": [], "sends": []}` |
+| `GET api/accounts/profile`                                | the profile                                                                                                            |
+| `POST api/ciphers`, `POST api/ciphers/create`             | makes an item with a new uuid                                                                                          |
+| `PUT` or `POST api/ciphers/{id}`                          | makes or replaces item `{id}`                                                                                          |
+| `DELETE api/ciphers/{id}`, `POST api/ciphers/{id}/delete` | deletes it; answer `{}`                                                                                                |
+| `PUT api/ciphers/{id}/delete`                             | sets `deletedDate` (soft delete)                                                                                       |
+| `PUT api/ciphers/{id}/restore`                            | sets `deletedDate` to null; 404 if missing                                                                             |
+| `GET api/folders`                                         | `{"data": [folders], "object": "list", "continuationToken": null}`                                                     |
+| `POST api/folders`                                        | makes a folder                                                                                                         |
+| `PUT` or `POST api/folders/{id}`                          | makes or replaces folder `{id}`                                                                                        |
+| `DELETE api/folders/{id}`, `POST api/folders/{id}/delete` | deletes it; answer `{}`                                                                                                |
 
 - **Profile**: `object: "profile"`, `id`, `name`, `email` from the account,
   `emailVerified: true`, `premium: true`, `premiumFromOrganization: false`,
@@ -2176,7 +2205,7 @@ owner (else 401). With no account, 404.
   `attachments: null`, `favorite: false`, `reprompt: 0`.
 - **A folder** is stored as `{"name", "title": "Vault folder"}` (no `name`:
   400 `name missing`) and given as `{"id", "name", "revisionDate", "object":
-  "folder"}`.
+"folder"}`.
 
 Other paths give 404. Organizations, collections, sends, attachments,
 two-factor sign-in and changes of the master password are not supported.
@@ -2203,22 +2232,22 @@ event stream.
    - `tools/call`: runs a tool.
    - Others: error −32601 `method not found`.
 5. A tool gives `{"content": [{"type": "text", "text": "{pretty JSON}"}],
-   "structuredContent": {"result": …}}`. A tool error gives
+"structuredContent": {"result": …}}`. A tool error gives
    `{"content": [{"type": "text", "text": "{message}"}], "isError": true}`.
 
 The caller's grant limits every tool. `limit` is an integer from 1 to 200
 (default 20).
 
-| Tool | Description | Input | Result |
-| --- | --- | --- | --- |
-| `list_spaces` | The spaces this token can read, with their names and ids. | – | `[Space]` |
-| `search` | Full-text search across readable spaces, best first. | `query`, `limit` | `[Row]` |
-| `timeline` | Resources by the time they are about, newest first. | `before` (ms), `limit` | `[Row]` |
-| `near` | Resources with a place near a point, nearest first. | `lat`, `lon`, `km` (default 1), `limit` | `[Row]` |
-| `get` | Read one resource. | `space`, `target` | Row, or `not found` |
-| `related` | Everything linked to or from a resource. | `space`, `target`, `limit` | `[{"rel", "resource"}]` |
-| `list` | Resources of one type in a space, newest first. | `space`, `type`, `limit` | `[Row]` |
-| `put` | Create or replace a JSON resource. Needs a writer token. | `space`, `target`, `body` (an object) | `{"seq"}` |
+| Tool          | Description                                               | Input                                   | Result                  |
+| ------------- | --------------------------------------------------------- | --------------------------------------- | ----------------------- |
+| `list_spaces` | The spaces this token can read, with their names and ids. | –                                       | `[Space]`               |
+| `search`      | Full-text search across readable spaces, best first.      | `query`, `limit`                        | `[Row]`                 |
+| `timeline`    | Resources by the time they are about, newest first.       | `before` (ms), `limit`                  | `[Row]`                 |
+| `near`        | Resources with a place near a point, nearest first.       | `lat`, `lon`, `km` (default 1), `limit` | `[Row]`                 |
+| `get`         | Read one resource.                                        | `space`, `target`                       | Row, or `not found`     |
+| `related`     | Everything linked to or from a resource.                  | `space`, `target`, `limit`              | `[{"rel", "resource"}]` |
+| `list`        | Resources of one type in a space, newest first.           | `space`, `type`, `limit`                | `[Row]`                 |
+| `put`         | Create or replace a JSON resource. Needs a writer token.  | `space`, `target`, `body` (an object)   | `{"seq"}`               |
 
 A missing text input gives the error `{name} is required`. An unknown tool
 gives `unknown tool {name}`.
@@ -2258,7 +2287,11 @@ thumbprint (RFC 7638), SHA-256 and base64url.
   "id_token_signing_alg_values_supported": ["ES256", "EdDSA"],
   "scopes_supported": ["openid", "profile", "email"],
   "subject_types_supported": ["public"],
-  "token_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
+  "token_endpoint_auth_methods_supported": [
+    "none",
+    "client_secret_post",
+    "client_secret_basic"
+  ],
   "claims_supported": ["iss", "sub", "aud", "exp", "iat", "nonce", "name"]
 }
 ```
@@ -2558,9 +2591,12 @@ are part of the program when it is built. A build with no web app has only
 
 ```html
 <!doctype html>
-<meta charset="utf-8">
+<meta charset="utf-8" />
 <title>homeserver</title>
-<p>This homeserver has no web app yet. Use the <code>hs</code> command line: <code>hs login</code>, then <code>hs --help</code>.</p>
+<p>
+  This homeserver has no web app yet. Use the <code>hs</code> command line:
+  <code>hs login</code>, then <code>hs --help</code>.
+</p>
 ```
 
 1. The path (parts joined with `/`, or `index.html` if empty) names a file.
@@ -2678,14 +2714,14 @@ Others get 401 `sign in first`. A `{space}` here MUST be 64 hex characters (else
 404), and the caller MUST be a member of it with any role (else 403
 `not a member of this space`). Errors use section 30.4.
 
-| Method and path | Request body | Answer |
-| --- | --- | --- |
-| `GET /fed/spaces/{space}/log?after={n}` | – | 200 `application/cbor`: an array of byte strings, the entries with seq > n (all if `after` is missing or not a number), at most 1000 |
-| `GET /fed/spaces/{space}/head` | – | 200 `application/cose`: the signed head (section 19.1); 421 `not the primary` if this node is not the primary |
-| `GET /fed/blobs/{hash}` | – | 200 `application/octet-stream`: the blob, if an entry in a space where the caller is a member names it; else 404 |
-| `POST /fed/spaces/{space}/inbox` | CBOR `[proposal, payload or null]` | 200 `{"seq", "created"}` |
-| `POST /fed/spaces/{space}/inbox/conditional` | CBOR `[proposal, payload or null, conditions]` | 200 `{"seq", "created"}`; a failed "must exist" gives 404 with `hs-conditional-write: 1` |
-| `POST /fed/spaces/{space}/push` | CBOR `[entry, payload or null]` | 200 `{"seq"}`: this node's seq after the push |
+| Method and path                              | Request body                                   | Answer                                                                                                                               |
+| -------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /fed/spaces/{space}/log?after={n}`      | –                                              | 200 `application/cbor`: an array of byte strings, the entries with seq > n (all if `after` is missing or not a number), at most 1000 |
+| `GET /fed/spaces/{space}/head`               | –                                              | 200 `application/cose`: the signed head (section 19.1); 421 `not the primary` if this node is not the primary                        |
+| `GET /fed/blobs/{hash}`                      | –                                              | 200 `application/octet-stream`: the blob, if an entry in a space where the caller is a member names it; else 404                     |
+| `POST /fed/spaces/{space}/inbox`             | CBOR `[proposal, payload or null]`             | 200 `{"seq", "created"}`                                                                                                             |
+| `POST /fed/spaces/{space}/inbox/conditional` | CBOR `[proposal, payload or null, conditions]` | 200 `{"seq", "created"}`; a failed "must exist" gives 404 with `hs-conditional-write: 1`                                             |
+| `POST /fed/spaces/{space}/push`              | CBOR `[entry, payload or null]`                | 200 `{"seq"}`: this node's seq after the push                                                                                        |
 
 - In the bodies, `proposal` and `entry` are byte strings. For `…/inbox` and
   `…/push`, a payload that is not a byte string counts as none, and items
@@ -2723,7 +2759,7 @@ members cannot find the primary again after a handover.
 2. A sends the new entry to all members with a home, also to B (section 42.4).
    B is not in the space yet, so it refuses. That is not an error.
 3. The owner of B calls `POST /api/spaces/join` with `{"home": A's URL,
-   "space": ID}`. B then:
+"space": ID}`. B then:
    1. gets the whole log: `GET {home}/fed/spaces/{id}/log`, then again with
       `after` = the last seq, while a page has exactly 1000 entries (502 on any
       failure; 502 `the home returned no entries` if there are none);
@@ -2797,7 +2833,7 @@ Every write through the API goes like this:
    - 404 with `hs-conditional-write` → 404 `not found`;
    - another 2xx → go on;
    - anything else, or no answer → 502 (`{url}: {status} {the first 300
-     characters of the body}`).
+characters of the body}`).
 5. Read `{"seq", "created"}` from the answer (else 502
    `commit receipt is not valid: …`).
 6. Pull, so that this node has the new entry.
@@ -2878,10 +2914,10 @@ configuration member `replicas` lists them, as addresses.
 
 ### 45.1 Addresses
 
-| Address | Store |
-| --- | --- |
-| a path starting with `/` or `.`, or `dir:{path}` | a local directory |
-| `s3://{key}:{secret}@{host[:port]}/{bucket}[/{prefix}][?{options}]` | an S3-compatible bucket |
+| Address                                                             | Store                                          |
+| ------------------------------------------------------------------- | ---------------------------------------------- |
+| a path starting with `/` or `.`, or `dir:{path}`                    | a local directory                              |
+| `s3://{key}:{secret}@{host[:port]}/{bucket}[/{prefix}][?{options}]` | an S3-compatible bucket                        |
 | `hs://{key}:{secret}@{host[:port]}/{bucket}[/{prefix}][?{options}]` | the S3 endpoint of another node (section 49.2) |
 
 - The key and the secret are percent-decoded. The user part ends at the last
@@ -2899,11 +2935,11 @@ configuration member `replicas` lists them, as addresses.
 
 ### 45.2 Operations on a store
 
-| Operation | Directory | S3 |
-| --- | --- | --- |
-| get | read the file | `GET`: 200 bytes, 404 none, other an error |
-| put | write durably | `PUT`: 2xx is success |
-| delete | remove the file (missing is fine) | `DELETE`: 2xx or 404 is success |
+| Operation | Directory                         | S3                                         |
+| --------- | --------------------------------- | ------------------------------------------ |
+| get       | read the file                     | `GET`: 200 bytes, 404 none, other an error |
+| put       | write durably                     | `PUT`: 2xx is success                      |
+| delete    | remove the file (missing is fine) | `DELETE`: 2xx or 404 is success            |
 
 Every S3 request is signed (section 49.1), with the header
 `x-amz-content-sha256` = the hex SHA-256 of the body.
@@ -2947,7 +2983,13 @@ Symbolic links are not followed. A file name that is not UTF-8, or that has
 The logical name `manifest` holds JSON:
 
 ```json
-{"version": 2, "time": 1764079380000, "files": {"{path}": {"hash": "{hex}", "size": 123, "generation": "{32 hex}"}}}
+{
+  "version": 2,
+  "time": 1764079380000,
+  "files": {
+    "{path}": { "hash": "{hex}", "size": 123, "generation": "{32 hex}" }
+  }
+}
 ```
 
 - `files` is sorted by path. `hash` is the hash of the file. `generation` names
@@ -2982,8 +3024,8 @@ The logical name `manifest` holds JSON:
    - S3 with an ETag: `PUT` with `If-Match: {etag}`; with none:
      `If-None-Match: *`; 412 or 409 means another sync won;
    - legacy: a plain `PUT`.
-   If another sync won, stop with
-   `another sync published a replica snapshot first; run the sync again`.
+     If another sync won, stop with
+     `another sync published a replica snapshot first; run the sync again`.
 7. If the revision was not legacy, delete the objects no longer needed: old
    versions of changed files, and files that are gone. A failed delete is only
    a warning.
@@ -3076,14 +3118,14 @@ with `Content-Type: application/xml`.
 
 **Operations.**
 
-| Request | Answer |
-| --- | --- |
-| `GET /s3/{bucket}` (any query) | ListObjectsV2 (below) |
-| `HEAD` or `PUT /s3/{bucket}` | 200 |
-| `PUT /s3/{bucket}/{key}` | write it; 200 with `ETag: "{hex hash of the body}"` |
+| Request                            | Answer                                                                                             |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `GET /s3/{bucket}` (any query)     | ListObjectsV2 (below)                                                                              |
+| `HEAD` or `PUT /s3/{bucket}`       | 200                                                                                                |
+| `PUT /s3/{bucket}/{key}`           | write it; 200 with `ETag: "{hex hash of the body}"`                                                |
 | `GET` or `HEAD /s3/{bucket}/{key}` | 200 (or 206 for a range), `ETag: "{hex hash}"`; 404 `NoSuchKey`; both with `hs-conditional-put: 1` |
-| `DELETE /s3/{bucket}/{key}` | 204, also when it is missing |
-| other | 405 `MethodNotAllowed` |
+| `DELETE /s3/{bucket}/{key}`        | 204, also when it is missing                                                                       |
+| other                              | 405 `MethodNotAllowed`                                                                             |
 
 - **Conditional put.** Only `If-Match: "{64 hex}"` (with quotes) writes only if
   the current object has that hash. Only `If-None-Match: *` writes only if there
@@ -3091,7 +3133,7 @@ with `Content-Type: application/xml`.
   `PreconditionFailed`. Both headers, or `If-None-Match` with another value,
   give 400 `InvalidArgument`. With neither, the write has no condition.
 - **Range** works as in section 31.7, with `Content-Type:
-  application/octet-stream`. A range that is not good gives the whole object
+application/octet-stream`. A range that is not good gives the whole object
   with 200.
 - **Listing**: the query `prefix`, and `continuation-token` or `start-after`.
   The answer is the names that start with the prefix and come after the token,
@@ -3146,11 +3188,11 @@ commands.
 
 These can come before or after the command.
 
-| Option | Variable | Meaning |
-| --- | --- | --- |
-| `--dir DIR` | `HS_DIR` | the data directory |
-| `--server URL` | `HS_SERVER` | the node to talk to |
-| `--json` | – | print the API's answers as JSON |
+| Option         | Variable    | Meaning                         |
+| -------------- | ----------- | ------------------------------- |
+| `--dir DIR`    | `HS_DIR`    | the data directory              |
+| `--server URL` | `HS_SERVER` | the node to talk to             |
+| `--json`       | –           | print the API's answers as JSON |
 
 Other environment variables: `HS_TOKEN` (a token that wins over the saved one),
 `HS_RECOVERY_CODE` (for `restore`), `VISUAL` and `EDITOR` (for `edit`),
@@ -3172,7 +3214,7 @@ written to `cli.json.tmp` and renamed:
 {
   "default": "http://127.0.0.1:8080",
   "servers": {
-    "http://127.0.0.1:8080": {"insecure": false, "token": "hs_…"}
+    "http://127.0.0.1:8080": { "insecure": false, "token": "hs_…" }
   }
 }
 ```
@@ -3222,35 +3264,35 @@ The command line uses the REST API with `Authorization: Bearer {token}` and
 
 ### 52.1 `hs`
 
-| Command | Where | What it does |
-| --- | --- | --- |
-| `login [URL] [--insecure]` | API | reads a token (`HS_TOKEN`, or asks for it without echo), checks it with `GET /api/session` and `GET /api/node`, saves it as the default; prints `Signed in to {name} ({url}) as {role}` |
-| `logout [URL]` | file | takes the sign-in out of `cli.json` (the token is not revoked) |
-| `status` | API | node, identity, version, role, index health, counts |
-| `ls SPACE [TYPE] [--limit N] [--offset N] [--all]` | API | lists resources (pages of `page=1`; `--all` gets every page) |
-| `get SPACE TYPE/ID [-o FILE]` | API | prints or saves a resource |
-| `put SPACE TYPE/ID [FILE] [--media-type T] [--new] [--if-match ETAG]` | API | PUT from a file or standard input; `--new` sends `If-None-Match: *` |
-| `edit SPACE TYPE/ID` | API | gets it, opens an editor, PUTs it back with `If-Match` (or `If-None-Match: *` if it is new) |
-| `patch SPACE TYPE/ID PATCH` | API | JSON Merge Patch (`-` reads standard input) |
-| `rm SPACE TYPE/ID [--erase]` | API | DELETE, or erase |
-| `upload SPACE FILE…` | API | each file: POST it as a blob, then PUT `file/{first 16 of the hash}` (section 37.3) |
-| `search WORDS… [--limit N]` | API | `GET /api/search` |
-| `timeline [--before YYYY-MM-DD] [--limit N]` | API | `GET /api/timeline` |
-| `near LAT LON [--km K] [--limit N]` | API | `GET /api/near` |
-| `related SPACE TYPE/ID` | API | `GET /api/related/…` |
-| `blob put FILE [--media-type T]` / `blob get HASH [-o FILE]` | API | upload or download a blob |
-| `watch` | API | prints events from `GET /api/events` until stopped |
-| `space list` / `space create NAME` | local or API | list or make spaces |
-| `space show SPACE` | API | the space and its members |
-| `space join --home URL SPACE` | API | `POST /api/spaces/join` |
-| `space member add SPACE (--url URL \| --node ID --identity ID) [--role R]` | API | add a member (role default `writer`) |
-| `space member remove SPACE NODE` | API | remove a member |
-| `space handover SPACE NODE` | API | make another member the primary |
-| `space sync SPACE` | API | pull now |
-| `identity` | local or API | prints the DID document |
-| `openapi` | – | prints the OpenAPI document |
-| `completion SHELL` | – | prints a completion script for `hs` and `hsctl` (bash, zsh, fish, elvish, powershell) |
-| `ctl …` | | section 52.2 |
+| Command                                                                    | Where        | What it does                                                                                                                                                                            |
+| -------------------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `login [URL] [--insecure]`                                                 | API          | reads a token (`HS_TOKEN`, or asks for it without echo), checks it with `GET /api/session` and `GET /api/node`, saves it as the default; prints `Signed in to {name} ({url}) as {role}` |
+| `logout [URL]`                                                             | file         | takes the sign-in out of `cli.json` (the token is not revoked)                                                                                                                          |
+| `status`                                                                   | API          | node, identity, version, role, index health, counts                                                                                                                                     |
+| `ls SPACE [TYPE] [--limit N] [--offset N] [--all]`                         | API          | lists resources (pages of `page=1`; `--all` gets every page)                                                                                                                            |
+| `get SPACE TYPE/ID [-o FILE]`                                              | API          | prints or saves a resource                                                                                                                                                              |
+| `put SPACE TYPE/ID [FILE] [--media-type T] [--new] [--if-match ETAG]`      | API          | PUT from a file or standard input; `--new` sends `If-None-Match: *`                                                                                                                     |
+| `edit SPACE TYPE/ID`                                                       | API          | gets it, opens an editor, PUTs it back with `If-Match` (or `If-None-Match: *` if it is new)                                                                                             |
+| `patch SPACE TYPE/ID PATCH`                                                | API          | JSON Merge Patch (`-` reads standard input)                                                                                                                                             |
+| `rm SPACE TYPE/ID [--erase]`                                               | API          | DELETE, or erase                                                                                                                                                                        |
+| `upload SPACE FILE…`                                                       | API          | each file: POST it as a blob, then PUT `file/{first 16 of the hash}` (section 37.3)                                                                                                     |
+| `search WORDS… [--limit N]`                                                | API          | `GET /api/search`                                                                                                                                                                       |
+| `timeline [--before YYYY-MM-DD] [--limit N]`                               | API          | `GET /api/timeline`                                                                                                                                                                     |
+| `near LAT LON [--km K] [--limit N]`                                        | API          | `GET /api/near`                                                                                                                                                                         |
+| `related SPACE TYPE/ID`                                                    | API          | `GET /api/related/…`                                                                                                                                                                    |
+| `blob put FILE [--media-type T]` / `blob get HASH [-o FILE]`               | API          | upload or download a blob                                                                                                                                                               |
+| `watch`                                                                    | API          | prints events from `GET /api/events` until stopped                                                                                                                                      |
+| `space list` / `space create NAME`                                         | local or API | list or make spaces                                                                                                                                                                     |
+| `space show SPACE`                                                         | API          | the space and its members                                                                                                                                                               |
+| `space join --home URL SPACE`                                              | API          | `POST /api/spaces/join`                                                                                                                                                                 |
+| `space member add SPACE (--url URL \| --node ID --identity ID) [--role R]` | API          | add a member (role default `writer`)                                                                                                                                                    |
+| `space member remove SPACE NODE`                                           | API          | remove a member                                                                                                                                                                         |
+| `space handover SPACE NODE`                                                | API          | make another member the primary                                                                                                                                                         |
+| `space sync SPACE`                                                         | API          | pull now                                                                                                                                                                                |
+| `identity`                                                                 | local or API | prints the DID document                                                                                                                                                                 |
+| `openapi`                                                                  | –            | prints the OpenAPI document                                                                                                                                                             |
+| `completion SHELL`                                                         | –            | prints a completion script for `hs` and `hsctl` (bash, zsh, fish, elvish, powershell)                                                                                                   |
+| `ctl …`                                                                    |              | section 52.2                                                                                                                                                                            |
 
 Defaults: `--limit` 50, `--km` 1.
 
@@ -3263,19 +3305,19 @@ Media types for `put` and `upload` come from the file's extension: `json`,
 
 ### 52.2 `hs ctl` (and `hsctl`)
 
-| Command | Where | What it does |
-| --- | --- | --- |
-| `init --name NAME [--url URL]` | directory | makes a node (section 23.1); prints the identity, the recovery code and the owner token; if there are no saved sign-ins, saves one for `URL` (or `http://127.0.0.1:8080`) |
-| `serve [--listen ADDR] [--tls off\|self-signed] [--domain D]… [--map-port]` | directory | runs the node (section 30.1); `--listen` default `127.0.0.1:8080` |
-| `config get [KEY]` / `config set KEY VALUE` | directory | reads or sets a top-level member of `config.json`; VALUE is JSON, or else a string |
-| `token create [--role R] [--label L] [--space S]… [--type T]… [--expires-in D]` | local or API | makes a grant; prints the token (role default `writer`) |
-| `token list` / `token revoke ID` | local or API | lists or revokes grants |
-| `export` | local or API | writes the tar to standard output (not to a terminal) |
-| `replica list` / `replica sync` | local or API | lists replicas, or syncs them now |
-| `restore --from REPLICA` | directory | section 48 |
-| `recovery split --threshold K --count N` | – | reads a recovery code and prints N shares (section 11.2) |
-| `recovery combine` | – | reads shares, one for each line, and prints the recovery code |
-| `rebuild-index` | directory | deletes the index and builds it again |
+| Command                                                                         | Where        | What it does                                                                                                                                                              |
+| ------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init --name NAME [--url URL]`                                                  | directory    | makes a node (section 23.1); prints the identity, the recovery code and the owner token; if there are no saved sign-ins, saves one for `URL` (or `http://127.0.0.1:8080`) |
+| `serve [--listen ADDR] [--tls off\|self-signed] [--domain D]… [--map-port]`     | directory    | runs the node (section 30.1); `--listen` default `127.0.0.1:8080`                                                                                                         |
+| `config get [KEY]` / `config set KEY VALUE`                                     | directory    | reads or sets a top-level member of `config.json`; VALUE is JSON, or else a string                                                                                        |
+| `token create [--role R] [--label L] [--space S]… [--type T]… [--expires-in D]` | local or API | makes a grant; prints the token (role default `writer`)                                                                                                                   |
+| `token list` / `token revoke ID`                                                | local or API | lists or revokes grants                                                                                                                                                   |
+| `export`                                                                        | local or API | writes the tar to standard output (not to a terminal)                                                                                                                     |
+| `replica list` / `replica sync`                                                 | local or API | lists replicas, or syncs them now                                                                                                                                         |
+| `restore --from REPLICA`                                                        | directory    | section 48                                                                                                                                                                |
+| `recovery split --threshold K --count N`                                        | –            | reads a recovery code and prints N shares (section 11.2)                                                                                                                  |
+| `recovery combine`                                                              | –            | reads shares, one for each line, and prints the recovery code                                                                                                             |
+| `rebuild-index`                                                                 | directory    | deletes the index and builds it again                                                                                                                                     |
 
 `--expires-in` is a number and a unit: `s`, `m` or `min`, `h`, `d`, `w`. The end
 time is computed with the client's clock.
@@ -3304,62 +3346,62 @@ with at most 2 seconds for each step. On any failure there are no candidates.
 
 ## Appendix A. Constants
 
-| Name | Value | Section |
-| --- | --- | --- |
-| COSE alg | −8 (EdDSA) | 8.2 |
-| COSE protected header | `a1 01 27` | 8.2 |
-| CBOR nesting limit | 32 | 7.3 |
-| storage key context | `homeserver 2025 storage key v1` | 6 |
-| token hash context | `homeserver 2025 token v1` | 6 |
-| replica name context | `hs name v1` | 46 |
-| replica key context | `hs key v1` | 46 |
-| replica magic | `HSE1` | 46 |
-| target part length | 1–128 bytes | 15.2 |
-| proposal nonce (made by the node) | 16 random bytes | 15 |
-| token | `hs_` + base32 of 20 bytes | 29.2 |
-| grant ID, OAuth client ID | base32 of 10 bytes | 29.1, 35.2 |
-| entries in a segment | 256 | 19.2 |
-| event channel | 1024 events | 26.4 |
-| index schema version | 1 | 27.1 |
-| search text limit | 64 KiB | 27.3 |
-| title lengths | 200 / 80 characters | 27.3 |
-| default listen address | `127.0.0.1:8080` | 30.1 |
-| request body limit | 256 MiB | 30.1 |
-| response body limit (outgoing client) | 256 MiB | 43 |
-| CLI body limit | 64 MiB | 51.6 |
-| TLS handshake limit | 10 s | 30.1 |
-| outgoing request limit | 30 s | 43 |
-| access log queue / batch | 1024 / 64 | 30.6 |
-| list limit | default 100 (resources), 50 (others); at most 1000 | 31.5, 31.6 |
-| blob piece | 64 KiB | 31.7 |
-| event stream retry / keep-alive | 3000 ms / 25 s | 31.9 |
-| signature label | `sig1` | 40 |
-| signature window | 300 s | 40.3 |
-| log page | 1000 entries | 41 |
-| pull interval | 60 s | 42.6 |
-| replica sync interval | 3600 s | 47.4 |
-| S3 clock window | 900 s | 49.2 |
-| S3 list page | 1000 | 49.2 |
-| session grant life | 30 days | 33.2, 35.4 |
-| forward-auth cookie life | 604800 s (7 days) | 35.5 |
-| OAuth code life | 60 s | 35.2 |
-| OIDC token life | 3600 s | 35.2 |
-| passkey challenge life | 300 s | 35.4 |
-| PBKDF2 rounds (vault) | 100000 | 33.1 |
-| default vault KDF rounds | 600000 | 33.1 |
-| VAPID JWT life | 43200 s | 36.2 |
-| push TTL | 86400 s | 36.3 |
-| push gather wait | 5 s | 36.3 |
-| push message limit | 3993 bytes | 36.3 |
-| thumbnail side | 16–1024 | 37.4 |
-| thumbnail workers / time / output | 2 / 15 s / 8 MiB | 37.4 |
-| thumbnail pixel limit | 64,000,000 | 37.4 |
-| JPEG quality | 80 | 37.4 |
-| PCP/NAT-PMP port | 5351 | 44 |
-| port mapping lifetime | 7200 s | 44 |
-| MCP protocol version | `2025-06-18` | 34 |
-| MCP tool limit | default 20, 1–200 | 34 |
-| completion wait | 2 s | 52.4 |
+| Name                                  | Value                                              | Section    |
+| ------------------------------------- | -------------------------------------------------- | ---------- |
+| COSE alg                              | −8 (EdDSA)                                         | 8.2        |
+| COSE protected header                 | `a1 01 27`                                         | 8.2        |
+| CBOR nesting limit                    | 32                                                 | 7.3        |
+| storage key context                   | `homeserver 2025 storage key v1`                   | 6          |
+| token hash context                    | `homeserver 2025 token v1`                         | 6          |
+| replica name context                  | `hs name v1`                                       | 46         |
+| replica key context                   | `hs key v1`                                        | 46         |
+| replica magic                         | `HSE1`                                             | 46         |
+| target part length                    | 1–128 bytes                                        | 15.2       |
+| proposal nonce (made by the node)     | 16 random bytes                                    | 15         |
+| token                                 | `hs_` + base32 of 20 bytes                         | 29.2       |
+| grant ID, OAuth client ID             | base32 of 10 bytes                                 | 29.1, 35.2 |
+| entries in a segment                  | 256                                                | 19.2       |
+| event channel                         | 1024 events                                        | 26.4       |
+| index schema version                  | 1                                                  | 27.1       |
+| search text limit                     | 64 KiB                                             | 27.3       |
+| title lengths                         | 200 / 80 characters                                | 27.3       |
+| default listen address                | `127.0.0.1:8080`                                   | 30.1       |
+| request body limit                    | 256 MiB                                            | 30.1       |
+| response body limit (outgoing client) | 256 MiB                                            | 43         |
+| CLI body limit                        | 64 MiB                                             | 51.6       |
+| TLS handshake limit                   | 10 s                                               | 30.1       |
+| outgoing request limit                | 30 s                                               | 43         |
+| access log queue / batch              | 1024 / 64                                          | 30.6       |
+| list limit                            | default 100 (resources), 50 (others); at most 1000 | 31.5, 31.6 |
+| blob piece                            | 64 KiB                                             | 31.7       |
+| event stream retry / keep-alive       | 3000 ms / 25 s                                     | 31.9       |
+| signature label                       | `sig1`                                             | 40         |
+| signature window                      | 300 s                                              | 40.3       |
+| log page                              | 1000 entries                                       | 41         |
+| pull interval                         | 60 s                                               | 42.6       |
+| replica sync interval                 | 3600 s                                             | 47.4       |
+| S3 clock window                       | 900 s                                              | 49.2       |
+| S3 list page                          | 1000                                               | 49.2       |
+| session grant life                    | 30 days                                            | 33.2, 35.4 |
+| forward-auth cookie life              | 604800 s (7 days)                                  | 35.5       |
+| OAuth code life                       | 60 s                                               | 35.2       |
+| OIDC token life                       | 3600 s                                             | 35.2       |
+| passkey challenge life                | 300 s                                              | 35.4       |
+| PBKDF2 rounds (vault)                 | 100000                                             | 33.1       |
+| default vault KDF rounds              | 600000                                             | 33.1       |
+| VAPID JWT life                        | 43200 s                                            | 36.2       |
+| push TTL                              | 86400 s                                            | 36.3       |
+| push gather wait                      | 5 s                                                | 36.3       |
+| push message limit                    | 3993 bytes                                         | 36.3       |
+| thumbnail side                        | 16–1024                                            | 37.4       |
+| thumbnail workers / time / output     | 2 / 15 s / 8 MiB                                   | 37.4       |
+| thumbnail pixel limit                 | 64,000,000                                         | 37.4       |
+| JPEG quality                          | 80                                                 | 37.4       |
+| PCP/NAT-PMP port                      | 5351                                               | 44         |
+| port mapping lifetime                 | 7200 s                                             | 44         |
+| MCP protocol version                  | `2025-06-18`                                       | 34         |
+| MCP tool limit                        | default 20, 1–200                                  | 34         |
+| completion wait                       | 2 s                                                | 52.4       |
 
 ## Appendix B. Not in this version
 
@@ -3442,49 +3484,49 @@ S3 API with its Signature Version 4, the Bitwarden client API, and the SQLite
 database of the index. This document gives every part of them that the node
 uses, so it does not name other documents for them.
 
-- **BCP 14**: RFC 2119, *Key words for use in RFCs to Indicate Requirement
-  Levels*; RFC 8174, *Ambiguity of Uppercase vs Lowercase in RFC 2119 Key
-  Words*.
-- **RFC 3986**: *Uniform Resource Identifier (URI): Generic Syntax*.
-- **RFC 4648**: *The Base16, Base32, and Base64 Data Encodings*.
-- **RFC 4918**: *HTTP Extensions for Web Distributed Authoring and Versioning
-  (WebDAV)*.
-- **RFC 4791**: *Calendaring Extensions to WebDAV (CalDAV)*.
-- **RFC 6352**: *CardDAV: vCard Extensions to WebDAV*.
-- **RFC 5545**: *Internet Calendaring and Scheduling Core Object Specification
-  (iCalendar)*.
-- **RFC 6350**: *vCard Format Specification*.
-- **RFC 5869**: *HMAC-based Extract-and-Expand Key Derivation Function (HKDF)*.
-- **RFC 2104**: *HMAC*. **RFC 8018**: *PKCS #5 v2.1* (PBKDF2).
-- **FIPS 180-4**: *Secure Hash Standard* (SHA-256).
+- **BCP 14**: RFC 2119, _Key words for use in RFCs to Indicate Requirement
+  Levels_; RFC 8174, _Ambiguity of Uppercase vs Lowercase in RFC 2119 Key
+  Words_.
+- **RFC 3986**: _Uniform Resource Identifier (URI): Generic Syntax_.
+- **RFC 4648**: _The Base16, Base32, and Base64 Data Encodings_.
+- **RFC 4918**: _HTTP Extensions for Web Distributed Authoring and Versioning
+  (WebDAV)_.
+- **RFC 4791**: _Calendaring Extensions to WebDAV (CalDAV)_.
+- **RFC 6352**: _CardDAV: vCard Extensions to WebDAV_.
+- **RFC 5545**: _Internet Calendaring and Scheduling Core Object Specification
+  (iCalendar)_.
+- **RFC 6350**: _vCard Format Specification_.
+- **RFC 5869**: _HMAC-based Extract-and-Expand Key Derivation Function (HKDF)_.
+- **RFC 2104**: _HMAC_. **RFC 8018**: _PKCS #5 v2.1_ (PBKDF2).
+- **FIPS 180-4**: _Secure Hash Standard_ (SHA-256).
 - **FIPS 186-5** and **SEC 2**: ECDSA and the curve P-256.
-- **NIST SP 800-38D**: *Galois/Counter Mode (GCM)*. **FIPS 197**: AES.
+- **NIST SP 800-38D**: _Galois/Counter Mode (GCM)_. **FIPS 197**: AES.
 - **RFC 5208** / **RFC 5958**: PKCS #8. **RFC 5280**: SubjectPublicKeyInfo.
-- **RFC 6749**: *The OAuth 2.0 Authorization Framework*.
-- **RFC 6886**: *NAT Port Mapping Protocol (NAT-PMP)*.
-- **RFC 6887**: *Port Control Protocol (PCP)*.
-- **RFC 7396**: *JSON Merge Patch*.
+- **RFC 6749**: _The OAuth 2.0 Authorization Framework_.
+- **RFC 6886**: _NAT Port Mapping Protocol (NAT-PMP)_.
+- **RFC 6887**: _Port Control Protocol (PCP)_.
+- **RFC 7396**: _JSON Merge Patch_.
 - **RFC 7515**, **RFC 7517**, **RFC 7518**, **RFC 7519**: JWS, JWK, JWA, JWT.
-  **RFC 8037**: EdDSA in JOSE. **RFC 7638**: *JWK Thumbprint*.
-- **RFC 7636**: *Proof Key for Code Exchange (PKCE)*.
-- **RFC 8030**: *Generic Event Delivery Using HTTP Push*.
-- **RFC 8188**: *Encrypted Content-Encoding for HTTP*.
-- **RFC 8291**: *Message Encryption for Web Push*.
-- **RFC 8292**: *VAPID for Web Push*.
-- **RFC 8032**: *Edwards-Curve Digital Signature Algorithm (EdDSA)*.
-- **RFC 8259**: *The JavaScript Object Notation (JSON) Data Interchange
-  Format*.
+  **RFC 8037**: EdDSA in JOSE. **RFC 7638**: _JWK Thumbprint_.
+- **RFC 7636**: _Proof Key for Code Exchange (PKCE)_.
+- **RFC 8030**: _Generic Event Delivery Using HTTP Push_.
+- **RFC 8188**: _Encrypted Content-Encoding for HTTP_.
+- **RFC 8291**: _Message Encryption for Web Push_.
+- **RFC 8292**: _VAPID for Web Push_.
+- **RFC 8032**: _Edwards-Curve Digital Signature Algorithm (EdDSA)_.
+- **RFC 8259**: _The JavaScript Object Notation (JSON) Data Interchange
+  Format_.
 - **RFC 8446**: TLS 1.3. **RFC 5246**: TLS 1.2. **RFC 7301**: ALPN.
-- **RFC 8949**: *Concise Binary Object Representation (CBOR)*.
-- **RFC 9052**: *CBOR Object Signing and Encryption (COSE): Structures and
-  Process*.
-- **RFC 9068**: *JWT Profile for OAuth 2.0 Access Tokens*.
-- **RFC 9110**: *HTTP Semantics*. **RFC 9112**: HTTP/1.1. **RFC 9113**: HTTP/2.
-  **RFC 6265**: *HTTP State Management Mechanism* (cookies).
-- **RFC 9421**: *HTTP Message Signatures*.
-- **RFC 9530**: *Digest Fields*.
-- **RFC 9651**: *Structured Field Values for HTTP*.
-- **BLAKE3**: *The BLAKE3 cryptographic hash function*, specification
+- **RFC 8949**: _Concise Binary Object Representation (CBOR)_.
+- **RFC 9052**: _CBOR Object Signing and Encryption (COSE): Structures and
+  Process_.
+- **RFC 9068**: _JWT Profile for OAuth 2.0 Access Tokens_.
+- **RFC 9110**: _HTTP Semantics_. **RFC 9112**: HTTP/1.1. **RFC 9113**: HTTP/2.
+  **RFC 6265**: _HTTP State Management Mechanism_ (cookies).
+- **RFC 9421**: _HTTP Message Signatures_.
+- **RFC 9530**: _Digest Fields_.
+- **RFC 9651**: _Structured Field Values for HTTP_.
+- **BLAKE3**: _The BLAKE3 cryptographic hash function_, specification
   version 1 (J. O'Connor, J.-P. Aumasson, S. Neves, Z. Wilcox-O'Hearn, 2020).
 - **Ed25519**: RFC 8032. **X.690**: ASN.1 DER.
 - **W3C Decentralized Identifiers (DIDs) v1.0** and **W3C Controlled
