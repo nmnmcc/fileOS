@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Build the WebAssembly apps and engines into .app folders.
+"""Build the WebAssembly apps into .app folders.
 
 Each crate in apps/ that has a `<Name>.app/` folder is built for
 wasm32-unknown-unknown as a cdylib, made into a component with
@@ -32,7 +32,7 @@ def run(command: list[str]) -> None:
 
 
 def main() -> None:
-    """Build every app and engine in apps/ into target/apps/."""
+    """Build every app in apps/ into target/apps/."""
     for crate in sorted(p for p in APPS.iterdir() if p.is_dir()):
         for bundle in crate.glob("*.app"):
             run(

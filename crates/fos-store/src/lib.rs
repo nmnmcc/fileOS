@@ -6,11 +6,12 @@
 //!
 //! ```text
 //! node.key                the seed of the node key (32 bytes)
-//! root                    the ID of the root folder
-//! engine/Engine.app/      the engine of this node (it does not sync)
-//! blobs/<hash>            file contents, named by their hash
-//! folders/<id>.log        the entries of each folder, one after the other
-//! local/<app>.kv          the key-value store of each app (it does not sync)
+//! identity-*.key          the keys of an identity, on the node that holds them
+//! home                    the ID of the home space of the node
+//! blobs/<hash>            content: chunks and lists of chunks, by their hash
+//! spaces/<id>.log         the entries of each space, one after the other
+//! spaces/<id>.base        the snapshot at the last compaction, if any
+//! local/<app>.kv          cache files of each app, on this node only
 //! gateway.token           the token for the local gateway
 //! gateway.addr            the address the gateway listens on, while it runs
 //! ```
@@ -23,7 +24,7 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use fos_core::{Bytes, Error, Hash, SecretKey, decode, encode};
-use fos_fs::{Authz, Entry, Folder, Reject};
+use fos_space::{Contents, Entry, Snapshot, Space};
 
 /// The data directory of one node.
 #[derive(Clone, Debug)]
@@ -53,7 +54,7 @@ impl Store {
     ///
     /// When the directories cannot be made.
     pub fn open(dir: &Path) -> Result<Self, Error> {
-        for sub in ["blobs", "folders", "local", "engine"] {
+        for sub in ["blobs", "spaces", "local"] {
             let path = dir.join(sub);
             fs::create_dir_all(&path).map_err(|e| io_error(&path, &e))?;
         }
@@ -144,13 +145,13 @@ impl Store {
         String::from_utf8(bytes).map_err(|e| Error(format!("gateway.token is not text: {e}")))
     }
 
-    /// The ID of the root folder, if there is one yet.
+    /// The ID of the home space, if there is one yet.
     ///
     /// # Errors
     ///
     /// When the file is there but broken.
-    pub fn root(&self) -> Result<Option<Hash>, Error> {
-        match fs::read_to_string(self.dir.join("root")) {
+    pub fn home(&self) -> Result<Option<Hash>, Error> {
+        match fs::read_to_string(self.dir.join("home")) {
             Ok(text) => text.trim().parse().map(Some),
             Err(_) => Ok(None),
         }
@@ -159,13 +160,8 @@ impl Store {
     /// # Errors
     ///
     /// When the file cannot be written.
-    pub fn set_root(&self, root: Hash) -> Result<(), Error> {
-        write_atomic(&self.dir.join("root"), root.to_string().as_bytes())
-    }
-
-    /// The directory of the engine of this node.
-    pub fn engine_dir(&self) -> PathBuf {
-        self.dir.join("engine").join("Engine.app")
+    pub fn set_home(&self, home: Hash) -> Result<(), Error> {
+        write_atomic(&self.dir.join("home"), home.to_string().as_bytes())
     }
 
     /// Keeps a blob. Gives its hash.
@@ -186,71 +182,105 @@ impl Store {
         self.dir.join("blobs").join(hash.to_string())
     }
 
-    /// Adds entries to the end of the log of a folder.
+    /// Keeps a piece of content under its hash, if the hash is right.
+    ///
+    /// # Errors
+    ///
+    /// When the hash is wrong, or the file cannot be written.
+    pub fn put_piece(&self, hash: Hash, data: &[u8]) -> Result<(), Error> {
+        if Hash::of(data) != hash {
+            return Err(Error(format!("content that is not {hash}")));
+        }
+        let path = self.blob_path(hash);
+        if !path.exists() {
+            write_atomic(&path, data)?;
+        }
+        Ok(())
+    }
+
+    fn log_path(&self, space: Hash) -> PathBuf {
+        self.dir.join("spaces").join(format!("{space}.log"))
+    }
+
+    fn base_path(&self, space: Hash) -> PathBuf {
+        self.dir.join("spaces").join(format!("{space}.base"))
+    }
+
+    /// Adds entries to the end of the log of a space.
     ///
     /// # Errors
     ///
     /// When the log cannot be written.
-    pub fn append_entries(&self, folder: Hash, entries: &[Entry]) -> Result<(), Error> {
-        let path = self.dir.join("folders").join(format!("{folder}.log"));
+    pub fn append_entries(&self, space: Hash, entries: &[Entry]) -> Result<(), Error> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let path = self.log_path(space);
         let mut file = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
             .map_err(|e| io_error(&path, &e))?;
-        let mut out = Vec::new();
-        for entry in entries {
-            let bytes = encode(entry);
-            out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
-            out.extend_from_slice(&bytes);
-        }
+        let out = frame(entries);
         file.write_all(&out)
             .and_then(|()| file.sync_data())
             .map_err(|e| io_error(&path, &e))
     }
 
-    /// Reads every folder from its log. The engine checks every entry again.
+    /// Keeps a space as it is now: its base and its entries. Used after
+    /// compaction, when entries before the base are dropped.
     ///
     /// # Errors
     ///
-    /// When a log cannot be read, or is broken.
-    pub fn load_folders(&self, authz: &mut dyn Authz) -> Result<Vec<Folder>, Error> {
-        let dir = self.dir.join("folders");
-        let mut folders = Vec::new();
+    /// When the files cannot be written.
+    pub fn save_space(&self, space: &Space) -> Result<(), Error> {
+        if let Some(base) = space.base() {
+            write_atomic(&self.base_path(space.id()), &encode(base))?;
+        }
+        write_atomic(&self.log_path(space.id()), &frame(&space.entries()))
+    }
+
+    /// Reads every space: from its base, if it has one, and its log.
+    ///
+    /// # Errors
+    ///
+    /// When a file cannot be read, or is broken.
+    pub fn load_spaces(&self) -> Result<Vec<Space>, Error> {
+        let dir = self.dir.join("spaces");
         let mut paths: Vec<PathBuf> = fs::read_dir(&dir)
             .map_err(|e| io_error(&dir, &e))?
             .filter_map(|e| e.ok().map(|e| e.path()))
             .filter(|p| p.extension().is_some_and(|x| x == "log"))
             .collect();
         paths.sort();
+        let mut spaces = Vec::new();
         for path in paths {
             let bytes = fs::read(&path).map_err(|e| io_error(&path, &e))?;
             let mut entries =
                 read_entries(&bytes).map_err(|e| Error(format!("{}: {e}", path.display())))?;
-            if entries.is_empty() {
+            let base = path.with_extension("base");
+            let mut space = if base.exists() {
+                let bytes = fs::read(&base).map_err(|e| io_error(&base, &e))?;
+                let snapshot: Snapshot = decode(&bytes)?;
+                Space::from_snapshot(snapshot)?
+            } else if entries.is_empty() {
                 continue;
-            }
-            let mut folder = Folder::from_genesis(entries.remove(0), authz)?;
-            for entry in entries {
-                match folder.accept(entry, authz) {
-                    Ok(()) | Err(Reject::Old) => {}
-                    Err(e) => {
-                        return Err(Error(format!(
-                            "{}: entry not taken again: {e:?}",
-                            path.display()
-                        )));
-                    }
-                }
-            }
-            folders.push(folder);
+            } else {
+                Space::from_genesis(&entries.remove(0))?
+            };
+            // Entries that are not good any more are left out.
+            let _ = space.insert(entries);
+            spaces.push(space);
         }
-        Ok(folders)
+        Ok(spaces)
     }
+}
 
-    /// The key-value store of an app.
+impl Store {
+    /// The cache of an app on this node: it does not sync, and can be made
+    /// again.
     pub fn kv_load(&self, app: &str) -> BTreeMap<String, Vec<u8>> {
-        let path = self.kv_path(app);
-        fs::read(path)
+        fs::read(self.kv_path(app))
             .ok()
             .and_then(|bytes| decode::<BTreeMap<String, Bytes>>(&bytes).ok())
             .map(|map| map.into_iter().map(|(k, v)| (k, v.0)).collect())
@@ -281,7 +311,17 @@ impl Store {
     }
 }
 
-impl fos_sync::Blobs for Store {
+fn frame(entries: &[Entry]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for entry in entries {
+        let bytes = encode(entry);
+        out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+        out.extend_from_slice(&bytes);
+    }
+    out
+}
+
+impl Contents for Store {
     fn has(&self, hash: Hash) -> bool {
         self.blob_path(hash).exists()
     }
@@ -323,8 +363,7 @@ pub fn write_atomic(path: &Path, data: &[u8]) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use fos_fs::{Op, Open, SignedWrite};
-    use fos_sync::Blobs as _;
+    use fos_space::{Act, Content, Principal};
 
     use super::*;
 
@@ -337,35 +376,40 @@ mod tests {
         let token = store.token().unwrap();
         assert_eq!(store.token().unwrap(), token);
 
-        let mut open = Open::default();
-        let (mut folder, genesis) = Folder::create("f", &key, &mut open);
-        let hash = store.put_blob(b"hello").unwrap();
-        let op = Op::Put {
-            path: "/a".into(),
-            blob: hash,
-            size: 5,
-        };
-        let entry = folder
-            .order(
-                SignedWrite::sign(Some(folder.id()), 1, op, &key),
+        let (mut space, genesis) = Space::create(Principal::Key(key.public()), &key, 0, 1);
+        store.put_piece(Hash::of(b"hello"), b"hello").unwrap();
+        let entry = space
+            .write(
                 &key,
-                &mut open,
+                1,
+                vec![Act::Create {
+                    name: "a".into(),
+                    content: Content::of(b"hello"),
+                }],
             )
             .unwrap();
-        store.append_entries(folder.id(), &[genesis]).unwrap();
-        store.append_entries(folder.id(), &[entry]).unwrap();
-        store.set_root(folder.id()).unwrap();
+        store.append_entries(space.id(), &[genesis]).unwrap();
+        store.append_entries(space.id(), &[entry]).unwrap();
+        store.set_home(space.id()).unwrap();
 
         let again = Store::open(dir.path()).unwrap();
-        let folders = again.load_folders(&mut open).unwrap();
-        assert_eq!(folders.len(), 1);
-        assert_eq!(folders[0].head(), folder.head());
-        assert_eq!(again.root().unwrap(), Some(folder.id()));
-        assert_eq!(again.get(hash).as_deref(), Some(&b"hello"[..]));
+        let spaces = again.load_spaces().unwrap();
+        assert_eq!(spaces.len(), 1);
+        assert_eq!(spaces[0].digest(), space.digest());
+        assert_eq!(again.home().unwrap(), Some(space.id()));
+        assert_eq!(
+            again.get(Hash::of(b"hello")).as_deref(),
+            Some(&b"hello"[..])
+        );
 
-        let mut kv = BTreeMap::new();
-        kv.insert("k".to_string(), b"v".to_vec());
-        again.kv_save("photos", &kv).unwrap();
-        assert_eq!(again.kv_load("photos"), kv);
+        // After compaction, the base and the rest are kept.
+        space
+            .checkpoint(&key, 2, fos_space::Retention::default())
+            .unwrap();
+        assert!(space.compact());
+        again.save_space(&space).unwrap();
+        let spaces = again.load_spaces().unwrap();
+        assert_eq!(spaces[0].digest(), space.digest());
+        assert!(spaces[0].base().is_some());
     }
 }

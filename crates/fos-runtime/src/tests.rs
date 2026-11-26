@@ -2,8 +2,6 @@
 
 use std::sync::Mutex;
 
-use fos_core::SecretKey;
-
 use super::*;
 
 /// The .app folders that `apps` (scripts/apps.py) builds.
@@ -17,44 +15,6 @@ fn bundle(name: &str) -> Bundle {
         dir.display()
     );
     Bundle::read_dir(&dir).unwrap()
-}
-
-#[test]
-fn the_capability_engine_runs() {
-    let runtime = Runtime::new().unwrap();
-    let mut engine = runtime.engine(&bundle("Capability.app")).unwrap();
-    let (alice, bob) = (
-        SecretKey::from_seed(&[1; 32]).public(),
-        SecretKey::from_seed(&[2; 32]).public(),
-    );
-    let folder = Hash::of(b"folder");
-
-    let state = engine.init(folder, alice);
-    assert_eq!(
-        engine.check(&state, alice, Ability::Write, folder, "/a"),
-        Decision::Allow
-    );
-    assert!(matches!(
-        engine.check(&state, bob, Ability::Read, folder, "/a"),
-        Decision::Deny(_)
-    ));
-
-    let policy = engine.grant(bob, &[Ability::Read, Ability::Store], "/");
-    assert_eq!(
-        String::from_utf8(policy.clone()).unwrap(),
-        format!("grant {bob} read,store /")
-    );
-    let state = engine.apply(&state, alice, &policy).unwrap();
-    assert_eq!(
-        engine.check(&state, bob, Ability::Read, folder, "/a"),
-        Decision::Allow
-    );
-    assert_eq!(engine.storers(&state), vec![alice, bob]);
-    engine.apply(&state, bob, b"nonsense").unwrap_err();
-    // An engine is not an app.
-    runtime
-        .app(&bundle("Capability.app"), Arc::new(Host::default()))
-        .unwrap_err();
 }
 
 #[derive(Default)]
@@ -170,9 +130,4 @@ async fn the_photos_app_answers_http() {
     // Each request has a new instance; a second one works the same.
     let response = app.handle(get("/nothing", None)).await.unwrap();
     assert_eq!(response.status(), 404);
-
-    // An engine is not an app.
-    runtime
-        .http_app(&bundle("Capability.app"), Arc::new(Host::default()))
-        .unwrap_err();
 }

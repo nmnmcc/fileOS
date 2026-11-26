@@ -13,7 +13,7 @@ fileOS 还是原型。数据格式在不同版本之间还会改变。
 
 ```sh
 cargo build --release -p fos   # 程序：target/release/fos
-apps                           # 引擎和 App：target/apps/*.app
+apps                           # App：target/apps/*.app
 ```
 
 发布包里也是同样的文件：`fos` 程序和 `apps/` 文件夹。
@@ -21,10 +21,10 @@ apps                           # 引擎和 App：target/apps/*.app
 ## 创建节点
 
 ```sh
-fos node init --engine target/apps/Capability.app
+fos node init
 ```
 
-这会创建数据目录（默认是 `~/.fileos`，可以用 `--dir` 或 `FOS_DIR` 修改）、节点密钥和根文件夹。引擎就是节点的规则。`Capability.app` 是默认引擎：文件夹的创建者可以做任何事，并决定别人可以做什么。
+这会创建数据目录（默认是 `~/.fileos`，可以用 `--dir` 或 `FOS_DIR` 修改）、节点密钥和它的家空间。其他空间挂载在家空间中，例如 `/photos`。
 
 ## 运行
 
@@ -41,7 +41,7 @@ fos node run
 | `--port PORT`   | 网关的端口（默认 7341；0 表示任意空闲端口）      |
 | `--no-mdns`     | 不在家庭网络中寻找节点                           |
 
-`fos node status` 显示节点密钥、监听地址（带 `/p2p/…`，可以直接给另一个节点）、对端和文件夹。
+`fos node status` 显示节点密钥、监听地址（带 `/p2p/…`，可以直接给另一个节点）、对端和空间。
 
 ## 连接两个节点
 
@@ -51,25 +51,30 @@ fos node run
 fos node connect /ip4/192.0.2.10/tcp/4001/p2p/12D3KooW…
 ```
 
-网络使用 [libp2p](https://libp2p.io)：TCP 加 Noise 和 Yamux、中继和打洞。没有 DHT：节点只和你让它连接的节点通信，也只把文件夹发给它的规则允许的节点。
+网络使用 [libp2p](https://libp2p.io)：TCP 加 Noise 和 Yamux、中继和打洞。没有 DHT：节点只和你让它连接的节点通信，也只把空间发给有保存授权的节点（对整个空间有 `data.keep` 或 `files.read`）。
 
 ## 数据目录
 
 ```text
 node.key          节点密钥（请保密）
-root              根文件夹的 ID
-engine/           本节点的引擎
-blobs/            文件内容，按哈希命名
-folders/*.log     每个文件夹的签名日志
-local/*.kv        每个 App 只保存在本节点上的数据
+identity-*.key    身份的密钥，只在持有它们的节点上
+home              家空间的 ID
+blobs/            内容：块和块列表，按哈希命名
+spaces/*.log      每个空间的签名记录
+spaces/*.base     压缩后，最近一个检查点的快照
+local/*.kv        每个 App 只保存在本节点上的缓存
 gateway.token     网关令牌
 ```
 
-在节点停止时复制这个目录，就是一份完整的备份。节点启动时会重新读取每条日志，并用引擎检查每一条记录。
+在节点停止时复制这个目录，就是一份完整的备份。节点启动时会重新读取每条日志，并检查每一条记录。
+
+## 磁盘空间
+
+节点在自己拥有的空间达到 1000 条记录后做一个检查点，然后丢掉它之前的记录。旧版本随时间变稀疏：一天内每小时一个，30 天内每天一个，一年内每周一个。删除的文件保留 30 天。`fos space checkpoint <path>` 可以立即做一个检查点。
 
 ## 出问题时
 
-- **文件夹没有同步过来。** 确认节点已经连接（`fos node status` 会列出对端），并且文件夹的主人给了你的节点密钥 `store` 权限。
-- **写入在等待。** `fos node status` 会显示有多少写入在等待排序节点。那个节点重新连上后，它们就会发出去。
-- **`fos node status` 里有 `FORK`。** 你的引擎没有接受排序节点已经接受的一条记录。状态里会写明是哪一条、为什么。
+- **空间没有同步过来。** 确认节点已经连接（`fos node status` 会列出对端），并且空间的主人给了你的节点密钥保存它的授权（`fos space grant /photos <key> read`）。
+- **写入没有到另一个节点。** 节点任何时候都能写，离线时也能；重新连接后会把写入发出去。
+- **`fos node status` 里有 “entries have no effect”。** 有些记录不被允许：例如它们和访问被收回同时发生。`fos space grants <path>` 会列出授权。
 - **需要更多信息。** 用 `RUST_LOG=debug fos node run` 运行节点。

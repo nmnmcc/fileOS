@@ -101,7 +101,7 @@ for them.
 - It puts in safe default headers: `Content-Security-Policy`,
   `X-Content-Type-Options: nosniff`, `Cross-Origin-Opener-Policy`,
   `Cross-Origin-Resource-Policy` and `Referrer-Policy`. An app may make them
-  stricter. If an app may make them less strict is a policy of the engine.
+  stricter. If an app may make them less strict is a policy, with a default.
 
 The HTTP API keeps to RFC 9110: `ETag` and `If-Match` for versions, `Range`
 for large files, and `application/problem+json` (RFC 9457) for errors.

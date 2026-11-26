@@ -1,17 +1,17 @@
 ---
-title: Writing apps and engines
+title: Writing apps
 description: The interfaces, the SDK, .app files and the manifest.
 ---
 
-:::caution[The design is changing]
-This page is about the prototype. In the new design there is no
-authorization engine, no `kv` and no streams (everything is a file), grants
-come at run time and apps do not see real paths (see
-[The model](../access/)), and apps are workers that wake up for `fetch` and
-`watch` events (see [Apps as workers](../workers/)).
+:::note[What comes next]
+This page is the app interface of today. Next, grants come at run time and
+apps do not see real paths (see [The model](../access/)), and apps become
+workers that wake up for `fetch`, `watch` and `schedule` events (see
+[Apps as workers](../workers/)). The interface only gets new things: apps
+made today keep working.
 :::
 
-Apps and engines are WebAssembly components. The core runs them with
+Apps are WebAssembly components. The kernel runs them with
 [wasmtime](https://wasmtime.dev). They talk to the core only through the
 interfaces in [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit).
 
@@ -22,8 +22,9 @@ An app is a component of the `app` world.
 | The core gives (imports) | What it does                                                   |
 | ------------------------ | -------------------------------------------------------------- |
 | `fs`                     | `read`, `write`, `append`, `delete`, `list-dir`, on node paths |
-| `kv`                     | A key-value store on this node only, for indexes               |
+| `kv`                     | A cache on this node only, for indexes that can be made again  |
 | `log`                    | Messages for the node's status and log                         |
+| `wasi:clocks/wall-clock` | The time, for names that sort by time                          |
 
 | The app gives (exports)             | When the core calls it                       |
 | ----------------------------------- | -------------------------------------------- |
@@ -31,11 +32,18 @@ An app is a component of the `app` world.
 | `wasi:http/incoming-handler.handle` | An HTTP request for the app's origin came in |
 
 Every call to `fs` is made with the **app's own key**, which the node makes
-from its own key. The engine checks every call. An app can only use the paths
-that the user gave it when it was installed. Each call into an app has limits
-on fuel and memory.
+from its own key. The kernel checks every call against the grants of that key
+in the space of the path. An app can only use the paths that the user gave it
+when it was installed. Each call into an app has limits on fuel and memory.
 
 Apps work together only through files: one app writes, another watches.
+
+Keep data in files, and keep records in small files: a chat is a directory
+with one file for each message, named so that the names sort by time and
+never meet (the chat app uses the time and a hash). Two people can then write
+at the same time on different nodes, and nothing is lost. When two nodes
+change the same file at the same time, both versions are kept; `read` gives
+the newest. See [Data in apps](../app-data/).
 
 A small app, with the Rust SDK in `apps/fos-app`:
 
@@ -85,29 +93,6 @@ impl Http for Sizes {
 
 See "HTTP and the browser" in the architecture for the reasons.
 
-## Engines
-
-An engine is a component of the `engine` world. It exports `authz`. Each node
-runs one engine, which its owner picks. The core keeps the state of the engine
-for each folder as bytes, and gives no meaning to them.
-
-| Function  | What the core asks                                             |
-| --------- | -------------------------------------------------------------- |
-| `init`    | The state of a new folder                                      |
-| `apply`   | Read one policy entry; give the new state, or say why not      |
-| `check`   | May this key do this (read, write, append, grant, store) here? |
-| `readers` | The keys that may read the folder                              |
-| `storers` | The keys of the nodes that may keep a copy                     |
-| `grant`   | The policy entry that gives a key some abilities on a path     |
-
-With `grant`, the core can give access to an app or a person without knowing
-the format of policy entries. The default engine, `apps/capability`, uses
-lines of text such as `grant <key> read,write /photos`.
-
-The core puts no limits on the engine. But two nodes with different engines
-can come to different answers about the same entry. Then their copies of a
-folder fork. See [Architecture](../fileos/#a-shared-folder).
-
 ## .app files
 
 You make an app as an `.app` folder:
@@ -122,7 +107,7 @@ Photos.app/
 ```toml
 id = "photos"
 name = "Photos"
-kind = "app"              # or "engine"
+kind = "app"
 version = "0.1.0"
 build = 1
 requires = "fos:app@0.1.0"
@@ -130,7 +115,8 @@ main = "bin/app.wasm"
 
 [[permissions]]           # given to the app's key when it is installed
 path = "/photos"
-access = "read"           # read, write, append or read-write
+access = "read"           # a template (read, read-write, manage) or exact
+                          # permissions such as "files.read,files.watch"
 reason = "reason.photos"  # a key in resources/locales/
 
 [[watch]]                 # the paths that on-change is called for
@@ -147,11 +133,11 @@ To give the app to others, pack the folder into an `.app` file:
 | `payload.tar.zst` | Every other file, in a tar, compressed with zstd               |
 
 The same folder always gives the same file: the tar has no times or owners.
-`fos node init --engine` and `fos app install` take an `.app` file, or an
-`.app` folder while you make it.
+`fos app install` takes an `.app` file, or an `.app` folder while you make
+it.
 
-When an app is installed, its files become a fileOS folder at
-`/apps/<name>.app`, so it syncs to your other nodes like any other folder.
+When an app is installed, its files go into a new space mounted at
+`/apps/<name>.app`, and its key gets the grants that its manifest asks for.
 
 ## Building
 

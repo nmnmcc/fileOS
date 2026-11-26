@@ -2,9 +2,10 @@
 
 //! The fileOS chat app.
 //!
-//! A room is a stream in the folder at `/chat`: `/chat/<room>`. Each message
-//! is one record of the stream: one line, `<from>\t<text>\n`, with `\`, tab
-//! and new line escaped. Appends to a stream never conflict, so people on
+//! A room is a directory in the space at `/chat`: `/chat/<room>/`. Each
+//! message is one small file in it, `<time>-<hash>`, with one line:
+//! `<from>\t<text>\n`, with `\`, tab and new line escaped. The names sort by
+//! time and never meet, so different files never conflict, and people on
 //! different nodes can write at the same time. Share `/chat` with other
 //! nodes to talk with them.
 //!
@@ -29,7 +30,11 @@ struct Chat;
 
 impl Guest for Chat {
     fn on_change(path: String) {
-        let Some(room) = path.strip_prefix("/chat/").filter(|r| valid_room(r)) else {
+        let Some(room) = path
+            .strip_prefix("/chat/")
+            .and_then(|r| r.split('/').next())
+            .filter(|r| valid_room(r))
+        else {
             return;
         };
         let count = messages(room).len();
@@ -134,7 +139,14 @@ fn send(room: &str, req: &Request) -> Response {
         return Response::text(400, "a message needs a name and a text\n");
     }
     let record = format!("{}\t{}\n", escape_field(&from), escape_field(&text));
-    match fs::append(&format!("{ROOT}/{room}"), record.as_bytes()) {
+    let now = fos_app::app::wasi::clocks::wall_clock::now();
+    let name = format!(
+        "{:012}.{:09}-{:016x}",
+        now.seconds,
+        now.nanoseconds,
+        fnv(record.as_bytes())
+    );
+    match fs::write(&format!("{ROOT}/{room}/{name}"), record.as_bytes()) {
         Ok(()) => redirect(&format!("/room/{room}")),
         Err(e) => Response::text(500, format!("the message was not sent: {e:?}\n")),
     }
@@ -142,16 +154,25 @@ fn send(room: &str, req: &Request) -> Response {
 
 /// The messages of a room, oldest first.
 fn messages(room: &str) -> Vec<(String, String)> {
-    let Ok(bytes) = fs::read(&format!("{ROOT}/{room}")) else {
-        return Vec::new();
-    };
-    String::from_utf8_lossy(&bytes)
-        .lines()
-        .filter_map(|line| {
-            let (from, text) = line.split_once('\t')?;
+    let mut names = fs::list_dir(&format!("{ROOT}/{room}")).unwrap_or_default();
+    names.sort();
+    names
+        .iter()
+        .filter_map(|name| fs::read(&format!("{ROOT}/{room}/{name}")).ok())
+        .filter_map(|bytes| {
+            let line = String::from_utf8_lossy(&bytes).into_owned();
+            let (from, text) = line.trim_end_matches('\n').split_once('\t')?;
             Some((unescape_field(from), unescape_field(text)))
         })
         .collect()
+}
+
+/// A 64-bit FNV-1a hash, so that two messages sent at the same time have
+/// different names.
+fn fnv(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+        (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 fn page(title: &str, req: &Request, body: &str) -> Response {

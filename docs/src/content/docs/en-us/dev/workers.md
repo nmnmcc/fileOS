@@ -18,7 +18,7 @@ its own data, and the person does not get one experience.
 - **Every identity has a home space** that syncs to all of its nodes. It keeps
   the person's apps, their settings and the view of the person: which grants
   are mounted at which names (`/photos`, …). A node keeps only what is about
-  that machine apart: its engine, caches and settings.
+  that machine apart: its caches and settings.
 - **An app is installed into the home space.** Every node of the identity gets
   the same app.
 - **An app has one name in an identity**, and its address is the same on every
@@ -157,14 +157,14 @@ synced, so it is handled once and every node gets the result.
 
 ## What changes from today
 
-| Part             | Today                                                   | New                                                           |
-| ---------------- | ------------------------------------------------------- | ------------------------------------------------------------- |
-| Where apps are   | The root folder of a node; each device installs its own | The home space of the identity; synced                        |
-| Address          | By node: `photos-<hash>.localhost`                      | By identity: `photos.localhost` on every device               |
-| How apps run     | One instance kept for events; HTTP per request          | A worker: a new instance for each event                       |
-| Where events run | The node that gets the event                            | The list of nodes the person sets, with fallback              |
-| App state        | `kv` on one node only                                   | Files: synced in the home space, and cache files on each node |
-| App keys         | From the node key                                       | From the shared app seed of the identity                      |
+| Part             | Today                                                             | New                                                           |
+| ---------------- | ----------------------------------------------------------------- | ------------------------------------------------------------- |
+| Where apps are   | A space in the home space of a node; each device installs its own | The home space of the identity; synced                        |
+| Address          | By node: `photos-<hash>.localhost`                                | By identity: `photos.localhost` on every device               |
+| How apps run     | One instance kept for events; HTTP per request                    | A worker: a new instance for each event                       |
+| Where events run | The node that gets the event                                      | The list of nodes the person sets, with fallback              |
+| App state        | `kv` on one node only                                             | Files: synced in the home space, and cache files on each node |
+| App keys         | From the node key                                                 | From the shared app seed of the identity                      |
 
 ## Order of work
 

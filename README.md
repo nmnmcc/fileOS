@@ -2,71 +2,75 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-fileOS is a replicated file system for people and the small groups they are part of. Its state is kept by a number of nodes, and a node keeps only the folders it has agreed to keep. There is no global consensus and no global content DHT.
+fileOS is a replicated file system for people and the small groups they are part of. Its state is kept by a number of nodes, and a node keeps only the spaces it has been given and has agreed to keep. There is no global consensus, no ordering node and no global content DHT.
 
 > [!NOTE]
 > A prototype. Formats will change.
 
 ## System model
 
-**Principals.** People, devices, nodes and apps are named by ed25519 public keys.
+**Principals.** Devices, nodes and apps are named by ed25519 public keys. A group is a principal with no key; its members act for it, and its owner is a key or another group. A person is an identity (`did:fos`) with a number of nodes.
 
-**Folders.** A folder is the unit of replication, ordering and authorization. Its state is fully given by one signed, append-only log, and its ID is the hash of the first record in it. The records are `put`, `delete`, `append`, `mount` and `policy`. File contents are blobs addressed by their BLAKE3 hash. A folder may mount other folders at paths, which gives a tree of names.
+**Spaces.** A space is the unit of replication, ownership and retention. Its ID is the hash of its first entry. Each writer has a signed, append-only log in the space; each entry names the entries it comes after, so the logs form one causal graph. The state is a function of the set of entries alone, so replicas that have the same entries are in the same state (strong eventual consistency), and every node may write while offline.
 
-**Order.** Every folder has one ordering node, and the total order that it gives is the main line of the folder. The ordering node may give the job to another node. A write to a file takes the place of the earlier version, which stays in the history. Appends to a stream commute, so they never conflict.
+**Files.** Within a space, names are flat; a directory is a prefix. A file has a fixed ID, the hash of the entry that made it and the index of the act. A rename is a new version. Concurrent versions of a file are kept side by side, and none is dropped without the user knowing. Content is cut into chunks at points chosen by the content and addressed by BLAKE3 hash.
 
-**Authorization.** The kernel checks facts: signatures and hashes. The decisions are made by the engine of each node, which its owner chooses. Because nodes make their decisions independently, replicas may fork when their policies are different. The system does not force agreement.
+**Authorization.** A grant gives exact permissions, allow or deny, on a name prefix or on one file by ID, to a principal. Grants are given on only with the same or less, and taking one back takes back what was given on from it. Validity is decided from the causal past of each entry, with strong removal: acts concurrent with the removal of their author's access have no effect. No clock is used.
 
-**Layers.** The kernel is the file system, sync over libp2p and the app runtime (wasmtime). Apps are WebAssembly components that use the file system through WIT interfaces. Each app runs in a sandbox with its own key and sees only the paths given to it. Kernel plugins are WebAssembly components that do a part of the kernel's work. The only one today is the engine.
+**Checkpoints.** The owner signs the hash of the state in the past of a checkpoint. Entries concurrent with a checkpoint are not taken; their authors write them again on top. Nodes compact to the checkpoint, start from a signed snapshot, and thin old versions by a retention policy, so storage does not grow without a limit.
+
+**Layers.** The kernel is the spaces, sync over libp2p, the app runtime (wasmtime) and a local HTTP gateway. Apps are WebAssembly components that use the file system through WIT interfaces. Each app runs in a sandbox with its own key and is checked against its grants. The kernel may have plugins for parts of its own work; there are none today.
 
 ## Try it
 
 With the devenv shell (`direnv allow`):
 
 ```sh
-cargo build -p fos                                  # the program
-apps                                                # the engine and apps, in target/apps/
-fos node init --engine target/apps/Capability.app   # a node in ~/.fileos
-fos node run                                        # the network, the apps and the gateway
+cargo build -p fos                       # the program
+apps                                     # the apps, in target/apps/
+fos node init                            # a node in ~/.fileos
+fos node run                             # the network, the apps and the gateway
 ```
 
 In another terminal:
 
 ```sh
-fos folder new photos /photos                       # a folder, mounted at /photos
-fos app install target/apps/Photos.app              # the photos app
+fos space new /photos                    # a space, mounted at /photos
+fos app install target/apps/Photos.app   # the photos app
 fos fs put /photos/cat.png cat.png
 fos fs ls /photos
 fos node status
 ```
 
-To share `/photos` with another node: `fos folder grant /photos <its node key> all` here, then `fos folder mount <folder ID> /photos` there.
+To share `/photos` with another node: `fos space grant /photos <its node key> read-write` here, then `fos space mount <space ID> /photos` there.
 
 ## What is there
 
-- [x] **Folders**
-  - [x] A signed log for each folder: files with all their versions, streams, mounts
-  - [x] File contents as blobs named by their hash
-  - [x] One ordering node for each folder; it can give the job to another node
-  - [x] A copy forks, and says why, when its node's rules do not take an entry
-- [x] **Kernel plugins: the rules for access (the engine)**
-  - [x] One engine for each node, chosen by its owner, with no limits
-  - [x] The default engine: capabilities, given on with less power, taken back with everything that came from them
+- [x] **Spaces**
+  - [x] A signed log for each writer, in one causal graph; no ordering node; writes while offline
+  - [x] Files with fixed IDs, versions side by side, renames that keep the ID
+  - [x] Content in chunks cut where the content says, named by hash
+  - [x] Checkpoints, compaction, snapshots for new nodes, retention thinner with age
+- [x] **Access**
+  - [x] Grants: exact permissions or templates, on prefixes or on files, allow or deny
+  - [x] Given on only smaller; taken back with everything that came from them; strong removal
+  - [x] Groups, owned by keys or by groups, and groups in groups
+  - [ ] Checks on writes by the app that manages the files; the picker for apps
 - [ ] **Apps**
-  - [x] Apps come as `.app` files (a zip with no compression: the manifest, and the rest in `tar.zst`), and sync like any folder once installed
+  - [x] Apps come as `.app` files (a zip with no compression: the manifest, and the rest in `tar.zst`)
   - [x] Each app has its own key, gets only what its manifest asks for, and runs with limits on fuel and memory
-  - [x] The photos app: a gallery at its own origin, upload, and an index of image sizes
-  - [x] The chat app: rooms as streams in a folder that you share, at its own origin
-  - [ ] Apps that answer HTTP (`handle-http`), extensions for file types, web interfaces
-  - [ ] Files over WebDAV, a vault for Bitwarden clients, chat, contacts and calendars
-- [ ] **Network**
+  - [x] Apps answer HTTP at their own origin, `<app-id>.localhost`, with `wasi:http`
+  - [x] The photos app: a gallery, upload, and an index of image sizes
+  - [x] The chat app: rooms with one file for each message, in a space that you share
+  - [ ] Apps as workers, `wasi:filesystem`, watch options, schedules
+- [ ] **Network and keys**
   - [x] libp2p: TCP, Noise, Yamux, mDNS, relays, hole punching, AutoNAT
-  - [x] Writes wait for their ordering node and go when it is back
+  - [ ] Encryption: keys that follow prefixes, HPKE (RFC 9180), keys destroyed on delete
   - [ ] QUIC
-  - [ ] Folders encrypted: random data keys, epoch keys sent with HPKE (RFC 9180), keys destroyed on delete
 - [ ] **Identity**
   - [x] One identity for a person: a DID (`did:fos`, the `did:plc` method with no directory), apart from the keys of their nodes
-  - [x] Rotation keys and a signing key; node certificates in an identity folder
+  - [x] Rotation keys and a signing key; node certificates in an identity space
+  - [ ] An identity acting for all its devices
   - [ ] Domain names as other names of an identity (as AT Protocol handles)
   - [ ] Finding all the nodes of an identity through rendezvous nodes
 - [x] **Running a node**
@@ -75,7 +79,7 @@ To share `/photos` with another node: `fos folder grant /photos <its node key> a
 
 ## Documentation
 
-[User manual](docs/src/content/docs/en-us/user/index.md) · [Running a node](docs/src/content/docs/en-us/admin/index.md) · [Architecture](docs/src/content/docs/en-us/dev/fileos.md) · [Writing apps and engines](docs/src/content/docs/en-us/dev/apps.md) · [Contributing](CONTRIBUTING.md)
+[User manual](docs/src/content/docs/en-us/user/index.md) · [Running a node](docs/src/content/docs/en-us/admin/index.md) · [Architecture](docs/src/content/docs/en-us/dev/fileos.md) · [Writing apps](docs/src/content/docs/en-us/dev/apps.md) · [Contributing](CONTRIBUTING.md)
 
 ## License
 

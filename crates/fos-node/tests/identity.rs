@@ -1,24 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! One identity (a did:fos DID) with two nodes, over libp2p, with the capability engine from
-//! `target/apps` (run `apps` first).
+//! One identity (a did:fos DID) with two nodes, over libp2p.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use fos_core::SecretKey;
 use fos_id::Link;
 use fos_node::{NetConfig, Node};
-
-fn engine() -> PathBuf {
-    let engine = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/apps/Capability.app");
-    assert!(
-        engine.exists(),
-        "{} is missing: run `apps` first",
-        engine.display()
-    );
-    engine
-}
 
 /// Waits until `ok` is true, for at most 30 seconds.
 async fn until(what: &str, mut ok: impl FnMut() -> bool) {
@@ -45,8 +34,8 @@ fn start(dir: &Path) -> Node {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_identity_has_its_nodes() {
     let (dir_a, dir_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    Node::init(dir_a.path(), &engine()).unwrap();
-    Node::init(dir_b.path(), &engine()).unwrap();
+    Node::init(dir_a.path()).unwrap();
+    Node::init(dir_b.path()).unwrap();
     let laptop = start(dir_a.path());
     let vps = start(dir_b.path());
     until("the laptop listens", || {
@@ -74,10 +63,10 @@ async fn an_identity_has_its_nodes() {
     laptop.identity_new().unwrap_err();
 
     // The laptop adds the VPS, and the VPS joins.
-    let folder = laptop.identity_add_node(vps.key()).unwrap();
-    assert_eq!(folder, id.folder);
-    vps.identity_join(folder).unwrap();
-    until("the VPS gets the identity folder", || {
+    let space = laptop.identity_add_node(vps.key()).unwrap();
+    assert_eq!(space, id.space);
+    vps.identity_join(space).unwrap();
+    until("the VPS gets the identity space", || {
         vps.identity().is_some_and(|id| id.nodes.len() == 2)
     })
     .await;
@@ -87,7 +76,7 @@ async fn an_identity_has_its_nodes() {
     assert!(on_vps.nodes.contains(&laptop.key()) && on_vps.nodes.contains(&vps.key()));
 
     // Only the node that holds the signing key can add nodes. The VPS cannot, and
-    // cannot write into the identity folder.
+    // cannot write into the identity space.
     let stranger = SecretKey::from_seed(&[7; 32]).public();
     vps.identity_add_node(stranger).unwrap_err();
     vps.put("/identity/nodes/x", b"x").unwrap_err();

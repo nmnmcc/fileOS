@@ -3,11 +3,12 @@ title: "The model: spaces, grants and views"
 description: Seven ideas (content, files, spaces, principals, grants, views and events), what each one is, and why some things are kept apart and not made one.
 ---
 
-:::note[Status: design]
-Nothing on this page is built yet. The prototype has folders with an
-ordering node, an authorization engine (a kernel plugin), and gives apps the
-paths of their manifest when they are installed. This page takes the place of
-all of these.
+:::note[Status: built in part]
+Built: content, files, spaces, principals (keys and groups) and grants, with
+strong removal (in `fos-space`). Not built yet: people as principals, views,
+asking at run time, sharing between apps, checks on writes, and the `watch`
+options and `schedule` events. Today an app gets the paths of its manifest
+when it is installed.
 :::
 
 ## The test for making things one

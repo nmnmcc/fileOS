@@ -85,7 +85,7 @@ workflow makes the tag and the GitHub release. The steps are in
 ## Licensing and sign-off
 
 fileOS is AGPL-3.0-only. The app SDK (`apps/fos-app`) and the interfaces
-in `wit/` are MIT OR Apache-2.0, so that apps and engines can use any license. Start every source file with an SPDX header.
+in `wit/` are MIT OR Apache-2.0, so that apps can use any license. Start every source file with an SPDX header.
 There is no CLA: you keep your copyright.
 
 Every commit must be signed off under the

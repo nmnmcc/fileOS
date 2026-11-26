@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Two nodes over libp2p, with the capability engine and the photos app
+//! Two nodes over libp2p, with the photos app
 //! from `target/apps` (run `apps` first).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use fos_node::{NetConfig, Node, parse_abilities};
+use fos_node::{NetConfig, Node, parse_permissions};
 
 fn apps() -> PathBuf {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/apps");
     assert!(
-        dir.join("Capability.app").exists(),
+        dir.join("Photos.app").exists(),
         "{} is missing: run `apps` first",
         dir.display()
     );
@@ -48,11 +48,11 @@ fn start(dir: &Path) -> Node {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn two_nodes_share_a_photos_folder() {
+async fn two_nodes_share_a_photos_space() {
     let apps = apps();
     let (dir_a, dir_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    Node::init(dir_a.path(), &apps.join("Capability.app")).unwrap();
-    Node::init(dir_b.path(), &apps.join("Capability.app")).unwrap();
+    Node::init(dir_a.path()).unwrap();
+    Node::init(dir_b.path()).unwrap();
     let alice = start(dir_a.path());
     let bob = start(dir_b.path());
 
@@ -61,26 +61,25 @@ async fn two_nodes_share_a_photos_folder() {
     bob.dial(&alice.status().listening[0]).unwrap();
     until("they connect", || alice.status().peers.contains(&bob.key())).await;
 
-    // Alice makes a folder and lets Bob's node use and keep it.
-    let photos = alice.create("photos", "/photos").unwrap();
+    // Alice makes a space and lets Bob's node use, keep and manage it.
+    let photos = alice.create("/photos").unwrap();
     alice
-        .grant("/photos", bob.key(), &parse_abilities("all").unwrap())
+        .grant("/photos", bob.key(), &parse_permissions("all").unwrap())
         .unwrap();
     bob.mount(photos, "/photos").unwrap();
     let entries = |node: &Node| {
         node.status()
-            .folders
+            .spaces
             .iter()
             .find(|f| f.id == photos)
             .map_or(0, |f| f.entries)
     };
-    until("bob gets the folder", || entries(&bob) == entries(&alice)).await;
+    until("bob gets the space", || entries(&bob) == entries(&alice)).await;
 
-    // Bob installs the photos app. Its permission is a policy entry, which
-    // goes to Alice, the ordering node of the folder.
+    // Bob installs the photos app. Bob gives its key a grant in Alice's
+    // space: he may, because Alice let him manage it.
     let app_key = bob.install(&apps.join("Photos.app")).unwrap().key;
     assert_ne!(app_key, bob.key());
-    until("alice orders the app's grant", || bob.status().pending == 0).await;
     assert_eq!(bob.status().apps, ["photos"]);
 
     // A photo from Alice comes to Bob, and his photos app indexes it.
@@ -94,7 +93,7 @@ async fn two_nodes_share_a_photos_folder() {
     .await;
     assert_eq!(bob.read("/photos/2026/a.png").unwrap(), png(64, 32));
 
-    // Bob writes too. The write goes to Alice, and comes back in the main line.
+    // Bob writes too, with no ordering node.
     bob.put("/photos/2026/b.png", &png(10, 20)).unwrap();
     until("alice gets bob's photo", || {
         alice.read("/photos/2026/b.png").is_ok()
@@ -111,7 +110,7 @@ async fn two_nodes_share_a_photos_folder() {
     bob.read("/apps/Photos.app/manifest.toml").unwrap();
     alice.read("/apps/Photos.app/manifest.toml").unwrap_err();
 
-    // Bob's node comes back after a restart, with its folders and its app.
+    // Bob's node comes back after a restart, with its spaces and its app.
     let before = entries(&bob);
     drop(bob);
     let bob = Node::open(dir_b.path()).unwrap();
@@ -122,22 +121,21 @@ async fn two_nodes_share_a_photos_folder() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_node_without_a_grant_gets_nothing() {
-    let apps = apps();
     let (dir_a, dir_e) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    Node::init(dir_a.path(), &apps.join("Capability.app")).unwrap();
-    Node::init(dir_e.path(), &apps.join("Capability.app")).unwrap();
+    Node::init(dir_a.path()).unwrap();
+    Node::init(dir_e.path()).unwrap();
     let alice = start(dir_a.path());
     let eve = start(dir_e.path());
     until("alice listens", || !alice.status().listening.is_empty()).await;
     eve.dial(&alice.status().listening[0]).unwrap();
     until("they connect", || alice.status().peers.contains(&eve.key())).await;
 
-    let secret = alice.create("secret", "/secret").unwrap();
+    let secret = alice.create("/secret").unwrap();
     alice.put("/secret/plan.txt", b"plan").unwrap();
     eve.mount(secret, "/secret").unwrap();
     tokio::time::sleep(Duration::from_millis(500)).await;
-    assert!(eve.status().folders.iter().all(|f| f.id != secret));
+    assert!(eve.status().spaces.iter().all(|f| f.id != secret));
     eve.read("/secret/plan.txt").unwrap_err();
-    // Without a grant, Eve cannot write into Alice's folder from her own node.
+    // Without a grant, Eve cannot write into Alice's space from her own node.
     eve.put("/secret/x.txt", b"x").unwrap_err();
 }

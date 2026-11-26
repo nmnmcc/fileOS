@@ -21,17 +21,19 @@
 //! | Request                                      | What it does                         |
 //! | -------------------------------------------- | ------------------------------------ |
 //! | `GET /v0/status`                             | The status, as text                  |
-//! | `GET /v0/fs/<path>`                          | Read a file or stream                |
+//! | `GET /v0/fs/<path>`                          | Read a file                          |
 //! | `GET /v0/fs/<path>?list`                     | The names under a path, one a line   |
 //! | `PUT /v0/fs/<path>`                          | Put a file                           |
-//! | `POST /v0/fs/<path>?append`                  | Add a record to a stream             |
-//! | `DELETE /v0/fs/<path>`                       | Take a file or mount away            |
-//! | `POST /v0/folder?name=<n>&at=<path>`         | Make a folder and mount it           |
-//! | `POST /v0/mount?id=<id>&at=<path>`           | Mount a folder from other nodes      |
-//! | `POST /v0/policy/<path>`                     | Write a policy entry (the body)      |
-//! | `POST /v0/grant/<path>?to=<key>&abilities=…` | Give abilities, as the engine says   |
+//! | `POST /v0/fs/<path>?append`                  | Add to the end of a file             |
+//! | `DELETE /v0/fs/<path>`                       | Delete a file, or take a mount away  |
+//! | `POST /v0/space?at=<path>`                   | Make a space and mount it            |
+//! | `POST /v0/mount?id=<id>&at=<path>`           | Mount a space from other nodes       |
+//! | `GET /v0/grants/<path>`                      | The grants in the space of a path    |
+//! | `POST /v0/grants/<path>?to=<key>&permissions=` | Give permissions; prints the grant ID |
+//! | `DELETE /v0/grants/<path>?id=<grant>`        | Take back a grant                    |
+//! | `POST /v0/checkpoint/<path>`                 | Checkpoint and compact a space       |
 //! | `POST /v0/install?dir=<dir>`                 | Install an app from a directory      |
-//! | `GET /v0/kv/<app>`                           | An app's key-value store, as text    |
+//! | `GET /v0/kv/<app>`                           | An app's cache on this node, as text |
 //! | `POST /v0/dial`                              | Connect to a multiaddr (the body)    |
 //!
 
@@ -41,7 +43,7 @@ use std::path::PathBuf;
 
 use bytes::Bytes;
 use fos_core::Error;
-use fos_node::{Node, parse_abilities};
+use fos_node::{Node, parse_grant, parse_permissions};
 use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt as _, Full};
 use hyper::body::Incoming;
@@ -330,13 +332,24 @@ fn route(
             _ => Ok(reply(StatusCode::METHOD_NOT_ALLOWED, "")),
         };
     }
-    if let Some(at) = path.strip_prefix("/v0/policy") {
-        return node.policy(at, &body).and_then(|()| ok(String::new()));
+    if let Some(at) = path.strip_prefix("/v0/grants") {
+        let at = if at.is_empty() { "/" } else { at };
+        return match *method {
+            Method::GET => ok(node.grants(at).into_iter().map(|l| l + "\n").collect()),
+            Method::POST => {
+                let to = arg("to")?.parse()?;
+                let id = node.grant(at, to, &parse_permissions(&arg("permissions")?)?)?;
+                ok(format!("{}:{}\n", id.entry, id.index))
+            }
+            Method::DELETE => node
+                .take(at, parse_grant(&arg("id")?)?)
+                .and_then(|()| ok(String::new())),
+            _ => Ok(reply(StatusCode::METHOD_NOT_ALLOWED, "")),
+        };
     }
-    if let Some(at) = path.strip_prefix("/v0/grant") {
-        let to = arg("to")?.parse()?;
-        node.grant(at, to, &parse_abilities(&arg("abilities")?)?)?;
-        return ok(String::new());
+    if let Some(at) = path.strip_prefix("/v0/checkpoint") {
+        let at = if at.is_empty() { "/" } else { at };
+        return node.checkpoint(at).and_then(|()| ok(String::new()));
     }
     if let Some(app) = path.strip_prefix("/v0/kv/") {
         let lines: String = node
@@ -362,12 +375,10 @@ fn route(
             ok(String::new())
         }
         (&Method::POST, "/v0/id/join") => {
-            node.identity_join(arg("folder")?.parse()?)?;
+            node.identity_join(arg("space")?.parse()?)?;
             ok(String::new())
         }
-        (&Method::POST, "/v0/folder") => {
-            ok(format!("{}\n", node.create(&arg("name")?, &arg("at")?)?))
-        }
+        (&Method::POST, "/v0/space") => ok(format!("{}\n", node.create(&arg("at")?)?)),
         (&Method::POST, "/v0/mount") => {
             node.mount(arg("id")?.parse()?, &arg("at")?)?;
             ok(String::new())

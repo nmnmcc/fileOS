@@ -58,7 +58,7 @@ http://<plugin-id>.localhost:<端口>/    带界面的插件
 - 只接受已知的主机名（`fos.localhost`、`*.localhost`），防止 DNS rebinding。
 - 按主机名把请求交给对应的组件。
 - 删掉 App 回应里的 `Set-Cookie`，也从不把 `Cookie` 头发给 App。
-- 加上安全的默认头：`Content-Security-Policy`、`X-Content-Type-Options: nosniff`、`Cross-Origin-Opener-Policy`、`Cross-Origin-Resource-Policy` 和 `Referrer-Policy`。App 可以把它们收得更紧；能否放宽是引擎的一项策略。
+- 加上安全的默认头：`Content-Security-Policy`、`X-Content-Type-Options: nosniff`、`Cross-Origin-Opener-Policy`、`Cross-Origin-Resource-Policy` 和 `Referrer-Policy`。App 可以把它们收得更紧；能否放宽是一项有默认值的策略。
 
 HTTP API 遵循 RFC 9110：用 `ETag` 和 `If-Match` 处理版本，用 `Range` 处理大文件，错误用 `application/problem+json`（RFC 9457）。
 

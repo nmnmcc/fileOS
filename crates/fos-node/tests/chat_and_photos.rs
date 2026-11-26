@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use fos_node::{NetConfig, Node, parse_abilities};
+use fos_node::{NetConfig, Node, parse_permissions};
 
 fn apps() -> PathBuf {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/apps");
@@ -92,22 +92,22 @@ fn png(width: u32, height: u32) -> Vec<u8> {
 async fn chat_and_photos_work_between_two_nodes() {
     let apps = apps();
     let (dir_a, dir_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    Node::init(dir_a.path(), &apps.join("Capability.app")).unwrap();
-    Node::init(dir_b.path(), &apps.join("Capability.app")).unwrap();
+    Node::init(dir_a.path()).unwrap();
+    Node::init(dir_b.path()).unwrap();
     let alice = start(dir_a.path());
     let bob = start(dir_b.path());
     until("alice listens", || !alice.status().listening.is_empty()).await;
     bob.dial(&alice.status().listening[0]).unwrap();
     until("they connect", || alice.status().peers.contains(&bob.key())).await;
 
-    // Alice makes the folders and shares them with Bob's node.
-    let all = parse_abilities("all").unwrap();
-    for (name, at) in [("chat", "/chat"), ("photos", "/photos")] {
-        let id = alice.create(name, at).unwrap();
+    // Alice makes the spaces and shares them with Bob's node.
+    let all = parse_permissions("all").unwrap();
+    for at in ["/chat", "/photos"] {
+        let id = alice.create(at).unwrap();
         alice.grant(at, bob.key(), &all).unwrap();
         bob.mount(id, at).unwrap();
-        until("bob gets the folder", || {
-            bob.status().folders.iter().any(|f| f.id == id)
+        until("bob gets the space", || {
+            bob.status().spaces.iter().any(|f| f.id == id)
         })
         .await;
     }
@@ -117,7 +117,6 @@ async fn chat_and_photos_work_between_two_nodes() {
     let b_chat = bob.install(&apps.join("Chat.app")).unwrap().id;
     let a_photos = alice.install(&apps.join("Photos.app")).unwrap().id;
     let b_photos = bob.install(&apps.join("Photos.app")).unwrap().id;
-    until("bob's grants are in order", || bob.status().pending == 0).await;
 
     // Chat: Alice writes, Bob sees it; Bob answers, Alice sees it.
     send(&alice, &a_chat, "family", "Alice", "hello+Bob").await;
