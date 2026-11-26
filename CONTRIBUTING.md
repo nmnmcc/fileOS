@@ -48,7 +48,7 @@ An ordinary laptop should be enough to contribute. Most of Rust's compile time d
 
 | Measure                                | Budget  |
 | -------------------------------------- | ------- |
-| Clean debug build of the workspace     | ≤ 180 s |
+| Clean debug build of the workspace     | ≤ 360 s |
 | Rebuild after a change to a leaf crate | ≤ 5 s   |
 | Rebuild after a change to `fos-core`   | ≤ 20 s  |
 

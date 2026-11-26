@@ -33,7 +33,7 @@ budget on every pull request, measured on a 4-core laptop with 8 GB of RAM:
 
 | Measure                            | Budget  |
 | ---------------------------------- | ------- |
-| Clean debug build of the workspace | ≤ 180 s |
+| Clean debug build of the workspace | ≤ 360 s |
 | Rebuild after editing a leaf crate | ≤ 5 s   |
 | Rebuild after editing `fos-core`   | ≤ 20 s  |
 

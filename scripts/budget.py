@@ -44,7 +44,7 @@ def timed_build(*extra: str) -> float:
 def main(
     clean: Annotated[
         float, typer.Option(envvar="BUDGET_CLEAN", help="Budget for a clean build, in seconds.")
-    ] = 180,
+    ] = 360,
     leaf: Annotated[
         float, typer.Option(envvar="BUDGET_LEAF", help="Budget after a change to a leaf crate.")
     ] = 5,

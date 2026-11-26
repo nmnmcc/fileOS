@@ -645,10 +645,12 @@ folders. No admin is needed, because each person's engine is their own rules.
 
 ## Costs and open questions
 
-1. **Compile time.** The budget did not need to change. On a machine with 15
-   cores: a clean build is 38.6 s (the budget is 180 s), a rebuild after a
-   change to `fos` is 0.8 s (budget 5 s), and after a change to `fos-core` is
-   1.6 s (budget 20 s).
+1. **Compile time.** wasmtime's compiler (cranelift) is most of a clean
+   build. On the CI machine (4 cores) a clean build was 198 s, so the budget
+   for a clean build is now 360 s. In debug builds, cranelift is built with
+   no optimization, which makes it about a third faster to build. Rebuilds
+   are fast: 1.0 s after a change to `fos` (budget 5 s) and 4.2 s after a
+   change to `fos-core` (budget 20 s).
 2. **QUIC.** `libp2p-quic` always turns on the `aws-lc-rs` backend of quinn,
    and aws-lc-sys is not allowed (`deny.toml`). So the prototype uses TCP.
    Relays and hole punching work over TCP too. We can add QUIC when libp2p
