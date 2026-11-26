@@ -3,13 +3,13 @@ title: 开发者手册
 description: 面向开发 fileOS 或在 fileOS 之上开发的人。
 ---
 
-本手册面向两类开发者：开发 fileOS 本身的人，以及为它编写 App 和引擎的人。
+本手册面向两类开发者：开发 fileOS 本身的人，以及为它编写 App 的人。
 
 ## 在 fileOS 之上开发
 
-内核之上的一切都是放在 `.app` 文件夹里的 WebAssembly 组件：App，以及决定节点规则的引擎。
+内核之上的一切都是 App：放在 `.app` 文件夹里的 WebAssembly 组件。
 
-- [编写 App 和引擎](apps/)：接口、SDK、`.app` 文件夹和 manifest。
+- [编写 App](apps/)：接口、SDK、`.app` 文件夹和 manifest。
 - 接口定义在 [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit)。
 
 ## 开发 fileOS

@@ -16,27 +16,30 @@ people you know, keep each other up to date.
 
 There are only a few ideas:
 
-- **Everything is a folder.** Your photos, your notes, a chat with your family
-  and even the apps are folders.
-- **A shared folder is a folder that more than one node keeps.** When you share
-  a folder with a friend, their node keeps a copy, and changes go both ways.
-- **Your node, your rules.** Each node has rules that say who may read, write
-  or keep what. You can see every rule, and take any of them back.
+- **Everything is a file.** Your photos, your notes, each message of a chat
+  with your family, and even the apps are files.
+- **Files are in spaces.** A space is a set of files that syncs as one, such
+  as `/photos`. When you share a space with a friend, their node keeps a
+  copy, and changes go both ways. Every node can write at any time, also
+  offline.
+- **Access is a grant, and you can see it.** A grant says who may do what
+  (read, change, give on, keep) on which files. You can see every grant, and
+  take any of them back; what was given on from it goes too.
 - **Apps only see what you let them see.** An app is a small program in a
-  sandbox. It can only use the folders you gave it.
+  sandbox. It can only use the paths you gave it.
 
 ## The `fos` command
 
 `fos` works with the kernel of your node. Its commands are in groups:
 
-| Group                     | What it is for                                                 |
-| ------------------------- | -------------------------------------------------------------- |
-| `fos node`                | This node: `init`, `run`, `status`, `connect`                  |
-| `fos fs`                  | Files and streams: `ls`, `cat`, `put`, `append`, `rm`          |
-| `fos folder`              | Folders: `new`, `mount`, `grant`                               |
-| `fos identity` (`fos id`) | Your identity: `new`, `add-node`, `remove-node`, `join`        |
-| `fos app`                 | `pack` or `install` an app                                     |
-| `fos curl`                | curl with your node's token, for example `fos curl /v0/status` |
+| Group                     | What it is for                                                  |
+| ------------------------- | --------------------------------------------------------------- |
+| `fos node`                | This node: `init`, `run`, `status`, `connect`                   |
+| `fos fs`                  | Files: `ls`, `cat`, `put`, `append`, `rm`                       |
+| `fos space`               | Spaces: `new`, `mount`, `grant`, `grants`, `take`, `checkpoint` |
+| `fos identity` (`fos id`) | Your identity: `new`, `add-node`, `remove-node`, `join`         |
+| `fos app`                 | `pack` or `install` an app                                      |
+| `fos curl`                | curl with your node's token, for example `fos curl /v0/status`  |
 
 What an app does is not in `fos`; you see it in the app. `fos help <group>`
 says more about each group.
@@ -44,29 +47,44 @@ says more about each group.
 ## Using your files
 
 These commands work on the node that runs on your computer. Paths start with
-the folder, for example `/photos/2026/beach.jpg`.
+the place a space is mounted, for example `/photos/2026/beach.jpg`.
 
-| Command                           | What it does                            |
-| --------------------------------- | --------------------------------------- |
-| `fos fs ls /photos`               | The names in a folder                   |
-| `fos fs cat /notes/todo.txt`      | Print a file                            |
-| `fos fs put /notes/todo.txt FILE` | Put a file (or the text you type)       |
-| `fos fs rm /notes/todo.txt`       | Take a file away; old versions are kept |
-| `fos fs append /family/chat "…"`  | Add a line to a stream, such as a chat  |
-| `fos node status`                 | What your node is doing                 |
+| Command                            | What it does                         |
+| ---------------------------------- | ------------------------------------ |
+| `fos fs ls /photos`                | The names under a path               |
+| `fos fs cat /notes/todo.txt`       | Print a file                         |
+| `fos fs put /notes/todo.txt FILE`  | Put a file (or the text you type)    |
+| `fos fs rm /notes/todo.txt`        | Delete a file; old versions are kept |
+| `fos fs append /notes/log.txt "…"` | Add a line to the end of a file      |
+| `fos node status`                  | What your node is doing              |
 
-## Sharing a folder
+## Sharing a space
 
-1. Make a folder: `fos folder new family /family`. It prints the folder ID.
-2. Give your friend's node access: `fos folder grant /family <their node key> all`.
-3. Your friend mounts it on their node: `fos folder mount <folder ID> /family`.
+1. Make a space: `fos space new /family`. It prints the space ID.
+2. Give your friend's node access:
+   `fos space grant /family <their node key> read-write`. It prints the ID of
+   the grant.
+3. Your friend mounts it on their node: `fos space mount <space ID> /family`.
 
-Now you both see the same files. Your friend's writes go to your node, which
-puts them in order, and then come back to everyone.
+Now you both see the same files, and either of you can write, also offline.
+When you both change the same file at the same time, both versions are kept.
 
-If your friend's node has different rules from yours, its copy can stop at
-the first change its rules do not take. `fos node status` then says `FORK`. Nothing
-is lost; your friend can change their rules or make a new folder.
+What you can give:
+
+| Template     | What it gives                               |
+| ------------ | ------------------------------------------- |
+| `read`       | List, read, see history, watch, keep a copy |
+| `read-write` | `read`, and make, change and delete files   |
+| `manage`     | `read-write`, and give and take back access |
+| `relay`      | Keep a copy only (for a backup node)        |
+
+You can also give exact permissions, such as `files.read,files.create`. A
+grant on a path that is a file follows that file when it is renamed; a grant
+on a directory is on every name under it.
+
+`fos space grants /family` lists the grants. `fos space take /family <grant ID>`
+takes one back, and with it what was given on from it. What someone did at
+the same time as you took their access back has no effect.
 
 ## One identity, many nodes
 
@@ -78,7 +96,7 @@ Your identity is you; a node is one of your machines. Your identity is a DID
    files that it names in a safe place.
 2. On your other node, run `fos node status` and copy its node key.
 3. On the first node, run `fos identity add-node <node key>`. It prints a command.
-4. On the other node, run that command: `fos identity join <folder ID>`.
+4. On the other node, run that command: `fos identity join <space ID>`.
 
 `fos identity` shows your identity, its nodes and its link. The link is what you
 give to other people. Only the node that holds the signing key can add nodes
@@ -97,8 +115,8 @@ Two apps come with fileOS:
 
 - **Photos** shows the photos in `/photos`, lets you upload more, and keeps an
   index of their sizes.
-- **Chat** keeps rooms in `/chat`. Make the folder with
-  `fos folder new chat /chat`, share it with your friends' nodes, and each of
+- **Chat** keeps rooms in `/chat`, one file for each message. Make the space
+  with `fos space new /chat`, share it with your friends' nodes, and each of
   you talks through the chat app on your own node.
 
 To run a node, see the [administration manual](../admin/).

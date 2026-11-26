@@ -2,71 +2,75 @@
 
 [English](README.md) | **简体中文**
 
-fileOS 是一个面向个人及其所属小群体的复制文件系统。系统状态由若干节点共同维护，每个节点只保存它明确同意保存的文件夹。系统不依赖全局共识，也没有全局的内容 DHT。
+fileOS 是一个面向个人及其所属小群体的复制文件系统。系统状态由若干节点共同维护，每个节点只保存交给它、并且它同意保存的空间。系统不依赖全局共识，没有排序节点，也没有全局的内容 DHT。
 
 > [!NOTE]
 > 原型阶段，格式还会改变。
 
 ## 系统模型
 
-**主体。** 人、设备、节点和 App 都以 ed25519 公钥标识。
+**主体。** 设备、节点和 App 以 ed25519 公钥标识。组是没有密钥的主体，由成员代表它行事，它的所有者是一个密钥或另一个组。一个人是一个身份（`did:fos`），拥有若干节点。
 
-**文件夹。** 文件夹是复制、排序和授权的基本单位。它的状态完全由一条签名的、只能追加的日志决定，它的 ID 是日志中第一条记录的哈希。记录分为 `put`、`delete`、`append`、`mount` 和 `policy`。文件内容是按 BLAKE3 哈希寻址的 blob。文件夹可以在路径上挂载其他文件夹，由此构成一棵命名树。
+**空间。** 空间是复制、所有权和保留的基本单位，它的 ID 是第一条记录的哈希。每个写入者在空间中有一条签名的、只能追加的日志；每条记录写明它在哪些记录之后，因此所有日志构成一个因果图。状态只由记录的集合决定，所以拥有相同记录的副本处于相同状态（强最终一致性），每个节点离线时也能写入。
 
-**排序。** 每个文件夹有唯一的排序节点，它给出的全序就是这个文件夹的主线。排序职责可以移交给其他节点。对文件的写入取代先前的版本，旧版本保留在历史中。流上的追加可以交换次序，因此不会冲突。
+**文件。** 空间内的名字是扁平的，目录只是前缀。文件有固定的 ID，即创建它的记录的哈希加上动作的序号。改名是一个新版本。文件的并发版本并排保留，不会在用户不知情时丢弃任何一个。内容在由内容决定的位置切块，按 BLAKE3 哈希寻址。
 
-**授权。** 内核验证事实：签名和哈希。决定由每个节点的引擎作出，引擎由节点主人选择。由于各节点独立作出决定，策略不同时副本可能分叉。系统不强制一致。
+**授权。** 一项授权把具体的权限（允许或拒绝）作用于一个名字前缀，或按 ID 作用于一个文件，授予一个主体。转授只能相同或更小，收回一项授权时，由它转授出去的也一起收回。有效性由每条记录的因果过去决定，并采用强移除：与作者访问被移除同时发生的动作没有效果。不使用时钟。
 
-**分层。** 内核包括文件系统、基于 libp2p 的同步和 App 运行时（wasmtime）。App 是通过 WIT 接口使用文件系统的 WebAssembly 组件。每个 App 运行在沙箱中，有自己的密钥，只能访问交给它的路径。内核插件是承担一部分内核工作的 WebAssembly 组件，目前唯一的一个是引擎。
+**检查点。** 所有者对检查点之前的状态的哈希签名。与检查点并发的记录不被接受，由其作者在之上重新写入。节点压缩到检查点，从签名的快照开始，并按保留策略让旧版本变稀疏，因此存储不会无限增长。
+
+**分层。** 内核包括空间、基于 libp2p 的同步、App 运行时（wasmtime）和本地 HTTP 网关。App 是通过 WIT 接口使用文件系统的 WebAssembly 组件。每个 App 运行在沙箱中，有自己的密钥，按它的授权受到检查。内核可以有承担一部分内核工作的插件，目前没有。
 
 ## 试一试
 
 使用 devenv shell（`direnv allow`）：
 
 ```sh
-cargo build -p fos                                  # 程序
-apps                                                # 引擎和 App，放在 target/apps/
-fos node init --engine target/apps/Capability.app   # 在 ~/.fileos 创建节点
-fos node run                                        # 网络、App 和网关
+cargo build -p fos                       # 程序
+apps                                     # App，放在 target/apps/
+fos node init                            # 在 ~/.fileos 创建节点
+fos node run                             # 网络、App 和网关
 ```
 
 在另一个终端里：
 
 ```sh
-fos folder new photos /photos                       # 创建文件夹，挂载到 /photos
-fos app install target/apps/Photos.app              # 安装照片 App
+fos space new /photos                    # 创建空间，挂载到 /photos
+fos app install target/apps/Photos.app   # 安装照片 App
 fos fs put /photos/cat.png cat.png
 fos fs ls /photos
 fos node status
 ```
 
-把 `/photos` 分享给另一个节点：在这里运行 `fos folder grant /photos <对方节点密钥> all`，在对方那里运行 `fos folder mount <文件夹 ID> /photos`。
+把 `/photos` 分享给另一个节点：在这里运行 `fos space grant /photos <对方节点密钥> read-write`，在对方那里运行 `fos space mount <空间 ID> /photos`。
 
 ## 已有功能
 
-- [x] **文件夹**
-  - [x] 每个文件夹一条签名日志：文件及其所有版本、流、挂载
-  - [x] 文件内容是按哈希命名的 blob
-  - [x] 每个文件夹一个排序节点，可以把这项工作交给另一个节点
-  - [x] 节点的规则不接受某条记录时，副本会分叉，并说明原因
-- [x] **内核插件：访问规则（引擎）**
-  - [x] 每个节点一个引擎，由节点主人选择，不加限制
-  - [x] 默认引擎：capability，转授时只能变小，收回时连同由它而来的一起收回
+- [x] **空间**
+  - [x] 每个写入者一条签名日志，构成一个因果图；没有排序节点；离线也能写入
+  - [x] ID 固定的文件，并排保留的版本，改名后 ID 不变
+  - [x] 按内容切分、按哈希命名的块
+  - [x] 检查点、压缩、给新节点的快照、随时间变稀疏的保留策略
+- [x] **访问**
+  - [x] 授权：具体权限或模板，作用于前缀或文件，允许或拒绝
+  - [x] 只能缩小转授；收回时连同由它而来的一起收回；强移除
+  - [x] 组，由密钥或组拥有，组也可以放进组里
+  - [ ] 由管理这些文件的 App 做写入检查；App 的选择器
 - [ ] **App**
-  - [x] App 以 `.app` 文件提供（本身不压缩的 zip：manifest，加上 `tar.zst` 里的其余文件），安装后像其他文件夹一样同步
+  - [x] App 以 `.app` 文件提供（本身不压缩的 zip：manifest，加上 `tar.zst` 里的其余文件）
   - [x] 每个 App 有自己的密钥，只得到 manifest 申请的权限，运行时有 fuel 和内存限制
-  - [x] 照片 App：在自己的 origin 上提供图库、上传，以及图片尺寸的索引
-  - [x] 聊天 App：聊天室是你所分享的文件夹里的流，在自己的 origin 上提供页面
-  - [ ] 响应 HTTP 的 App（`handle-http`）、按文件类型的扩展、网页界面
-  - [ ] 通过 WebDAV 访问文件、给 Bitwarden 客户端用的密码库、聊天、通讯录和日历
-- [ ] **网络**
+  - [x] App 通过 `wasi:http` 在自己的 origin（`<app-id>.localhost`）上响应 HTTP
+  - [x] 照片 App：图库、上传，以及图片尺寸的索引
+  - [x] 聊天 App：聊天室中每条消息一个文件，放在你所分享的空间里
+  - [ ] App 作为 Worker、`wasi:filesystem`、监听选项、定时任务
+- [ ] **网络和密钥**
   - [x] libp2p：TCP、Noise、Yamux、mDNS、中继、打洞、AutoNAT
-  - [x] 写入会等待排序节点，它重新上线后再发出
+  - [ ] 加密：跟着前缀的密钥、HPKE（RFC 9180）、删除时销毁密钥
   - [ ] QUIC
-  - [ ] 文件夹加密：随机的数据密钥，用 HPKE（RFC 9180）分发纪元密钥，删除时销毁密钥
 - [ ] **身份**
   - [x] 一个人一个身份：一个 DID（`did:fos`，即没有目录服务器的 `did:plc` 方法），与节点的密钥分开
-  - [x] 轮换密钥和签名密钥；节点证书保存在身份文件夹中
+  - [x] 轮换密钥和签名密钥；节点证书保存在身份空间中
+  - [ ] 一个身份代表它的所有设备
   - [ ] 用域名作为身份的另一个名字（和 AT Protocol 的 handle 一样）
   - [ ] 通过会合节点找到一个身份的所有节点
 - [x] **运行节点**
@@ -75,7 +79,7 @@ fos node status
 
 ## 文档
 
-[用户手册](docs/src/content/docs/zh-cn/user/index.md) · [运行节点](docs/src/content/docs/zh-cn/admin/index.md) · [架构](docs/src/content/docs/zh-cn/dev/fileos.md) · [编写 App 和引擎](docs/src/content/docs/zh-cn/dev/apps.md) · [参与贡献](CONTRIBUTING.zh-CN.md)
+[用户手册](docs/src/content/docs/zh-cn/user/index.md) · [运行节点](docs/src/content/docs/zh-cn/admin/index.md) · [架构](docs/src/content/docs/zh-cn/dev/fileos.md) · [编写 App](docs/src/content/docs/zh-cn/dev/apps.md) · [参与贡献](CONTRIBUTING.zh-CN.md)
 
 ## 许可证
 

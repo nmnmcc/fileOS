@@ -16,7 +16,7 @@ The devenv shell (`direnv allow`, or `devenv shell -- <command>`) has every tool
 | `treefmt`               | Formats every file. Run it before every commit.                     |
 | `check`                 | Formatting, Clippy, tests, Rustdoc, cargo-deny, wasm, Python, MSRV. |
 | `budget`                | The compile-time budget. Run it after changes to dependencies.      |
-| `apps`                  | Builds the engine and apps in `apps/` into `target/apps/`.          |
+| `apps`                  | Builds the apps in `apps/` into `target/apps/`.                     |
 | `docs`                  | Shows the documentation site.                                       |
 | `knope document-change` | Makes a change file in `.changeset/`.                               |
 | `cargo test -p <crate>` | Tests for one crate, while working.                                 |
@@ -49,11 +49,11 @@ When the work is done (the pull request is merged or closed, or the work is drop
 
 - Compile time is a feature. A pull request over the budget is not merged. Keep generics from spreading (inner-function pattern), use `dyn Trait` at crate edges, use few procedural macros. No `async-trait`. No code generation in `build.rs`.
 - Every new external dependency needs a reason in the pull request and its cost to a clean build. Put it once in the root `Cargo.toml` under `[workspace.dependencies]` with `default-features = false`. One version of every crate. No C or C++ that needs cmake. TLS is rustls with `ring`.
-- Dependencies between crates go down only. `fos-core` uses no other fileOS crate; apps and engines depend only on `fos-app`; `fos` stays thin. The layout is in CONTRIBUTING.md under "Workspace layout".
+- Dependencies between crates go down only. `fos-core` uses no other fileOS crate; apps depend only on `fos-app`; `fos` stays thin. The layout is in CONTRIBUTING.md under "Workspace layout".
 - Crates with `portable = true` in `[package.metadata.fos]` must build for `wasm32-unknown-unknown`: no threads, files, sockets or clocks in them.
 - Protocol logic is sans-IO, so it runs in the simulation in `fos-sim`.
-- The command line (`fos`) is for the kernel, in groups (`node`, `fs`, `folder`, `identity`, `app`); what apps and plugins do is not in it, but packing and installing them is. It keeps no state: it saves nothing of its own and has no login.
+- The command line (`fos`) is for the kernel, in groups (`node`, `fs`, `space`, `identity`, `app`); what apps and plugins do is not in it, but packing and installing them is. It keeps no state: it saves nothing of its own and has no login.
 - No data grows without a limit by default: every kind of data has an owner, a time it is kept, and a plan for when space runs out (retention, compaction at checkpoints, cache budgets, quotas). See docs `dev/data`.
 - Mechanism, not policy: when code decides what should happen (whom to help, what to share, what to keep), make it a policy that can be replaced, with a default.
-- Kernel, apps and kernel plugins: do not break user space. Apps and other nodes are user space; the app interface (`wit/fos.wit`) and the formats and protocol between nodes only get new things. Apps are not plugins. A kernel plugin (today only the engine) only picks between results the contract already has, and the kernel checks what it gives back (hashes, signatures, AEAD). The kernel asks, the plugin answers: no hooks with `next()`, registries, event buses or dependency injection. Defaults are in the code. A new kind of kernel plugin needs a second way of doing the work that people want now.
+- Kernel, apps and kernel plugins: do not break user space. Apps and other nodes are user space; the app interface (`wit/fos.wit`) and the formats and protocol between nodes only get new things. Apps are not plugins. A kernel plugin (there are none today) only picks between results the contract already has, and the kernel checks what it gives back (hashes, signatures, AEAD). The kernel asks, the plugin answers: no hooks with `next()`, registries, event buses or dependency injection. Defaults are in the code. A new kind of kernel plugin needs a second way of doing the work that people want now.
 - Every source file starts with an SPDX header: `// SPDX-License-Identifier: AGPL-3.0-only`, or `MIT OR Apache-2.0` in `apps/fos-app` and `wit/`.

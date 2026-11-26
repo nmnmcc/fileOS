@@ -4,14 +4,14 @@ description: For people who build fileOS or build on it.
 ---
 
 This manual is for two kinds of developer: people who work on fileOS itself,
-and people who write apps and engines for it.
+and people who write apps for it.
 
 ## Building on fileOS
 
-Everything on top of the core is a WebAssembly component in an `.app`
-folder: the apps, and the engine that makes the rules of a node.
+Everything on top of the kernel is an app: a WebAssembly component in an
+`.app` folder.
 
-- [Writing apps and engines](apps/): the interfaces, the SDK, the `.app`
+- [Writing apps](apps/): the interfaces, the SDK, the `.app`
   folder and the manifest.
 - The interfaces are in [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit).
 

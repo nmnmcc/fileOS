@@ -3,16 +3,17 @@ title: "Data: sync, conflicts, storage and keys"
 description: How data is kept and synced with no ordering node, how conflicts are settled, how storage stays bounded, and how data is encrypted.
 ---
 
-:::note[Status: design]
-This page is the new design. It takes the place of the ordering node of each
-folder in [Architecture](../fileos/), which is still how the prototype works.
-Nothing on this page is built yet. What the prototype calls a folder is a
-**space** here (see [The model](../access/)).
+:::note[Status: built in part]
+Most of this page is built, in `fos-space`, and the node runs on it: the
+data model, conflicts, strong removal, content in chunks, checkpoints and
+retention. Not built yet: [encryption](#encryption), bookmarks, the authority
+path, budgets, and CRDT files. [Building it](#building-it-a-new-kernel) says
+what is done.
 :::
 
 ## Why there is no ordering node
 
-The prototype gives each folder one ordering node, which puts all writes in
+The prototype gave each folder one ordering node, which put all writes in
 one order. In a network of people, we cannot take it that any node is always
 online and never moves. A laptop sleeps, a phone changes networks, a box at
 home loses power. With one ordering node, nobody can write when it is away.
@@ -372,8 +373,10 @@ between the two would mean nothing. So the kernel is written again:
   names, files with fixed IDs and versions side by side, grants with strong
   removal, groups (owned by keys or by groups, and in groups), content in
   chunks cut where the content says, checkpoints with compaction, snapshots
-  and retention, and sync between nodes. Next: storage, network and the
-  runtime use it; then keys that follow prefixes.
+  and retention, and sync between nodes. The store, the network, the node and
+  the runtime use it, and the old `fos-fs`, `fos-sync` and engine are gone.
+  Next: keys that follow prefixes, then checks on writes, views and
+  `wasi:filesystem`.
 
 ## Still open
 

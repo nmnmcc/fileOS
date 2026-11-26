@@ -4,7 +4,7 @@ description: How a person has one identity, and how anyone who knows it finds al
 ---
 
 :::note[Status: design, partly built]
-`did:fos`, the identity folder, node certificates and identity links are
+`did:fos`, the identity space, node certificates and identity links are
 built (step 1 of the [plan](#plan)). The rest is not built yet.
 :::
 
@@ -40,7 +40,7 @@ Protocol, which millions of Bluesky accounts use, and we keep its rules:
     **signing key** of the identity in fileOS.
   - `alsoKnownAs`: other names of the identity, such as a domain (see
     [Names](#names-a-domain-as-another-name)).
-  - `services`: where to find things. `fos_identity` names the identity folder.
+  - `services`: where to find things. `fos_identity` names the identity space.
 - **Every operation after the first is signed by a rotation key of the state
   before it**, and names the operation before it by its hash.
 - **Keys are `did:key`**, and an operation has at most 7500 bytes and 10
@@ -49,28 +49,27 @@ Protocol, which millions of Bluesky accounts use, and we keep its rules:
   A rotation key can change everything, so it may be kept offline, for
   example on paper. The signing key does the daily work, on one node.
 
-In fileOS, this log is kept in the identity folder and synced like other
+In fileOS, this log is kept in the identity space and synced like other
 data. Every node checks it with the keys in the log itself, so no one else
-has to be trusted. A person is a **principal**, not a folder or a file: the
+has to be trusted. A person is a **principal**, not a space or a file: the
 DID names the person, and the spaces they own have IDs of their own (see
 [The model](../access/)).
 
 We change three things, each for a reason:
 
-| `did:plc`                                                                                                               | `did:fos`                                                                                                                                                                                           | Why                                                                                                                                          |
-| ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rotation keys are secp256k1 or P-256                                                                                    | All keys are ed25519; the hash is BLAKE3                                                                                                                                                            | These are the key and hash of the rest of fileOS                                                                                             |
-| The DID is the first 120 bits of the hash                                                                               | The DID is the full hash (52 characters of base32)                                                                                                                                                  | Names are for people; the DID is for machines, so it does not need to be short                                                               |
-| A directory server (plc.directory) keeps the log, puts forks in order, and gives the time for a 72-hour recovery window | The log is in the identity folder, on the nodes of the identity and of people who know it. At a fork, the branch whose first operation was signed by the rotation key with the higher priority wins | No center. A higher key can always take back what a lower key did. There is no time window, because no clock can be trusted without a server |
+| `did:plc`                                                                                                               | `did:fos`                                                                                                                                                                                          | Why                                                                                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rotation keys are secp256k1 or P-256                                                                                    | All keys are ed25519; the hash is BLAKE3                                                                                                                                                           | These are the key and hash of the rest of fileOS                                                                                             |
+| The DID is the first 120 bits of the hash                                                                               | The DID is the full hash (52 characters of base32)                                                                                                                                                 | Names are for people; the DID is for machines, so it does not need to be short                                                               |
+| A directory server (plc.directory) keeps the log, puts forks in order, and gives the time for a 72-hour recovery window | The log is in the identity space, on the nodes of the identity and of people who know it. At a fork, the branch whose first operation was signed by the rotation key with the higher priority wins | No center. A higher key can always take back what a lower key did. There is no time window, because no clock can be trusted without a server |
 
-The DID log is a fact that every node can check, so the kernel checks it. The
-engine is not asked. The formats are part of the contract between nodes.
+The DID log is a fact that every node can check, so the kernel checks it.
+The formats are part of the contract between nodes.
 
-### The identity folder
+### The identity space
 
-Every identity has one folder. Only the signing key writes to it. (In the
-prototype the signing key is also the ordering node of the folder; in the new
-design there is no ordering node, see [Data](../data/).) It has:
+Every identity has one space, owned by the signing key, so only the signing
+key writes to it. It has:
 
 | Path          | What it is                                                                  |
 | ------------- | --------------------------------------------------------------------------- |
@@ -84,26 +83,26 @@ A **node certificate** names the DID and the node, and is signed by the
 signing key. It is good while that key is the `fos` key of the identity. To
 take a node away, the signing key deletes its certificate.
 
-The nodes of an identity keep a copy of its folder, and so can people who
-follow the identity. On a node, the identity folder is mounted at
+The nodes of an identity keep a copy of its space, and so can people who
+follow the identity. On a node, the identity space is mounted at
 `/identity`.
 
 When a signing key is lost or stolen, a rotation key writes an operation with
-a new signing key. Because the creator of a folder does not change, the new
-signing key makes a new identity folder, and the operation names it.
+a new signing key. Because the owner of a space does not change, the new
+signing key makes a new identity space, and the operation names it.
 
 ### Making an identity and adding a node
 
 1. `fos identity new` makes a rotation key and a signing key on this node, the
-   identity folder, and the first operation. It prints the DID.
+   identity space, and the first operation. It prints the DID.
 2. On the node that holds the signing key: `fos identity add-node <node key>`. It
-   puts the certificate of the node into the identity folder, lets the node
-   read and keep the folder, and prints the ID of the folder.
-3. On the new node: `fos identity join <folder ID>`. It mounts the folder at
+   puts the certificate of the node into the identity space, lets the node
+   read and keep the space, and prints the ID of the space.
+3. On the new node: `fos identity join <space ID>`. It mounts the space at
    `/identity`, and gets it from the first node.
 
-`fos identity remove-node <node key>` deletes the certificate. The node may still
-keep its copy of the folder until the engine takes its grant away.
+`fos identity remove-node <node key>` deletes the certificate and takes back
+the node's grant on the identity space.
 
 ### Identity links
 
@@ -140,7 +139,7 @@ Finding nodes is two questions, and they change at very different speeds:
 | --------- | ------------------------------- | -------------------------------------- |
 | How often | Seldom: a new device            | Often: a new IP address, a new network |
 | Signed by | The signing key of the identity | The node key `N`                       |
-| Kept in   | The identity folder (synced)    | Address records, not in any log        |
+| Kept in   | The identity space (synced)     | Address records, not in any log        |
 
 An **address record** says: node `N`, these addresses, number `seq`, good
 until time `t`. It is signed by `N`. A record with a bigger `seq` takes the
@@ -174,7 +173,7 @@ These are rules. New features may not break them:
 - **It keeps only pointers.** Small address records, about 1 KiB for each
   identity. No content, no history.
 - **It looks up only by an exact key.** No query language.
-- **Data is not on it.** Data is on the nodes that keep each folder. When a
+- **Data is not on it.** Data is on the nodes that keep each space. When a
   rendezvous node goes away, only one way to find people goes away. No data
   goes with it.
 - **It works from memory only.** It needs no disk. After a restart, nodes
@@ -189,7 +188,7 @@ mail for nodes that are offline, or relaying connections. A node may do any of
 these jobs and not the others. Relaying is the one that costs money (bandwidth),
 so it has its own limits.
 
-Whom a rendezvous node helps is a policy. The engine says. By default, a node
+Whom a rendezvous node helps is a policy, with a default. By default, a node
 with a public address is a rendezvous node for the identity of its owner and
 for the nodes that its owner trusts.
 
@@ -204,12 +203,12 @@ It is not special:
 
 - It runs the normal `fos`, with the same code and protocol as any other
   rendezvous node. Its address is not in the kernel.
-- It is a default in the policy, as the default engine is. A new identity has
+- It is a default in the policy. A new identity has
   it in its rendezvous list. `fos identity` shows it, and one command takes it away.
 - The nodes of the owner come first. When an identity has a node with a public
   address, that node comes first in the list and in the hints of its link.
 - When it is down, nobody is lost. People who know you already have your
-  identity folder. Only people who find you for the first time need it.
+  identity space. Only people who find you for the first time need it.
 
 ## Keys that cannot be followed back
 
@@ -268,16 +267,16 @@ Asking through the node of a friend would hide more. That is for later.
 To find the nodes of an identity:
 
 1. **Hints.** Ask the rendezvous nodes and nodes in the link.
-2. **The rendezvous list.** Ask the rendezvous nodes in the identity folder,
+2. **The rendezvous list.** Ask the rendezvous nodes in the identity space,
    if we have a copy of it.
 3. **People we know.** Ask the nodes we are connected to. A node that has
    records for `name` (as a rendezvous node, or from an earlier look) answers.
 
-When one node of the identity answers, we have all of them: it has the identity folder
+When one node of the identity answers, we have all of them: it has the identity space
 with every node certificate, and the nodes of one identity send their newest
 address records to each other.
 
-If we know only the DID, with no hints, no copy of the identity folder and no
+If we know only the DID, with no hints, no copy of the identity space and no
 shared rendezvous node or friend, we cannot find the nodes. In practice
 people get an identity from a link, a QR code or a friend, so there are
 always hints.
@@ -295,7 +294,7 @@ a look) is sans-IO, in a portable crate, so it runs in `fos-sim`.
 ## Plan
 
 1. **Identity:** `did:fos` (the DID log, rotation keys, the signing key),
-   the identity folder, node certificates, identity links, and adding a node
+   the identity space, node certificates, identity links, and adding a node
    (`fos identity`, `fos identity new`, `fos identity add-node`, `fos identity join`). Built.
 2. **More keys and names:** add and change rotation keys and the signing key,
    a recovery key kept on paper, and domain names (`_fos` and

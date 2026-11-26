@@ -75,7 +75,7 @@ crate 布局见[架构](../fileos/#crate-结构)。
 ## 许可证与签署
 
 fileOS 采用 AGPL-3.0-only；App SDK（`apps/fos-app`）和 `wit/` 里的接口
-采用 MIT OR Apache-2.0，以便 App 和引擎可以使用任何许可证。每个源文件以 SPDX 头开始。没有 CLA：你保留
+采用 MIT OR Apache-2.0，以便 App 可以使用任何许可证。每个源文件以 SPDX 头开始。没有 CLA：你保留
 自己的版权。
 
 每个提交都必须按

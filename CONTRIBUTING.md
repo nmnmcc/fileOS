@@ -91,16 +91,15 @@ crates/
   fos             the program: wires the components together, nothing else
   fos-node        assembles the components into one node
   fos-gateway     the local HTTP API for clients
-  fos-runtime     wasmtime: .app files and folders, engines and apps
+  fos-runtime     wasmtime: .app files and folders, and apps
   fos-net         libp2p: carries sync messages between nodes
-  fos-store       the data directory: node key, blobs, folder logs, local key-value stores
+  fos-store       the data directory: node key, content, logs and bases of spaces, app caches
   fos-space       spaces: signed logs, files, grants, checkpoints and sync (sans-IO, portable)
   fos-id          identities: did:fos, node certificates, identity links (portable)
   fos-core        formats: CBOR, ed25519, BLAKE3 (bottom of the graph, portable)
   fos-sim         deterministic multi-node simulation, for tests
 apps/             a second workspace, built for wasm32-unknown-unknown by `apps`
-  fos-app         the SDK for apps and engines (MIT OR Apache-2.0)
-  capability      the default engine
+  fos-app         the SDK for apps (MIT OR Apache-2.0)
   photos          the photos app
   chat            the chat app
 wit/
@@ -113,11 +112,11 @@ The documentation site is in `docs/`. It is built with [Astro Starlight](https:/
 
 For production builds, set `DOCS_SITE_URL` to the public origin of the site. Then the build makes canonical URLs, `hreflang` links and the sitemap. The page at `/` only sends you to a language; it is not indexed and is not in the sitemap.
 
-Dependencies only go down. `fos-core` depends on no other fileOS crate. Apps and engines depend only on `fos-app`. `fos` stays thin, so that it rebuilds in seconds.
+Dependencies only go down. `fos-core` depends on no other fileOS crate. Apps depend only on `fos-app`. `fos` stays thin, so that it rebuilds in seconds.
 
 ## The command line
 
-`fos` is for the kernel. Its commands are in groups (`node`, `fs`, `folder`, `identity`, `app`). What an app or a plugin does is not in it; packing and installing them is. The command line keeps no state: it saves nothing of its own, and there is no login or other command that changes what later commands do. It reads the address and the token of the gateway from the data directory of the node.
+`fos` is for the kernel. Its commands are in groups (`node`, `fs`, `space`, `identity`, `app`). What an app or a plugin does is not in it; packing and installing them is. The command line keeps no state: it saves nothing of its own, and there is no login or other command that changes what later commands do. It reads the address and the token of the gateway from the data directory of the node.
 
 ## Storage that does not grow without end
 
@@ -129,14 +128,14 @@ We give mechanisms and sensible defaults; each person makes the rules. When code
 
 ## Kernel, apps and kernel plugins
 
-fileOS is a kernel and apps, and the kernel can take kernel plugins. See "System model" in the [README](README.md).
+fileOS is a kernel and apps, and the kernel can take kernel plugins (there are none today). See "System model" in the [README](README.md).
 
 - **Do not break user space.** Apps and other nodes are user space. The app interface (`wit/fos.wit`) and the formats and protocol between nodes only get new things. Old behavior stays, even when it is wrong, because someone may depend on it. A breaking change is a new version of the interface, and the old version still works.
 - **Apps are not plugins.** An app uses the kernel. It does not change the kernel.
 - **A kernel plugin does not change what apps or other nodes see.** It only picks between results that the contract already has, for example `denied`.
 - **The kernel checks what a kernel plugin gives back**, with hashes, signatures or AEAD. When a kernel plugin is wrong, the worst result is an error, never a wrong file.
 - **The kernel asks; the kernel plugin answers.** The kernel keeps the control and the state. A kernel plugin gets a small input and gives back a value. It does not get into the middle of the work, does not change requests, and does not call other plugins. No hooks with `next()`, no registries, no event buses, no dependency injection.
-- **The cost is only for the person who made the choice.** A choice that can do damage to other people (such as the encryption of shared folders) goes in the protocol, not in a kernel plugin.
+- **The cost is only for the person who made the choice.** A choice that can do damage to other people (such as the encryption of shared spaces) goes in the protocol, not in a kernel plugin.
 - **Defaults are in the code.** With no kernel plugins and no config, fileOS is complete. `fos-node` puts the parts together in plain code.
 - **A new kind of kernel plugin needs a real reason:** a second way of doing the work that people want now. Until then, a `dyn Trait` inside the crate is enough.
 
@@ -145,7 +144,7 @@ fileOS is a kernel and apps, and the kernel can take kernel plugins. See "System
 fileOS is under [AGPL-3.0-only](LICENSE), with the [fileOS Plugin Exception](PLUGIN-EXCEPTION.md) for apps and engines that use only the Plugin Interface. When you contribute, you agree that your contribution is under:
 
 - **AGPL-3.0-only**, for everything except `apps/fos-app` and `wit/`
-- **MIT OR Apache-2.0**, for `apps/fos-app` and `wit/`, so that apps and engines can use any license
+- **MIT OR Apache-2.0**, for `apps/fos-app` and `wit/`, so that apps can use any license
 
 You keep the copyright to your work. There is no Contributor License Agreement. So no one, not even the maintainers, is able to put fileOS under a different license by themselves.
 
@@ -179,7 +178,7 @@ budget   # compile-time budget
 
 The workspace gives its MSRV (the oldest Rust version it supports) in `Cargo.toml`. Nix gives that compiler for a locked check of all native targets.
 
-`apps` builds the engine and apps into `target/apps/`. The tests of `fos-runtime` and `fos-node` use them, so run `apps` before `cargo test`. `check` does this for you.
+`apps` builds the apps into `target/apps/`. The tests of `fos-runtime` and `fos-node` use them, so run `apps` before `cargo test`. `check` does this for you.
 
 The formatters and their settings are only in `devenv.nix` (through treefmt-nix). Going into the shell does not change files; run `treefmt` yourself.
 

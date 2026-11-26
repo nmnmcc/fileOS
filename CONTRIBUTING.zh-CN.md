@@ -91,16 +91,15 @@ crates/
   fos             可执行程序：只负责把各组件连起来
   fos-node        把各组件组装成一个节点
   fos-gateway     给客户端用的本地 HTTP API
-  fos-runtime     wasmtime：.app 文件和文件夹、引擎和 App
+  fos-runtime     wasmtime：.app 文件和文件夹，以及 App
   fos-net         libp2p：在节点之间传送同步消息
-  fos-store       数据目录：节点密钥、blob、文件夹日志、本地键值存储
+  fos-store       数据目录：节点密钥、内容、空间的日志和基础、App 缓存
   fos-space       空间：签名日志、文件、授权、检查点与同步（sans-IO，可移植）
   fos-id          身份：did:fos、节点证书、身份链接（可移植）
   fos-core        格式：CBOR、ed25519、BLAKE3（依赖图最底层，可移植）
   fos-sim         用于测试的确定性多节点模拟
 apps/             第二个 workspace，由 `apps` 编译成 wasm32-unknown-unknown
-  fos-app         App 和引擎的 SDK（MIT OR Apache-2.0）
-  capability      默认引擎
+  fos-app         App 的 SDK（MIT OR Apache-2.0）
   photos          照片 App
   chat            聊天 App
 wit/
@@ -113,11 +112,11 @@ wit/
 
 生产构建时，将 `DOCS_SITE_URL` 设为站点的公开源地址，以生成规范网址、`hreflang` 链接和站点地图。根路径 `/` 仅用于语言跳转，不参与搜索索引，也不列入站点地图。
 
-依赖只能向下。`fos-core` 不依赖任何其他 fileOS crate。App 和引擎只依赖 `fos-app`。`fos` 保持精简，以便几秒内重新编译。
+依赖只能向下。`fos-core` 不依赖任何其他 fileOS crate。App 只依赖 `fos-app`。`fos` 保持精简，以便几秒内重新编译。
 
 ## 命令行
 
-`fos` 用于内核。它的命令分为几组（`node`、`fs`、`folder`、`identity`、`app`）。App 或插件做什么不在其中，打包和安装它们除外。命令行不保存任何状态：它不保存自己的任何东西，也没有登录或其他会改变后续命令行为的命令。它从节点的数据目录读取网关的地址和令牌。
+`fos` 用于内核。它的命令分为几组（`node`、`fs`、`space`、`identity`、`app`）。App 或插件做什么不在其中，打包和安装它们除外。命令行不保存任何状态：它不保存自己的任何东西，也没有登录或其他会改变后续命令行为的命令。它从节点的数据目录读取网关的地址和令牌。
 
 ## 不会无限增长的存储
 
@@ -129,14 +128,14 @@ wit/
 
 ## 内核、App 和内核插件
 
-fileOS 由内核和 App 构成，内核支持内核插件。见 [README](README.zh-CN.md) 的“系统模型”。
+fileOS 由内核和 App 构成，内核支持内核插件（目前没有）。见 [README](README.zh-CN.md) 的“系统模型”。
 
 - **不破坏用户空间。** App 和其他节点都是用户空间。App 接口（`wit/fos.wit`）以及节点之间的格式和协议只增加新东西。旧的行为保持不变，即使它是错的，因为可能有人依赖它。破坏性的改动要出新版本的接口，旧版本继续可用。
 - **App 不是插件。** App 使用内核，不改变内核。
 - **内核插件不改变 App 和其他节点看到的东西。** 它只在契约已有的结果中选择，例如 `denied`。
 - **内核检查内核插件返回的结果**，用哈希、签名或 AEAD。内核插件出错时，最坏的结果是报错，绝不会是一个错误的文件。
 - **内核提问，内核插件回答。** 控制和状态都在内核手里。内核插件拿到一个小的输入，返回一个值。它不插进工作流程中间，不改写请求，也不调用别的插件。不要带 `next()` 的钩子、注册表、事件总线和依赖注入。
-- **代价只由做出选择的人承担。** 会伤害到别人的选择（例如共享文件夹的加密）放进协议，不做成内核插件。
+- **代价只由做出选择的人承担。** 会伤害到别人的选择（例如共享空间的加密）放进协议，不做成内核插件。
 - **默认值写在代码里。** 不装内核插件、不写配置，fileOS 也是完整的。`fos-node` 用普通代码把各部分组装起来。
 - **新的一种内核插件需要现实的理由：** 现在就有人需要第二种做法。在那之前，crate 内部的一个 `dyn Trait` 就够了。
 
@@ -145,7 +144,7 @@ fileOS 由内核和 App 构成，内核支持内核插件。见 [README](README.
 fileOS 采用 [AGPL-3.0-only](LICENSE) 授权，并为只使用插件接口的 App 和引擎提供 [fileOS 插件例外](PLUGIN-EXCEPTION.zh-CN.md)。提交贡献即表示你同意你的贡献采用以下许可证：
 
 - **AGPL-3.0-only**：除 `apps/fos-app` 和 `wit/` 以外的所有内容
-- **MIT OR Apache-2.0**：`apps/fos-app` 和 `wit/`，以便 App 和引擎可以使用任何许可证
+- **MIT OR Apache-2.0**：`apps/fos-app` 和 `wit/`，以便 App 可以使用任何许可证
 
 你的作品版权仍归你所有。项目不使用贡献者许可协议（CLA），因此任何人（包括维护者）都无法单方面更改 fileOS 的许可证。
 
@@ -179,7 +178,7 @@ budget   # 编译时间预算
 
 工作区在 `Cargo.toml` 中声明最低 Rust 版本。Nix 使用该版本检查锁定依赖下的所有原生目标。
 
-`apps` 会把引擎和 App 编译到 `target/apps/`。`fos-runtime` 和 `fos-node` 的测试要用到它们，所以先运行 `apps`，再运行 `cargo test`。`check` 会自动做这一步。
+`apps` 会把 App 编译到 `target/apps/`。`fos-runtime` 和 `fos-node` 的测试要用到它们，所以先运行 `apps`，再运行 `cargo test`。`check` 会自动做这一步。
 
 格式化工具及其配置只在 `devenv.nix` 中定义（通过 treefmt-nix）。进入 shell 不会改写文件，需要手动运行 `treefmt`。
 

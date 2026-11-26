@@ -1,32 +1,35 @@
 ---
-title: 编写 App 和引擎
+title: 编写 App
 description: 接口、SDK、.app 文件和 manifest。
 ---
 
-:::caution[设计正在变化]
-本页描述的是原型。新设计中没有授权引擎，没有 `kv`，也没有流（一切皆文件）；授权在运行时进行，App 看不到真实路径（见[模型](../access/)）；App 是被 `fetch` 和 `watch` 事件唤醒的 Worker（见 [App 作为 Worker](../workers/)）。
+:::note[接下来]
+本页是现在的 App 接口。下一步：授权在运行时进行，App 看不到真实路径（见[模型](../access/)）；App 变成被 `fetch`、`watch` 和 `schedule` 事件唤醒的 Worker（见 [App 作为 Worker](../workers/)）。接口只会增加新东西：今天写的 App 会继续工作。
 :::
 
-App 和引擎都是 WebAssembly 组件。内核用 [wasmtime](https://wasmtime.dev) 运行它们。它们只通过 [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit) 里的接口和内核通信。
+App 是 WebAssembly 组件。内核用 [wasmtime](https://wasmtime.dev) 运行它们。它们只通过 [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit) 里的接口和内核通信。
 
 ## App
 
 App 是 `app` world 的组件。
 
-| 内核提供（导入） | 作用                                                         |
-| ---------------- | ------------------------------------------------------------ |
-| `fs`             | 在节点路径上 `read`、`write`、`append`、`delete`、`list-dir` |
-| `kv`             | 只在本节点的键值存储，用来放索引                             |
-| `log`            | 写入节点状态和日志的消息                                     |
+| 内核提供（导入）         | 作用                                                         |
+| ------------------------ | ------------------------------------------------------------ |
+| `fs`                     | 在节点路径上 `read`、`write`、`append`、`delete`、`list-dir` |
+| `kv`                     | 只在本节点的缓存，用来放可以重新生成的索引                   |
+| `log`                    | 写入节点状态和日志的消息                                     |
+| `wasi:clocks/wall-clock` | 时间，用于按时间排序的名字                                   |
 
 | App 提供（导出）                    | 内核什么时候调用                        |
 | ----------------------------------- | --------------------------------------- |
 | `events.on-change`                  | App 监听的路径发生变化时                |
 | `wasi:http/incoming-handler.handle` | 有发给这个 App 的 origin 的 HTTP 请求时 |
 
-每次调用 `fs` 都使用 **App 自己的密钥**，这个密钥由节点从自己的密钥派生出来。引擎会检查每一次调用。App 只能使用安装时用户给它的路径。每次调用 App 都有 fuel 和内存的限制。
+每次调用 `fs` 都使用 **App 自己的密钥**，这个密钥由节点从自己的密钥派生出来。内核按这个密钥在路径所在空间中的授权检查每一次调用。App 只能使用安装时用户给它的路径。每次调用 App 都有 fuel 和内存的限制。
 
 App 之间只通过文件协作：一个 App 写，另一个 App 监听。
+
+数据放在文件里，记录放在小文件里：聊天是一个目录，每条消息一个文件，文件名按时间排序且永不重复（chat App 用时间加哈希）。这样两个人可以在不同节点上同时写，什么都不会丢。两个节点同时修改同一个文件时，两个版本都会保留；`read` 给出最新的那个。见 [App 数据的最佳实践](../app-data/)。
 
 一个小 App，使用 `apps/fos-app` 里的 Rust SDK：
 
@@ -69,23 +72,6 @@ impl Http for Sizes {
 
 理由见架构中的 “HTTP 与浏览器”。
 
-## 引擎
-
-引擎是 `engine` world 的组件，导出 `authz`。每个节点运行一个引擎，由节点主人选择。内核为每个文件夹保存引擎的状态（字节），但不解释它的含义。
-
-| 函数      | 内核问什么                                                          |
-| --------- | ------------------------------------------------------------------- |
-| `init`    | 新文件夹的状态                                                      |
-| `apply`   | 读取一条 policy 记录，给出新状态，或者说明为什么不接受              |
-| `check`   | 这个密钥能不能在这里做这件事（read、write、append、grant、store）？ |
-| `readers` | 能读这个文件夹的密钥                                                |
-| `storers` | 能保存副本的节点的密钥                                              |
-| `grant`   | 给某个密钥在某个路径上一些能力的 policy 记录                        |
-
-有了 `grant`，内核不需要知道 policy 记录的格式，也能给 App 或别人授权。默认引擎 `apps/capability` 使用文本行，比如 `grant <key> read,write /photos`。
-
-内核对引擎不加任何限制。但使用不同引擎的两个节点，可能对同一条记录得出不同的结论，这时它们的文件夹副本就会分叉。见[架构](../fileos/#共享文件夹)。
-
 ## .app 文件
 
 App 以 `.app` 文件夹的形式编写：
@@ -100,7 +86,7 @@ Photos.app/
 ```toml
 id = "photos"
 name = "Photos"
-kind = "app"              # 或 "engine"
+kind = "app"
 version = "0.1.0"
 build = 1
 requires = "fos:app@0.1.0"
@@ -108,7 +94,7 @@ main = "bin/app.wasm"
 
 [[permissions]]           # 安装时授予 App 的密钥
 path = "/photos"
-access = "read"           # read、write、append 或 read-write
+access = "read"           # 模板（read、read-write、manage）或具体权限，例如 "files.read,files.watch"
 reason = "reason.photos"  # resources/locales/ 里的键
 
 [[watch]]                 # on-change 会通知的路径
@@ -122,9 +108,9 @@ path = "/photos"
 | `manifest.toml`   | 元数据，原样存放，工具不用解压就能读        |
 | `payload.tar.zst` | 其余所有文件，放在一个 tar 里，用 zstd 压缩 |
 
-同一个文件夹总是打包出同样的文件：tar 里不记录时间和所有者。`fos node init --engine` 和 `fos app install` 接受 `.app` 文件；在编写 App 的时候，也接受 `.app` 文件夹。
+同一个文件夹总是打包出同样的文件：tar 里不记录时间和所有者。`fos app install` 接受 `.app` 文件；在编写 App 的时候，也接受 `.app` 文件夹。
 
-App 安装后，它的文件会变成 `/apps/<name>.app` 上的一个 fileOS 文件夹，所以它会像其他文件夹一样同步到你的其他节点。
+App 安装后，它的文件会放进一个挂载在 `/apps/<name>.app` 的新空间，它的密钥得到 manifest 所申请的授权。
 
 ## 构建
 
