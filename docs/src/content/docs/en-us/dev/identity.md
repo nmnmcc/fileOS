@@ -49,6 +49,11 @@ Protocol, which millions of Bluesky accounts use, and we keep its rules:
   A rotation key can change everything, so it may be kept offline, for
   example on paper. The signing key does the daily work, on one node.
 
+In fileOS, the folder of a person is where this log lives: the log of the
+folder is the DID log, and **the DID is the ID of that folder**. So a person
+is a folder too, and the root paths of their files start with their DID (see
+[Access](../access/)).
+
 We change three things, each for a reason:
 
 | `did:plc`                                                                                                               | `did:fos`                                                                                                                                                                                           | Why                                                                                                                                          |

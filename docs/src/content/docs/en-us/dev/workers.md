@@ -58,6 +58,45 @@ Every other "event" is a watch on files:
 So subscribing is only `files.watch` on a path, and the person sees and gives
 it as any other permission.
 
+**A watch takes options when the app subscribes**, as a callback does (as with
+CouchDB's `_changes` and Kubernetes' watch):
+
+| Option      | What it does                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------ |
+| `recursive` | Also the directories under the path                                                                    |
+| `kinds`     | Which changes: made, changed, deleted                                                                  |
+| `filter`    | Only names or types that match, such as `*.jpg` or `image/*`                                           |
+| `include`   | `none` (paths only), `meta` (size, author, version), `content` (with a limit), `diff` (for CRDT files) |
+| `batch`     | How many changes, or how long to wait, before one call                                                 |
+| `since`     | Go on from a position given before                                                                     |
+
+Each call gets a batch of changes and a new position. When the call ends
+well, the position moves on; when it fails, the same batch comes again (at
+least once).
+
+### Files: `wasi:filesystem`
+
+Apps use the standard `wasi:filesystem` of WASI 0.2, with WASI preopened
+directories as their namespace (see [Access](../access/#what-an-app-sees)).
+
+- Reading at a position and reading as a stream are the WASI calls
+  (`read`, `read-via-stream`), on top of `wasi:io`, which HTTP uses too.
+- **A write makes a new version**, as the `createWritable` of the browser's
+  File System Access API does: the app can write at any position, chunks that
+  do not change are shared with the old version, and the new version takes the
+  place of the old one at once when the file is closed or synced. Others see
+  the old version until then.
+- fileOS adds only what WASI does not have: watch, old versions, the versions
+  of a conflict, and asking for links.
+
+### Sending a file as the answer
+
+As nginx's `X-Accel-Redirect` (X-Sendfile): to answer a request with a file,
+an app tells the kernel which file. The kernel sends it as a stream, and does
+`Range`, `ETag` and conditional requests. The app does not read large files
+into memory, and `Range` is made once, in the kernel, with the same code that
+gives `ui/`.
+
 - **A new instance for each event**, with limits on fuel, memory and time. An
   app that is not working takes no memory.
 - **The interface of an app (`ui/`) is given by the kernel**, as files named by

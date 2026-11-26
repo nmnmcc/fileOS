@@ -90,7 +90,8 @@ Access is a **grant** of exact permissions (such as `files.read` or
 to an app, a person or a device. A grant can be given on to others, but only
 made smaller. Every node can check a write with no network. There is no
 authorization engine: rules are made by apps that manage files. The whole
-model is in [Access: grants, permissions and sharing](../access/).
+model, with links in namespaces and the root path `/{identity}/{hash}` of
+every file, is in [Access: namespaces, links and sharing](../access/).
 
 ### When a removal and a write happen at the same time
 
@@ -175,6 +176,20 @@ settled by a fixed rule. These still happen:
 | Documents (rich text) | A text CRDT (Fugue-based), with full history; drafts and review for written work                              |
 | Rules about meaning   | The authority path, or a fix that the user can see                                                            |
 
+### What people see: a simple page and an advanced page
+
+The kernel's interface (`fos.localhost`) shows conflicts and rollbacks in the
+same way for every app and file:
+
+- **The simple page** says what to do: for versions side by side, "keep mine",
+  "keep theirs" or "keep both"; when data was rolled back, one sentence on why
+  ("3 changes by Ann were undone because her access was taken back"); when
+  changes made offline were put on top again, one sentence and a link.
+- **The advanced page** is for people who want to know what happened: the full
+  history and timeline of a file, by author and device; the difference between
+  any two versions; going back to any version; the causal graph; and why a
+  checkpoint or strong removal made an action not valid.
+
 ### What the kernel gives apps
 
 - **Files whose content is a CRDT**, which the kernel merges: registers (last
@@ -230,8 +245,11 @@ the size of the file.
 
 ### Checkpoints: smaller logs and final history
 
-The owner root key signs a **checkpoint** from time to time (a policy: for
-example once a day, when a device of the owner is online). A checkpoint says:
+The owner of a folder (at the end of its chain of owners), or a principal
+with `folder.checkpoint`, signs a **checkpoint** from time to time (a policy:
+for example once a day, when a device of the owner is online). When nobody who
+may sign is online for a long time, checkpoints wait, and so does compaction:
+data is right, it only takes more space for a time. A checkpoint says:
 "the state up to these heads is final".
 
 - **Compaction.** History before a checkpoint becomes a snapshot. Only the
@@ -276,31 +294,45 @@ we keep it there:
 | Moving over the network   | libp2p's Noise already gives it                                                                              |
 | "Burn after reading" chat | A double ratchet for that conversation, if the person wants it (new devices then cannot read older messages) |
 
-### Keys
+### Keys that follow paths
 
-1. Each chunk is encrypted with a **random data key**. Data keys are kept
-   encrypted with the folder's **epoch key** (key wrapping). A new epoch key
-   only wraps the small data keys again; the data is not encrypted again.
-2. **A new epoch key** comes when a member or a device is taken away (so that
-   they cannot read new data: post-compromise security), and from time to
-   time.
-3. **Delete means destroy the key** (crypto-shredding). When a file is deleted,
+A link can point to a directory deep in a folder, or to one file. A read link
+must give the keys of that part only. So keys follow root paths, in the way of
+Cryptree (Grolimund and others) and Tahoe-LAFS:
+
+1. **Each chunk is encrypted with a random data key.** Data keys are kept
+   encrypted with the key of the directory that the file is in (key
+   wrapping).
+2. **The key of a directory is worked out from the key of its parent**, by a
+   one-way function. Whoever has the key of `/ming/F1/2026/` can work out the
+   keys of everything under it, but not the key of `/ming/F1/` or of
+   `/ming/F1/private/`.
+3. **A read link gives the key of its target.** Mom, with a link to `2026/`,
+   gets the key of `2026/`; an app with a link to one file gets the data key of
+   that file only.
+4. **When a read link is taken back,** only the keys of the part that it
+   reached are changed (and the data keys under it wrapped again; the data is
+   not encrypted again). The new keys go to everyone who still has a read link
+   to that part: this is post-compromise security, and it is also done from
+   time to time.
+5. **Delete means destroy the key** (crypto-shredding). When a file is deleted,
    leaves the retention policy, or is compacted at a checkpoint, its data keys
    are destroyed. Copies of the ciphertext on friends' nodes and in backups are
    then only bytes. We cannot make a friend's node delete your data; this
    makes it not matter.
 
-### Giving out epoch keys: HPKE
+### Giving out keys: HPKE
 
-The device that makes a change of members makes a new random epoch key, and
-encrypts it with **HPKE** (RFC 9180) for each device that is still a member.
+The device that makes or changes a read link sends the key of its target with
+**HPKE** (RFC 9180) to each device of each principal that has a read link to
+it.
 
 - With two changes at the same time, both keys are good for reading, and new
   writes use one of them by a fixed rule. No ordering node is needed.
 - The cost is one HPKE message for each device. A family folder of 10 people
   with 3 devices each is 30 messages, for a change that seldom happens.
-- **Weak point:** a device gets epoch keys with its own HPKE key. If that key
-  is stolen later, and someone kept the encrypted epoch keys, they can open
+- **Weak point:** a device gets keys with its own HPKE key. If that key
+  is stolen later, and someone kept the encrypted keys, they can open
   them. So **each device changes its HPKE key from time to time and destroys
   the old one.**
 
@@ -317,6 +349,22 @@ DCGKA or BeeKEM is ready and audited, we can move to it for stronger forward
 secrecy. The crate is [`hpke`](https://github.com/rozbb/rust-hpke) 0.15
 (pure Rust, builds for WebAssembly). There will be an outside security audit
 before this is used for real data.
+
+## Building it: a new kernel
+
+The design on this page, [Access](../access/) and [Apps as workers](../workers/)
+is too far from the prototype to change it a step at a time, and a state
+between the two would mean nothing. So the kernel is written again:
+
+- **Kept:** `fos-core` (formats), `fos-id` (`did:fos`), the simulation in
+  `fos-sim` as the way to test, `.app` files, the gateway, and the `wasi:http`
+  runtime.
+- **New:** signed logs in a causal graph, flat keys and root paths,
+  namespaces and links, strong removal, checks on writes, chunks, checkpoints,
+  keys that follow paths, `wasi:filesystem` for apps, and watch.
+- **Order:** first the data model in `fos-sim`, starting from the first test,
+  "a node reads its own write while it is offline"; then storage, network and
+  the runtime; last, the old `fos-fs`, `fos-sync` and engine are taken away.
 
 ## Still open
 

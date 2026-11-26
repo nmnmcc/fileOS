@@ -65,8 +65,8 @@ const topics = [
       ),
       page(
         "dev/access",
-        "Access: grants, permissions and sharing",
-        "访问：授权、权限与分享",
+        "Access: namespaces, links and sharing",
+        "访问：命名空间、链接与分享",
       ),
       page("dev/workers", "Apps as workers", "App 作为 Worker"),
       page("dev/app-data", "Data in apps: good patterns", "App 数据的最佳实践"),
