@@ -2,16 +2,22 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-fileOS is a file system that a number of nodes keep together: your computers, and the computers of people you know.
+fileOS is a replicated file system for people and the small groups they are part of. Its state is kept by a number of nodes, and a node keeps only the folders it has agreed to keep. There is no global consensus and no global DHT.
 
 > [!NOTE]
 > A prototype. Formats will change.
 
-## How it is made
+## System model
 
-- **Kernel.** Every folder is a signed log of changes, put in order by one node. File contents are blobs named by their BLAKE3 hash. People, devices, nodes and apps are ed25519 keys. Nodes sync folders over libp2p.
-- **Apps.** WebAssembly components. Each app runs in a sandbox, has its own key and sees only the folders it is given.
-- **Kernel plugins.** WebAssembly components that do a part of the kernel's work. Today there is one: the engine, which says who may do what.
+**Principals.** People, devices, nodes and apps are named by ed25519 public keys.
+
+**Folders.** A folder is the unit of replication, ordering and authorization. Its state is fully given by one signed, append-only log, and its ID is the hash of the first record in it. The records are `put`, `delete`, `append`, `mount` and `policy`. File contents are blobs addressed by their BLAKE3 hash. A folder may mount other folders at paths, which gives a tree of names.
+
+**Order.** Every folder has one ordering node, and the total order that it gives is the main line of the folder. The ordering node may give the job to another node. A write to a file takes the place of the earlier version, which stays in the history. Appends to a stream commute, so they never conflict.
+
+**Authorization.** The kernel checks facts: signatures and hashes. The decisions are made by the engine of each node, which its owner chooses. Because nodes make their decisions independently, replicas may fork when their policies are different. The system does not force agreement.
+
+**Layers.** The kernel is the file system, sync over libp2p and the app runtime (wasmtime). Apps are WebAssembly components that use the file system through WIT interfaces. Each app runs in a sandbox with its own key and sees only the paths given to it. Kernel plugins are WebAssembly components that do a part of the kernel's work. The only one today is the engine.
 
 ## Try it
 

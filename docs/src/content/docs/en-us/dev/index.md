@@ -23,7 +23,7 @@ folder: the apps, and the engine that makes the rules of a node.
 - [Projects to learn from](prior-art/): projects we study, and what we take
   from each.
 
-Principles come first. See "How it is made" in the
+Principles come first. See "System model" in the
 [README](https://github.com/nmnmcc/fileOS/blob/main/README.md): the kernel keeps
 its contracts, apps are user space, and kernel plugins never change what apps
 see. We judge every change by this.

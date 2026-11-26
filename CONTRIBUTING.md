@@ -4,7 +4,7 @@
 
 Talk is as welcome as code. Open an issue to question a principle, a design decision or anything in this file.
 
-Read "How it is made" in the [README](README.md) first. We judge contributions by it and by the rules in this file.
+Read "System model" in the [README](README.md) first. We judge contributions by it and by the rules in this file.
 
 ## Language: Basic English
 
@@ -120,7 +120,7 @@ We give mechanisms and sensible defaults; each person makes the rules. When code
 
 ## Kernel, apps and kernel plugins
 
-fileOS is a kernel and apps, and the kernel can take kernel plugins. See "How it is made" in the [README](README.md).
+fileOS is a kernel and apps, and the kernel can take kernel plugins. See "System model" in the [README](README.md).
 
 - **Do not break user space.** Apps and other nodes are user space. The app interface (`wit/fos.wit`) and the formats and protocol between nodes only get new things. Old behavior stays, even when it is wrong, because someone may depend on it. A breaking change is a new version of the interface, and the old version still works.
 - **Apps are not plugins.** An app uses the kernel. It does not change the kernel.
