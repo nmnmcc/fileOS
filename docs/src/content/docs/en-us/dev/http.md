@@ -26,7 +26,7 @@ make requests as each other. So every app has an origin of its own:
 
 ```
 http://fos.localhost:<port>/            the kernel: interface, sign-in, API
-http://<app-id>.localhost:<port>/       one origin for each app
+http://<app>.localhost:<port>/       one origin for each app
 http://<plugin-id>.localhost:<port>/    a plugin with an interface
 ```
 
@@ -35,14 +35,15 @@ http://<plugin-id>.localhost:<port>/    a plugin with an interface
   `*.localhost` with no DNS.
 - **No certificates.** Browsers take `localhost` as a secure context, so
   service workers, WebAuthn and the other web APIs work.
-- **The app ID does not change and is never used again.** The storage of the
-  browser goes with the origin. If a new app got the name of an app that was
-  deleted, it would get that app's data. So the app ID comes from the ID of
-  the app folder: its name and the start of the hash, for example
-  `photos-k3x9q2m7ab` (at most 63 characters, as a DNS label).
+- **The name is the app's name in the identity**, the same on every device of
+  the identity, because apps sync with the identity (see
+  [Apps as workers](../workers/)). The storage of the browser goes with the
+  origin, so when a name is used again by a different app, the kernel sends
+  `Clear-Site-Data` on its first answer. (The prototype still makes an ID
+  from the app folder, such as `photos-k3x9q2m7ab`, on each node.)
 
 Different ports do not keep cookies apart (RFC 6265), and paths do not keep
-anything apart in a browser. That is why the app ID is in the host name, not
+anything apart in a browser. That is why the app is in the host name, not
 in the port or the path.
 
 ## Apps and plugins give HTTP with `wasi:http`
@@ -62,7 +63,7 @@ We do not make our own interface. A component that gives HTTP exports the
 The kernel does all sign-in, with standard protocols. Apps do not see
 passwords, sessions or tokens.
 
-1. The app is opened at `http://photos-k3x9.localhost/`. Its static files
+1. The app is opened at `http://photos.localhost/`. Its static files
    need no sign-in: they are the code of the app, not data.
 2. The app has no token, so it sends the browser to
    `http://fos.localhost/authorize`, with a PKCE challenge.
@@ -109,10 +110,10 @@ for large files, and `application/problem+json` (RFC 9457) for errors.
 
 | Where                                | The app is at                       | People configure |
 | ------------------------------------ | ----------------------------------- | ---------------- |
-| A device with a node (enhanced mode) | `<app-id>.localhost`                | Nothing          |
+| A device with a node (enhanced mode) | `<app>.localhost`                   | Nothing          |
 | Another device of yours with a node  | The same; the local node carries it | Nothing          |
-| A device with no node                | `<app-id>.<node>.<shared domain>`   | Nothing          |
-| Your own domain, if you want it      | `<app-id>.<your domain>`            | One DNS record   |
+| A device with no node                | `<app>.<node>.<shared domain>`      | Nothing          |
+| Your own domain, if you want it      | `<app>.<your domain>`               | One DNS record   |
 
 ### Enhanced mode: a node on the device
 

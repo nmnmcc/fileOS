@@ -58,6 +58,13 @@ const topics = [
       page("dev/fileos", "Architecture: fileOS", "架构：fileOS"),
       page("dev/identity", "Identity and finding nodes", "身份与查找节点"),
       page("dev/http", "HTTP and the browser", "HTTP 与浏览器"),
+      page(
+        "dev/data",
+        "Data: sync, conflicts, storage and keys",
+        "数据：同步、冲突、存储与密钥",
+      ),
+      page("dev/workers", "Apps as workers", "App 作为 Worker"),
+      page("dev/app-data", "Data in apps: good patterns", "App 数据的最佳实践"),
       page("dev/apps", "Writing apps and engines", "编写 App 和引擎"),
       page("dev/prior-art", "Projects to learn from", "值得学习的项目"),
     ],

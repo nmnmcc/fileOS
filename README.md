@@ -62,7 +62,7 @@ To share `/photos` with another node: `fos folder grant /photos <its node key> a
   - [x] libp2p: TCP, Noise, Yamux, mDNS, relays, hole punching, AutoNAT
   - [x] Writes wait for their ordering node and go when it is back
   - [ ] QUIC
-  - [ ] Folders encrypted with MLS (RFC 9420)
+  - [ ] Folders encrypted: random data keys, epoch keys sent with HPKE (RFC 9180), keys destroyed on delete
 - [ ] **Identity**
   - [x] One identity for a person: a DID (`did:fos`, the `did:plc` method with no directory), apart from the keys of their nodes
   - [x] Rotation keys and a signing key; node certificates in an identity folder

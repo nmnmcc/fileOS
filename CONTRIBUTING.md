@@ -119,6 +119,10 @@ Dependencies only go down. `fos-core` depends on no other fileOS crate. Apps and
 
 `fos` is for the kernel. Its commands are in groups (`node`, `fs`, `folder`, `identity`, `app`). What an app or a plugin does is not in it; packing and installing them is. The command line keeps no state: it saves nothing of its own, and there is no login or other command that changes what later commands do. It reads the address and the token of the gateway from the data directory of the node.
 
+## Storage that does not grow without end
+
+Data that grows with time, and not with what people care about, is a main reason why software is hard to run yourself. So no kind of data may grow without a limit by default. Every kind of data that a change adds has an owner, a time it is kept, and a plan for when space runs out: a retention policy, compaction at checkpoints, a budget for caches, or a quota for data kept for others. See [Data](docs/src/content/docs/en-us/dev/data.md).
+
 ## Mechanism, not policy
 
 We give mechanisms and sensible defaults; each person makes the rules. When code says _what is to happen_ (whom to help, what to share, what to keep), make it a policy with a default that people can change. Do not make it a fixed rule in the code.
