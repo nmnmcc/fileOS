@@ -23,11 +23,14 @@ pub struct Id {
     pub index: u32,
 }
 
-/// Someone who acts: today a key (a device, a node or an app). Groups and
-/// people (by `did:fos`) come later, as new variants.
+/// Someone who acts.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub enum Principal {
+    /// A key: a device, a node or an app. It signs entries.
     Key(PublicKey),
+    /// A group, by the act that made it. It has no key: its members act for
+    /// it. A person with many devices is a group of their device keys.
+    Group(Id),
 }
 
 /// An exact permission. Templates such as "Read and write" are lists of
@@ -62,6 +65,9 @@ pub enum Permission {
     DataKeep,
     #[serde(rename = "space.checkpoint")]
     SpaceCheckpoint,
+    /// On a group: being in it.
+    #[serde(rename = "member")]
+    Member,
 }
 
 /// What a grant is on.
@@ -71,6 +77,9 @@ pub enum Resource {
     Prefix(String),
     /// One file, by its ID. It follows the file when the file is renamed.
     File(Id),
+    /// A group. A grant of `member` on it puts someone in it; `access.give`
+    /// on it lets someone put others in it.
+    Group(Id),
 }
 
 /// Allow or deny. A deny wins over every allow.
@@ -129,6 +138,9 @@ pub enum Act {
     },
     /// Takes back a grant, and with it every grant that was given on from it.
     Take { grant: Id },
+    /// Makes a group. Its ID is the place of this act. The owner never
+    /// changes, and may be a group (owned by a group, and so on).
+    Group { owner: Principal },
     /// Makes the state in the past of this entry final, and signs its hash
     /// (see `space::Summary`). Made by the owner, or by a principal with
     /// `space.checkpoint` on the whole space. It is alone in its entry.

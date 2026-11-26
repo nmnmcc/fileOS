@@ -319,3 +319,90 @@ fn two_managers_who_take_each_other_at_the_same_time_both_lose_and_the_owner_sta
     assert!(a.may(who(&ming), Permission::FilesCreate, &all));
     a.write(&ming, 0, vec![create("still-here", b"")]).unwrap();
 }
+
+fn group(space: &mut Space, by: &SecretKey, owner: Principal) -> Id {
+    first(&space.write(by, 0, vec![Act::Group { owner }]).unwrap())
+}
+
+fn add(space: &mut Space, by: &SecretKey, to: Principal, group: Id) -> Id {
+    first(
+        &space
+            .write(
+                by,
+                0,
+                vec![Act::Give {
+                    to,
+                    effect: Effect::Allow,
+                    permissions: vec![Permission::Member],
+                    on: Resource::Group(group),
+                }],
+            )
+            .unwrap(),
+    )
+}
+
+#[test]
+fn a_grant_to_a_group_is_for_everyone_in_it() {
+    let (ming, mom, dad) = (key(1), key(2), key(3));
+    let (mut space, _) = Space::create(who(&ming), &ming, 0, 1);
+    let family = group(&mut space, &ming, who(&ming));
+    let to_mom = add(&mut space, &ming, who(&mom), family);
+    space
+        .write(
+            &ming,
+            0,
+            vec![Act::Give {
+                to: Principal::Group(family),
+                effect: Effect::Allow,
+                permissions: vec![Permission::FilesRead],
+                on: prefix("photos/"),
+            }],
+        )
+        .unwrap();
+    let photos = prefix("photos/");
+    assert!(space.may(who(&mom), Permission::FilesRead, &photos));
+    assert!(!space.may(who(&dad), Permission::FilesRead, &photos));
+    add(&mut space, &ming, who(&dad), family);
+    assert!(space.may(who(&dad), Permission::FilesRead, &photos));
+    space.write(&ming, 0, vec![Act::Take { grant: to_mom }]).unwrap();
+    assert!(!space.is_in(who(&mom), family));
+    assert!(!space.may(who(&mom), Permission::FilesRead, &photos));
+}
+
+#[test]
+fn a_group_owned_by_a_group_is_managed_by_its_members() {
+    let (ming, mom, ann) = (key(1), key(2), key(3));
+    let (mut space, _) = Space::create(who(&ming), &ming, 0, 1);
+    let parents = group(&mut space, &ming, who(&ming));
+    add(&mut space, &ming, who(&mom), parents);
+    // Mom is in "parents", which owns "family": she manages "family".
+    let family = group(&mut space, &mom, Principal::Group(parents));
+    add(&mut space, &mom, who(&ann), family);
+    assert!(space.is_in(who(&ann), family));
+    // Ann is in "family" but does not manage it.
+    space
+        .write(
+            &ann,
+            0,
+            vec![Act::Give {
+                to: who(&key(4)),
+                effect: Effect::Allow,
+                permissions: vec![Permission::Member],
+                on: Resource::Group(family),
+            }],
+        )
+        .unwrap_err();
+}
+
+#[test]
+fn groups_in_groups_and_cycles() {
+    let (ming, ann, stranger) = (key(1), key(2), key(9));
+    let (mut space, _) = Space::create(who(&ming), &ming, 0, 1);
+    let a = group(&mut space, &ming, who(&ming));
+    let b = group(&mut space, &ming, who(&ming));
+    add(&mut space, &ming, Principal::Group(b), a);
+    add(&mut space, &ming, Principal::Group(a), b);
+    add(&mut space, &ming, who(&ann), b);
+    assert!(space.is_in(who(&ann), a), "Ann is in b, which is in a");
+    assert!(!space.is_in(who(&stranger), a), "the cycle gives nothing");
+}

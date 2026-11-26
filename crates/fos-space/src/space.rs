@@ -97,6 +97,8 @@ pub struct Grant {
 pub struct Summary {
     pub files: Vec<(Id, Vec<Version>)>,
     pub grants: Vec<Given>,
+    /// Every group, with its owner.
+    pub groups: Vec<(Id, Principal)>,
     /// For each author: its last entry and the place of it.
     pub logs: Vec<(PublicKey, Hash, u64)>,
 }
@@ -179,6 +181,8 @@ struct State {
     gives: Vec<Giv>,
     /// (place of the entry, the grant taken back)
     takes: Vec<(usize, Id)>,
+    /// (place of the entry, the group, its owner)
+    groups: Vec<(usize, Id, Principal)>,
     /// The result of step 1.
     causal: Vec<bool>,
     /// Entries made at the same time as a checkpoint (step 2).
@@ -198,6 +202,8 @@ enum Target {
     File(Id, Vec<String>),
     /// Everything under a prefix.
     Prefix(String),
+    /// A group: who is in it, and who manages it.
+    Group(Id),
 }
 
 fn covers(on: &Resource, target: &Target) -> bool {
@@ -206,7 +212,7 @@ fn covers(on: &Resource, target: &Target) -> bool {
         (Resource::Prefix(p), Target::File(_, names)) => {
             !names.is_empty() && names.iter().all(|n| n.starts_with(p.as_str()))
         }
-        (Resource::File(a), Target::File(b, _)) => a == b,
+        (Resource::File(a), Target::File(b, _)) | (Resource::Group(a), Target::Group(b)) => a == b,
         _ => false,
     }
 }
@@ -301,44 +307,68 @@ impl View<'_> {
         match on {
             Resource::Prefix(p) => Target::Prefix(p.clone()),
             Resource::File(id) => Target::File(*id, self.names(*id)),
+            Resource::Group(id) => Target::Group(*id),
         }
     }
 
     /// Says if `who` has `permission` on `target` at this point.
     fn holds(&self, who: Principal, permission: Permission, target: &Target) -> bool {
-        self.holds_inner(who, permission, target, &mut Vec::new())
+        self.holds_inner(who, permission, target, 0)
     }
+
+    /// Says if `who` acts as `as_`: it is `as_`, or `as_` is a group that
+    /// `who` is in (also through groups in groups), or that `who` manages.
+    fn acts_as(&self, who: Principal, as_: Principal, depth: u32) -> bool {
+        who == as_
+            || match as_ {
+                Principal::Group(g) => {
+                    self.holds_inner(who, Permission::Member, &Target::Group(g), depth + 1)
+                }
+                Principal::Key(_) => false,
+            }
+    }
+
+    /// Chains of grants and groups longer than this give nothing. So a cycle
+    /// (A gives to B, B gives to A) gives nothing unless it comes from the
+    /// owner in fewer steps.
+    const DEPTH: u32 = 12;
 
     fn holds_inner(
         &self,
         who: Principal,
         permission: Permission,
         target: &Target,
-        seen: &mut Vec<Principal>,
+        depth: u32,
     ) -> bool {
-        if who == self.space.owner {
-            return true;
-        }
-        if seen.contains(&who) {
+        if depth > Self::DEPTH {
             return false;
         }
-        seen.push(who);
+        if self.acts_as(who, self.space.owner, depth) {
+            return true;
+        }
+        // The owner of a group has every permission on it.
+        if let Target::Group(g) = target
+            && let Some(owner) = self.group_owner(*g)
+            && self.acts_as(who, owner, depth)
+        {
+            return true;
+        }
         let mut allowed = false;
         let mut denied = false;
         for g in &self.state.gives {
             let given = &g.given;
-            if given.to != who
-                || !given.permissions.contains(&permission)
+            if !given.permissions.contains(&permission)
                 || !covers(&given.on, target)
                 || !self.counts(g.at)
+                || !self.acts_as(who, given.to, depth)
                 || self.taken(given.id)
             {
                 continue;
             }
             // A grant gives only what its giver still has.
-            let giver = self.holds_inner(given.giver, Permission::AccessGive, target, seen)
+            let giver = self.holds_inner(given.giver, Permission::AccessGive, target, depth + 1)
                 && (given.effect == Effect::Deny
-                    || self.holds_inner(given.giver, permission, target, seen));
+                    || self.holds_inner(given.giver, permission, target, depth + 1));
             if giver {
                 match given.effect {
                     Effect::Allow => allowed = true,
@@ -346,8 +376,16 @@ impl View<'_> {
                 }
             }
         }
-        seen.pop();
         allowed && !denied
+    }
+
+    /// The owner of a group, if the group is there at this point.
+    fn group_owner(&self, group: Id) -> Option<Principal> {
+        self.state
+            .groups
+            .iter()
+            .find(|(at, id, _)| *id == group && self.counts(*at))
+            .map(|(_, _, owner)| *owner)
     }
 
     /// The grants given and not taken back at this point.
@@ -406,9 +444,18 @@ impl View<'_> {
                 }
             }
         }
+        let mut groups: Vec<(Id, Principal)> = self
+            .state
+            .groups
+            .iter()
+            .filter(|(at, _, _)| self.counts(*at))
+            .map(|(_, id, owner)| (*id, *owner))
+            .collect();
+        groups.sort();
         Summary {
             files,
             grants,
+            groups,
             logs: logs.into_iter().map(|(k, (h, s))| (k, h, s)).collect(),
         }
     }
@@ -486,6 +533,11 @@ impl View<'_> {
                     {
                         return Err("a grant on a file that is not there".into());
                     }
+                    if let Target::Group(g) = &target
+                        && self.group_owner(*g).is_none()
+                    {
+                        return Err("a grant on a group that is not there".into());
+                    }
                     need(Permission::AccessGive, &target)?;
                     if *effect == Effect::Allow {
                         // Give on only what you have: the same or less.
@@ -506,6 +558,19 @@ impl View<'_> {
                     // The giver can always take back what it gave.
                     if g.given.giver != who {
                         need(Permission::AccessTake, &self.target(&g.given.on))?;
+                    }
+                }
+                Act::Group { owner } => {
+                    // You make groups that you own, or that a group you are
+                    // in owns. Owners are fixed, and must be there first, so
+                    // owners never make a cycle.
+                    if let Principal::Group(g) = owner
+                        && self.group_owner(*g).is_none()
+                    {
+                        return Err("a group owned by a group that is not there".into());
+                    }
+                    if !self.acts_as(who, *owner, 0) {
+                        return Err(format!("{author} does not act as the owner {owner:?}"));
                     }
                 }
                 Act::Checkpoint { state, retention } => {
@@ -920,6 +985,9 @@ impl Space {
                     }
                 }
             }
+            for (id, owner) in &base.snapshot.summary.groups {
+                state.groups.push((BASE, *id, *owner));
+            }
             for given in &base.snapshot.summary.grants {
                 state.gives.push(Giv {
                     at: BASE,
@@ -955,6 +1023,7 @@ impl Space {
                         },
                     }),
                     Act::Take { grant } => state.takes.push((at, *grant)),
+                    Act::Group { owner } => state.groups.push((at, id, *owner)),
                     _ => {}
                 }
             }
@@ -1328,6 +1397,12 @@ impl Space {
         let view = self.now();
         let target = view.target(on);
         view.holds(who, permission, &target)
+    }
+
+    /// Says if `who` is in `group` now (also through groups in groups, or
+    /// as its owner).
+    pub fn is_in(&self, who: Principal, group: Id) -> bool {
+        self.now().acts_as(who, Principal::Group(group), 0)
     }
 
     /// Says if `who` may read `file` now.
