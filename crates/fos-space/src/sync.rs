@@ -1,0 +1,332 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! A node with many spaces, and the messages between nodes, with no I/O.
+//!
+//! A [`Node`] takes messages from peers and gives back messages to send and
+//! events for the caller. It never touches the network or the disk itself.
+//!
+//! The rules:
+//!
+//! - When two nodes connect, each says which spaces it has and how long each
+//!   log is (`Have`), but only for spaces that the other may keep. Each sends
+//!   the other the entries it does not have. A node that sees that the other
+//!   has more says what it has, so that the other sends the rest.
+//! - A node writes at any time, also when offline. New entries go to every
+//!   connected node that may keep the space, and every node that gets new
+//!   entries sends them on in the same way.
+//! - A node may keep a space when its key has `data.keep` or `files.read` on
+//!   the whole space. (Reading part of a space, by prefix or by file, is done
+//!   through a node that has it all, until keys follow prefixes.)
+//! - Content is asked for from the node that sent the entry, and is given
+//!   only to nodes that may keep a space that has it.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
+use serde::{Deserialize, Serialize};
+
+use crate::entry::{Act, Content, Entry, Permission, Principal, Resource};
+use crate::space::Space;
+
+/// A message between two nodes.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum Msg {
+    /// The spaces I have, with the length of each log.
+    Have(Vec<(Hash, BTreeMap<PublicKey, u64>)>),
+    /// Send me this space.
+    Want(Hash),
+    Entries {
+        space: Hash,
+        entries: Vec<Entry>,
+    },
+    WantContent(Hash),
+    Content(Bytes),
+}
+
+/// Something the caller acts on.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Event {
+    /// The state of a space changed.
+    Changed(Hash),
+    /// Content came. The caller keeps it.
+    Content(Vec<u8>),
+}
+
+/// The output of one step.
+#[derive(Debug, Default)]
+pub struct Step {
+    pub out: Vec<(PublicKey, Msg)>,
+    pub events: Vec<Event>,
+}
+
+/// What the node needs to know about the content store.
+pub trait Contents {
+    fn has(&self, hash: Hash) -> bool;
+    fn get(&self, hash: Hash) -> Option<Vec<u8>>;
+}
+
+/// The spaces on one node, and its peers.
+#[derive(Debug)]
+pub struct Node {
+    key: SecretKey,
+    spaces: BTreeMap<Hash, Space>,
+    /// Spaces to get, whose first entry this node does not have yet.
+    wanted: BTreeSet<Hash>,
+    peers: BTreeSet<PublicKey>,
+    /// Content asked for and not yet here.
+    asked: BTreeSet<Hash>,
+    nonce: u64,
+}
+
+impl Node {
+    /// `nonce` should be random, so that spaces made after a restart are
+    /// different.
+    pub fn new(key: SecretKey, nonce: u64) -> Self {
+        Self {
+            key,
+            spaces: BTreeMap::new(),
+            wanted: BTreeSet::new(),
+            peers: BTreeSet::new(),
+            asked: BTreeSet::new(),
+            nonce,
+        }
+    }
+
+    pub fn me(&self) -> PublicKey {
+        self.key.public()
+    }
+
+    pub fn space(&self, id: Hash) -> Option<&Space> {
+        self.spaces.get(&id)
+    }
+
+    pub fn spaces(&self) -> impl Iterator<Item = &Space> {
+        self.spaces.values()
+    }
+
+    /// Puts a space that was kept on disk back in place.
+    pub fn insert(&mut self, space: Space) {
+        self.wanted.remove(&space.id());
+        self.spaces.insert(space.id(), space);
+    }
+
+    fn may_keep(space: &Space, peer: PublicKey) -> bool {
+        let whole = Resource::Prefix(String::new());
+        let who = Principal::Key(peer);
+        space.may(who, Permission::DataKeep, &whole)
+            || space.may(who, Permission::FilesRead, &whole)
+    }
+
+    /// Makes a space owned by this node's key.
+    pub fn create(&mut self) -> (Hash, Step) {
+        self.nonce += 1;
+        let (space, _) = Space::create(Principal::Key(self.me()), &self.key, self.nonce);
+        let id = space.id();
+        self.spaces.insert(id, space);
+        let mut step = Step::default();
+        step.events.push(Event::Changed(id));
+        (id, step)
+    }
+
+    /// Starts to get a space from peers.
+    pub fn follow(&mut self, id: Hash) -> Step {
+        let mut step = Step::default();
+        if !self.spaces.contains_key(&id) && self.wanted.insert(id) {
+            for peer in &self.peers {
+                step.out.push((*peer, Msg::Want(id)));
+            }
+        }
+        step
+    }
+
+    /// Writes acts, signed with this node's key. Gives back the new entry.
+    ///
+    /// # Errors
+    ///
+    /// When the space is not here, or the key may not do these acts.
+    pub fn write(&mut self, space: Hash, acts: Vec<Act>) -> Result<(Entry, Step), Error> {
+        let key = self.key.clone();
+        self.write_as(space, &key, acts)
+    }
+
+    /// Writes acts signed by `author`: this node or one of its apps. Gives
+    /// back the new entry.
+    ///
+    /// # Errors
+    ///
+    /// When the space is not here, or `author` may not do these acts.
+    pub fn write_as(
+        &mut self,
+        space: Hash,
+        author: &SecretKey,
+        acts: Vec<Act>,
+    ) -> Result<(Entry, Step), Error> {
+        let s = self
+            .spaces
+            .get_mut(&space)
+            .ok_or_else(|| Error(format!("space {space} is not here")))?;
+        let entry = s.write(author, acts)?;
+        let mut step = Step::default();
+        step.events.push(Event::Changed(space));
+        self.send_on(space, std::slice::from_ref(&entry), None, &mut step);
+        Ok((entry, step))
+    }
+
+    /// Sends new entries to every connected peer that may keep the space.
+    fn send_on(&self, space: Hash, entries: &[Entry], except: Option<PublicKey>, step: &mut Step) {
+        let Some(s) = self.spaces.get(&space) else {
+            return;
+        };
+        for peer in &self.peers {
+            if Some(*peer) != except && Self::may_keep(s, *peer) {
+                step.out.push((
+                    *peer,
+                    Msg::Entries {
+                        space,
+                        entries: entries.to_vec(),
+                    },
+                ));
+            }
+        }
+    }
+
+    fn have_for(&self, peer: PublicKey) -> Msg {
+        Msg::Have(
+            self.spaces
+                .values()
+                .filter(|s| Self::may_keep(s, peer))
+                .map(|s| (s.id(), s.logs()))
+                .collect(),
+        )
+    }
+
+    pub fn connected(&mut self, peer: PublicKey) -> Step {
+        let mut step = Step::default();
+        self.peers.insert(peer);
+        step.out.push((peer, self.have_for(peer)));
+        for id in &self.wanted {
+            step.out.push((peer, Msg::Want(*id)));
+        }
+        step
+    }
+
+    pub fn disconnected(&mut self, peer: PublicKey) {
+        self.peers.remove(&peer);
+    }
+
+    /// Takes a message from a peer.
+    pub fn receive(&mut self, from: PublicKey, msg: Msg, contents: &dyn Contents) -> Step {
+        let mut step = Step::default();
+        match msg {
+            Msg::Have(spaces) => {
+                let mut ask = Vec::new();
+                for (id, logs) in spaces {
+                    let Some(s) = self.spaces.get(&id) else {
+                        continue;
+                    };
+                    if Self::may_keep(s, from) {
+                        let entries = s.missing(&logs);
+                        if !entries.is_empty() {
+                            step.out.push((from, Msg::Entries { space: id, entries }));
+                        }
+                    }
+                    // The peer has entries we do not have: say what we have,
+                    // so that it sends them. We take entries from anyone;
+                    // they prove themselves.
+                    let ours = s.logs();
+                    if logs
+                        .iter()
+                        .any(|(k, n)| ours.get(k).copied().unwrap_or(0) < *n)
+                    {
+                        ask.push((id, ours));
+                    }
+                }
+                if !ask.is_empty() {
+                    step.out.push((from, Msg::Have(ask)));
+                }
+            }
+            Msg::Want(id) => {
+                if let Some(s) = self.spaces.get(&id)
+                    && Self::may_keep(s, from)
+                {
+                    step.out.push((
+                        from,
+                        Msg::Entries {
+                            space: id,
+                            entries: s.entries(),
+                        },
+                    ));
+                }
+            }
+            Msg::Entries { space, entries } => {
+                self.take_entries(from, space, entries, contents, &mut step);
+            }
+            Msg::WantContent(hash) => {
+                let allowed = self.spaces.values().any(|s| {
+                    Self::may_keep(s, from) && s.contents().iter().any(|c| c.hash == hash)
+                });
+                if allowed && let Some(bytes) = contents.get(hash) {
+                    step.out.push((from, Msg::Content(Bytes(bytes))));
+                }
+            }
+            Msg::Content(bytes) => {
+                let hash = Hash::of(&bytes.0);
+                if self.asked.remove(&hash) {
+                    step.events.push(Event::Content(bytes.0));
+                }
+            }
+        }
+        step
+    }
+
+    fn take_entries(
+        &mut self,
+        from: PublicKey,
+        space: Hash,
+        mut entries: Vec<Entry>,
+        contents: &dyn Contents,
+        step: &mut Step,
+    ) {
+        if !self.spaces.contains_key(&space) {
+            if !self.wanted.contains(&space) {
+                return;
+            }
+            let Some(pos) = entries.iter().position(|e| e.hash() == space) else {
+                // Only new entries came, maybe because we were just given
+                // access: ask for the whole space.
+                step.out.push((from, Msg::Want(space)));
+                return;
+            };
+            let genesis = entries.remove(pos);
+            let Ok(s) = Space::from_genesis(&genesis) else {
+                return;
+            };
+            self.wanted.remove(&space);
+            self.spaces.insert(space, s);
+            step.events.push(Event::Changed(space));
+            // Ask for anything that came before we followed.
+            step.out.push((from, self.have_for(from)));
+        }
+        let s = self.spaces.get_mut(&space).expect("the space is here");
+        let added = s.insert(entries.clone()).unwrap_or_default();
+        if added.is_empty() {
+            return;
+        }
+        step.events.push(Event::Changed(space));
+        let new: Vec<Entry> = entries
+            .into_iter()
+            .filter(|e| added.contains(&e.hash()))
+            .collect();
+        let wanted: Vec<Content> = s
+            .contents()
+            .into_iter()
+            .filter(|c| !contents.has(c.hash))
+            .collect();
+        for c in wanted {
+            if self.asked.insert(c.hash) {
+                step.out.push((from, Msg::WantContent(c.hash)));
+            }
+        }
+        self.send_on(space, &new, Some(from), step);
+    }
+}

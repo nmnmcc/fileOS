@@ -13,6 +13,8 @@ use fos_core::{Error, Hash, PublicKey, SecretKey};
 use fos_fs::{Folder, Op, Open};
 use fos_sync::{Blobs, Event, Msg, Replica, Step};
 
+pub mod world;
+
 /// Blobs in memory.
 #[derive(Debug, Default)]
 pub struct MemBlobs(pub BTreeMap<Hash, Vec<u8>>);

@@ -94,8 +94,9 @@ crates/
   fos-runtime     wasmtime: .app files and folders, engines and apps
   fos-net         libp2p: carries sync messages between nodes
   fos-store       the data directory: node key, blobs, folder logs, local key-value stores
-  fos-sync        sync between nodes (sans-IO, portable)
-  fos-fs          folders: signed log, order, forks, mounts (sans-IO, portable)
+  fos-space       the new kernel: spaces, files, grants and sync (sans-IO, portable)
+  fos-sync        sync between nodes (sans-IO, portable; the prototype)
+  fos-fs          folders: signed log, order, forks, mounts (sans-IO, portable; the prototype)
   fos-id          identities: did:fos, node certificates, identity links (portable)
   fos-core        formats: CBOR, ed25519, BLAKE3 (bottom of the graph, portable)
   fos-sim         deterministic multi-node simulation, for tests

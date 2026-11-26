@@ -1,0 +1,268 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! A deterministic simulation of nodes of the new kernel ([`fos_space`]).
+//!
+//! Each node is a [`Node`] with its content in memory. Messages go through
+//! one queue, in order, and only between nodes that are connected. A message
+//! to a node that is not connected is lost, as on a real network.
+
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+use fos_core::{Error, Hash, PublicKey, SecretKey};
+use fos_space::{
+    Act, Content, Contents, Effect, Event, File, Id, Msg, Node, Permission, Principal, Resource,
+    Space, Step,
+};
+
+/// Content in memory.
+#[derive(Debug, Default)]
+pub struct MemContents(pub BTreeMap<Hash, Vec<u8>>);
+
+impl Contents for MemContents {
+    fn has(&self, hash: Hash) -> bool {
+        self.0.contains_key(&hash)
+    }
+
+    fn get(&self, hash: Hash) -> Option<Vec<u8>> {
+        self.0.get(&hash).cloned()
+    }
+}
+
+/// One simulated node.
+#[derive(Debug)]
+pub struct WorldNode {
+    pub key: SecretKey,
+    pub node: Node,
+    pub contents: MemContents,
+}
+
+/// Many nodes and the links between them.
+#[derive(Debug, Default)]
+pub struct World {
+    pub nodes: Vec<WorldNode>,
+    links: BTreeSet<(usize, usize)>,
+    queue: VecDeque<(usize, PublicKey, Msg)>,
+}
+
+impl World {
+    /// Adds a node. Its key comes from `n`, so runs are the same every time.
+    pub fn add(&mut self, n: u8) -> usize {
+        let key = SecretKey::from_seed(&[n; 32]);
+        self.nodes.push(WorldNode {
+            node: Node::new(key.clone(), u64::from(n) << 32),
+            key,
+            contents: MemContents::default(),
+        });
+        self.nodes.len() - 1
+    }
+
+    pub fn key(&self, node: usize) -> PublicKey {
+        self.nodes[node].key.public()
+    }
+
+    pub fn who(&self, node: usize) -> Principal {
+        Principal::Key(self.key(node))
+    }
+
+    fn index(&self, key: PublicKey) -> usize {
+        self.nodes
+            .iter()
+            .position(|n| n.key.public() == key)
+            .expect("a known node")
+    }
+
+    fn linked(&self, a: usize, b: usize) -> bool {
+        self.links.contains(&(a.min(b), a.max(b)))
+    }
+
+    pub fn connect(&mut self, a: usize, b: usize) {
+        self.links.insert((a.min(b), a.max(b)));
+        let (ka, kb) = (self.key(a), self.key(b));
+        let step = self.nodes[a].node.connected(kb);
+        self.apply(a, step);
+        let step = self.nodes[b].node.connected(ka);
+        self.apply(b, step);
+        self.run();
+    }
+
+    pub fn disconnect(&mut self, a: usize, b: usize) {
+        self.links.remove(&(a.min(b), a.max(b)));
+        let (ka, kb) = (self.key(a), self.key(b));
+        self.nodes[a].node.disconnected(kb);
+        self.nodes[b].node.disconnected(ka);
+    }
+
+    /// Makes a space owned by the node's key.
+    pub fn create(&mut self, node: usize) -> Hash {
+        let (id, step) = self.nodes[node].node.create();
+        self.apply(node, step);
+        self.run();
+        id
+    }
+
+    pub fn follow(&mut self, node: usize, space: Hash) {
+        let step = self.nodes[node].node.follow(space);
+        self.apply(node, step);
+        self.run();
+    }
+
+    /// Writes acts signed by the node's key.
+    ///
+    /// # Errors
+    ///
+    /// When the node may not do them.
+    pub fn write(&mut self, node: usize, space: Hash, acts: Vec<Act>) -> Result<Id, Error> {
+        let (entry, step) = self.nodes[node].node.write(space, acts)?;
+        self.apply(node, step);
+        self.run();
+        Ok(Id {
+            entry: entry.hash(),
+            index: 0,
+        })
+    }
+
+    /// Makes a file. Gives back its ID.
+    ///
+    /// # Errors
+    ///
+    /// When the node may not make it.
+    pub fn put(&mut self, node: usize, space: Hash, name: &str, bytes: &[u8]) -> Result<Id, Error> {
+        let content = self.keep(node, bytes);
+        self.write(
+            node,
+            space,
+            vec![Act::Create {
+                name: name.into(),
+                content,
+            }],
+        )
+    }
+
+    /// Changes a file: a new version after the newest ones here.
+    ///
+    /// # Errors
+    ///
+    /// When the file is not here or the node may not change it.
+    pub fn change(
+        &mut self,
+        node: usize,
+        space: Hash,
+        file: Id,
+        name: &str,
+        bytes: Option<&[u8]>,
+    ) -> Result<Id, Error> {
+        let parents = self
+            .space(node, space)
+            .and_then(|s| s.file(file))
+            .ok_or_else(|| Error("no such file".into()))?
+            .versions
+            .iter()
+            .map(|v| v.id)
+            .collect();
+        let content = bytes.map(|b| self.keep(node, b));
+        self.write(
+            node,
+            space,
+            vec![Act::Change {
+                file,
+                parents,
+                name: name.into(),
+                content,
+            }],
+        )
+    }
+
+    /// Gives `to` the permissions on `on`. Gives back the ID of the grant.
+    ///
+    /// # Errors
+    ///
+    /// When the node may not give them.
+    pub fn give(
+        &mut self,
+        node: usize,
+        space: Hash,
+        to: usize,
+        permissions: &[Permission],
+        on: Resource,
+    ) -> Result<Id, Error> {
+        let to = self.who(to);
+        self.write(
+            node,
+            space,
+            vec![Act::Give {
+                to,
+                effect: Effect::Allow,
+                permissions: permissions.to_vec(),
+                on,
+            }],
+        )
+    }
+
+    /// Takes a grant back.
+    ///
+    /// # Errors
+    ///
+    /// When the node may not take it back.
+    pub fn take(&mut self, node: usize, space: Hash, grant: Id) -> Result<Id, Error> {
+        self.write(node, space, vec![Act::Take { grant }])
+    }
+
+    fn keep(&mut self, node: usize, bytes: &[u8]) -> Content {
+        let content = Content::of(bytes);
+        self.nodes[node]
+            .contents
+            .0
+            .insert(content.hash, bytes.to_vec());
+        content
+    }
+
+    pub fn space(&self, node: usize, id: Hash) -> Option<&Space> {
+        self.nodes[node].node.space(id)
+    }
+
+    /// The files with `name` on a node.
+    pub fn find(&self, node: usize, space: Hash, name: &str) -> Vec<File> {
+        self.space(node, space)
+            .map(|s| s.find(name))
+            .unwrap_or_default()
+    }
+
+    /// The content of every newest version of the file with `name`, as this
+    /// node has it.
+    pub fn read(&self, node: usize, space: Hash, name: &str) -> Vec<Vec<u8>> {
+        self.find(node, space, name)
+            .into_iter()
+            .flat_map(|f| f.versions)
+            .filter_map(|v| v.content)
+            .filter_map(|c| self.nodes[node].contents.get(c.hash))
+            .collect()
+    }
+
+    fn apply(&mut self, node: usize, step: Step) {
+        for (to, msg) in step.out {
+            self.queue.push_back((node, to, msg));
+        }
+        for event in step.events {
+            if let Event::Content(bytes) = event {
+                self.nodes[node].contents.0.insert(Hash::of(&bytes), bytes);
+            }
+        }
+    }
+
+    /// Delivers messages until there are none.
+    pub fn run(&mut self) {
+        while let Some((from, to, msg)) = self.queue.pop_front() {
+            let to = self.index(to);
+            if !self.linked(from, to) {
+                continue;
+            }
+            let key = self.key(from);
+            let n = &mut self.nodes[to];
+            let step = n.node.receive(key, msg, &n.contents);
+            self.apply(to, step);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
