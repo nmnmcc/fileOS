@@ -141,6 +141,28 @@ impl Node {
         (id, step)
     }
 
+    /// Makes a space owned by `owner`, which also signs its first entry: for
+    /// example the signing key of an identity that this node holds.
+    pub fn create_as(&mut self, owner: &SecretKey, time: u64) -> (Hash, Step) {
+        self.nonce += 1;
+        let (space, _) = Space::create(Principal::Key(owner.public()), owner, time, self.nonce);
+        let id = space.id();
+        self.spaces.insert(id, space);
+        let mut step = Step::default();
+        step.events.push(Event::Changed(id));
+        (id, step)
+    }
+
+    /// The nodes this node is connected to.
+    pub fn peers(&self) -> impl Iterator<Item = &PublicKey> {
+        self.peers.iter()
+    }
+
+    /// The spaces this node follows and does not have yet.
+    pub fn wanted(&self) -> impl Iterator<Item = &Hash> {
+        self.wanted.iter()
+    }
+
     /// Starts to get a space from peers.
     pub fn follow(&mut self, id: Hash) -> Step {
         let mut step = Step::default();

@@ -11,8 +11,7 @@ publish.workspace = true
 
 [dependencies]
 fos-core.workspace = true
-fos-fs.workspace = true
-fos-sync.workspace = true
+fos-space.workspace = true
 getrandom.workspace = true
 
 [dev-dependencies]

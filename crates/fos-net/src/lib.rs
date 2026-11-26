@@ -3,7 +3,7 @@
 //! The fileOS network, on libp2p.
 //!
 //! It only carries [`Msg`] values between nodes. It does not know what they
-//! mean: [`fos_sync::Replica`] does. The node key is the libp2p identity, so
+//! mean: [`fos_space::Node`] does. The node key is the libp2p identity, so
 //! a [`PublicKey`] and a `PeerId` name the same node.
 //!
 //! In use: TCP, Noise, Yamux, Identify, Ping, mDNS on the home
@@ -13,7 +13,7 @@
 use std::time::Duration;
 
 use fos_core::{Error, PublicKey};
-use fos_sync::Msg;
+use fos_space::Msg;
 use libp2p::futures::StreamExt as _;
 use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::swarm::behaviour::toggle::Toggle;

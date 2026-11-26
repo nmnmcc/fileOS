@@ -1,9 +1,0 @@
-# SPDX-License-Identifier: AGPL-3.0-only
-
-id = "capability"
-name = "Capabilities"
-kind = "engine"
-version = "0.1.0"
-build = 1
-requires = "fos:app@0.1.0"
-main = "bin/app.wasm"

@@ -5,11 +5,9 @@
 //! - A [`Bundle`] is an `.app` folder: a `manifest.toml`, components in `bin/`
 //!   and other files. It can come from a directory on disk or from a fileOS
 //!   folder.
-//! - An [`EngineInstance`] runs an engine component. It is the [`Authz`] of a
-//!   node. The runtime puts no limits on it: it is the owner's choice.
 //! - An [`AppInstance`] runs an app component. Every call it makes goes to an
-//!   [`AppHost`], which asks the engine. Each call into an app has limits on
-//!   fuel and memory.
+//!   [`AppHost`], which checks it against the grants of the app's key. Each
+//!   call into an app has limits on fuel and memory.
 //! - An [`HttpApp`] gives an app the HTTP requests for its origin, with
 //!   `wasi:http`. Each request gets a new instance, with limits on fuel,
 //!   memory and time. Apps get only the WASI interfaces of `wasi:http/proxy`:
@@ -19,8 +17,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use fos_core::{Error, Hash, PublicKey};
-use fos_fs::{Ability, Authz, Decision};
+use fos_core::{Error, Hash};
 use serde::Deserialize;
 use wasmtime::component::{Component, HasSelf, Linker, ResourceTable};
 use wasmtime::{Config, Store, StoreLimits, StoreLimitsBuilder};
@@ -33,9 +30,6 @@ mod pack;
 pub use http::{Answer, HttpApp};
 
 mod bindings {
-    pub mod engine {
-        wasmtime::component::bindgen!({ path: "../../wit", world: "engine" });
-    }
     pub mod app {
         wasmtime::component::bindgen!({
             path: "../../wit",
@@ -51,7 +45,6 @@ mod bindings {
 }
 
 use bindings::app::fos::app::{fs as wit_fs, kv as wit_kv, log as wit_log};
-use bindings::engine::fos::app::types as wit;
 
 /// Fuel for one call into an app.
 const APP_FUEL: u64 = 2_000_000_000;
@@ -63,7 +56,6 @@ const APP_MEMORY: usize = 256 << 20;
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     App,
-    Engine,
 }
 
 /// One permission that an app asks for.
@@ -213,26 +205,6 @@ impl Runtime {
         Component::new(&self.engine, bundle.main()).map_err(wasm_error)
     }
 
-    /// Starts an engine.
-    ///
-    /// # Errors
-    ///
-    /// When the bundle is not an engine, or its component does not start.
-    pub fn engine(&self, bundle: &Bundle) -> Result<EngineInstance, Error> {
-        let component = self.component(bundle, Kind::Engine)?;
-        let mut store = Store::new(&self.engine, ());
-        // The engine is the owner's choice: no limits.
-        store.set_fuel(u64::MAX).map_err(wasm_error)?;
-        let linker = Linker::new(&self.engine);
-        let bindings = bindings::engine::Engine::instantiate(&mut store, &component, &linker)
-            .map_err(wasm_error)?;
-        Ok(EngineInstance {
-            id: bundle.manifest.id.clone(),
-            store,
-            bindings,
-        })
-    }
-
     /// Starts an app. Its calls go to `host`.
     ///
     /// # Errors
@@ -258,108 +230,6 @@ impl Runtime {
 
 fn wasm_error(e: wasmtime::Error) -> Error {
     Error(format!("{e:#}"))
-}
-
-/// A running engine.
-pub struct EngineInstance {
-    id: String,
-    store: Store<()>,
-    bindings: bindings::engine::Engine,
-}
-
-impl std::fmt::Debug for EngineInstance {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "EngineInstance({})", self.id)
-    }
-}
-
-impl EngineInstance {
-    fn authz(
-        &mut self,
-    ) -> (
-        &mut Store<()>,
-        &bindings::engine::exports::fos::app::authz::Guest,
-    ) {
-        (&mut self.store, self.bindings.fos_app_authz())
-    }
-}
-
-fn keys(list: Vec<Vec<u8>>) -> Vec<PublicKey> {
-    list.iter()
-        .filter_map(|k| PublicKey::try_from(k.as_slice()).ok())
-        .collect()
-}
-
-/// A trap in the engine is a "no", so a broken engine never lets more in.
-impl Authz for EngineInstance {
-    fn init(&mut self, folder: Hash, creator: PublicKey) -> Vec<u8> {
-        let (store, authz) = self.authz();
-        authz
-            .call_init(store, &folder.to_string(), &creator.0.to_vec())
-            .unwrap_or_default()
-    }
-
-    fn apply(&mut self, state: &[u8], author: PublicKey, policy: &[u8]) -> Result<Vec<u8>, String> {
-        let (store, authz) = self.authz();
-        authz
-            .call_apply(store, state, &author.0.to_vec(), policy)
-            .unwrap_or_else(|e| Err(format!("the engine failed: {e:#}")))
-    }
-
-    fn check(
-        &mut self,
-        state: &[u8],
-        principal: PublicKey,
-        ability: Ability,
-        folder: Hash,
-        path: &str,
-    ) -> Decision {
-        let op = wit::Op {
-            ability: to_wit_ability(ability),
-            folder: folder.to_string(),
-            path: path.to_string(),
-        };
-        let (store, authz) = self.authz();
-        match authz.call_check(store, state, &principal.0.to_vec(), &op) {
-            Ok(wit::Decision::Allow) => Decision::Allow,
-            Ok(wit::Decision::Deny(reason)) => Decision::Deny(reason),
-            Err(e) => Decision::Deny(format!("the engine failed: {e:#}")),
-        }
-    }
-
-    fn readers(&mut self, state: &[u8]) -> Vec<PublicKey> {
-        let (store, authz) = self.authz();
-        authz
-            .call_readers(store, state)
-            .map(keys)
-            .unwrap_or_default()
-    }
-
-    fn storers(&mut self, state: &[u8]) -> Vec<PublicKey> {
-        let (store, authz) = self.authz();
-        authz
-            .call_storers(store, state)
-            .map(keys)
-            .unwrap_or_default()
-    }
-
-    fn grant(&mut self, to: PublicKey, abilities: &[Ability], path: &str) -> Vec<u8> {
-        let abilities: Vec<wit::Ability> = abilities.iter().map(|a| to_wit_ability(*a)).collect();
-        let (store, authz) = self.authz();
-        authz
-            .call_grant(store, &to.0.to_vec(), &abilities, path)
-            .unwrap_or_default()
-    }
-}
-
-fn to_wit_ability(ability: Ability) -> wit::Ability {
-    match ability {
-        Ability::Read => wit::Ability::Read,
-        Ability::Write => wit::Ability::Write,
-        Ability::Append => wit::Ability::Append,
-        Ability::Grant => wit::Ability::Grant,
-        Ability::Store => wit::Ability::Store,
-    }
 }
 
 /// An error from the file system, as an app sees it.

@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# The WebAssembly side of fileOS: the app SDK, the default engine and the apps
+# The WebAssembly side of fileOS: the app SDK and the apps
 # that come with fileOS. They build for wasm32-unknown-unknown only, so they
 # are not in the main workspace. `apps` (scripts/apps.py) builds them into
 # .app folders in target/apps/.
 
 [workspace]
 resolver = "3"
-members = ["fos-app", "capability", "photos", "chat"]
+members = ["fos-app", "photos", "chat"]
 
 [workspace.package]
 version = "0.1.0"
@@ -21,14 +21,6 @@ fos-app = { path = "fos-app" }
 wit-bindgen = { version = "0.63.0", default-features = false, features = [
   "macros",
   "realloc",
-] }
-serde = { version = "1.0.229", default-features = false, features = [
-  "std",
-  "derive",
-] }
-cbor4ii = { version = "1.2.5", default-features = false, features = [
-  "serde1",
-  "use_std",
 ] }
 
 [workspace.lints.rust]

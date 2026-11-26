@@ -11,7 +11,6 @@ publish.workspace = true
 
 [dependencies]
 fos-core.workspace = true
-fos-fs.workspace = true
 serde.workspace = true
 rawzip.workspace = true
 tar.workspace = true

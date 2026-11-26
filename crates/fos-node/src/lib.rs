@@ -3,38 +3,51 @@
 //! One fileOS node.
 //!
 //! A node puts the parts together: the data directory ([`Store`]), the
-//! folders and sync ([`Replica`]), the engine of the node, the apps, and the
-//! network. Paths here are node paths: the first part is a mount in the root
-//! folder, for example `/photos/2026/a.jpg`.
+//! spaces and sync ([`fos_space::Node`]), the apps, and the network.
+//!
+//! Paths here are node paths. The node has a **home space**. Other spaces
+//! are mounted in it at names such as `photos` or `apps/chat`, so the node
+//! path `/photos/2026/a.jpg` is the name `2026/a.jpg` in the space mounted at
+//! `photos`. A mount is a small file in the home space, under `.mounts/`.
 //!
 //! The node and the people who use it through the gateway act with the node
 //! key. Each app acts with its own key, which comes from the node key. Every
-//! write, by anyone, goes through the engine.
+//! write, by anyone, is checked against the grants in its space.
 //!
 //! A node may be one of the nodes of an identity (a person, named by a
-//! `did:fos` DID). The identity folder is mounted at [`IDENTITY_AT`]. It has
-//! the DID log and a certificate for each node. One node holds the keys of
-//! the identity, and only that node can add or take away nodes.
+//! `did:fos` DID). The identity space is mounted at [`IDENTITY_AT`]. It has
+//! the DID log and a certificate for each node. It is owned by the signing
+//! key of the identity, so only the node that holds that key can add or take
+//! away nodes.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt::{self, Write as _};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
-use fos_fs::{Ability, Authz, Decision, Fork, Node as FsNode, Op, resolve};
+use fos_core::{Error, Hash, PublicKey, SecretKey};
 use fos_id::{Link, NodeCert, Op as DidOp, Service, State};
-use fos_runtime::{AppHost, AppInstance, Bundle, EngineInstance, FsError, Kind, Runtime};
-
-pub use fos_runtime::{Answer, HttpApp};
+use fos_runtime::{AppHost, AppInstance, Bundle, FsError, Kind, Runtime};
+use fos_space::{
+    Act, Content, Contents as _, Effect, Event, File, Id, Permission, Principal, Resource,
+    Retention, Space, Step,
+};
 use fos_store::Store;
-use fos_sync::{Blobs as _, Event, Replica, Step};
 use tokio::sync::mpsc;
 
 pub use fos_net::Config as NetConfig;
+pub use fos_runtime::{Answer, HttpApp};
 
-/// Where the identity folder is mounted in the root folder.
+/// Where the identity space is mounted in the home space.
 pub const IDENTITY_AT: &str = "/identity";
+
+/// The prefix of the files in the home space that say what is mounted where.
+const MOUNTS: &str = ".mounts/";
+
+/// After this many entries, a node makes a checkpoint of a space it owns and
+/// compacts it. A policy, with a default.
+const CHECKPOINT_AFTER: usize = 1000;
 
 /// One node. Cheap to clone; all clones are the same node.
 #[derive(Clone)]
@@ -62,15 +75,19 @@ struct Shared {
 struct Inner {
     store: Store,
     key: SecretKey,
-    replica: Replica,
-    engine: EngineInstance,
-    root: Hash,
+    node: fos_space::Node,
+    home: Hash,
     kv: BTreeMap<String, BTreeMap<String, Vec<u8>>>,
     net: Option<mpsc::UnboundedSender<fos_net::Command>>,
     listening: Vec<String>,
-    /// Node paths that wait for a blob before apps hear about them.
+    /// For each space: the entries kept on disk, and the checkpoint of the
+    /// base that is on disk.
+    saved: BTreeMap<Hash, (BTreeSet<Hash>, Option<Hash>)>,
+    /// For each space: the newest versions of each name, as apps last heard.
+    seen: BTreeMap<Hash, BTreeMap<String, Vec<Id>>>,
+    /// Node paths that wait for content before apps hear about them.
     waiting: BTreeMap<Hash, Vec<String>>,
-    /// The last messages from apps, newest last.
+    /// The last messages from apps and the kernel, newest last.
     logs: VecDeque<String>,
     /// The rotation key of the identity, when this node holds it.
     rotation_key: Option<SecretKey>,
@@ -82,11 +99,12 @@ struct Inner {
 #[derive(Clone, Debug)]
 pub struct Status {
     pub key: PublicKey,
-    pub root: Hash,
+    pub home: Hash,
     pub listening: Vec<String>,
     pub peers: Vec<PublicKey>,
-    pub pending: usize,
-    pub folders: Vec<FolderStatus>,
+    pub spaces: Vec<SpaceStatus>,
+    /// Spaces that are mounted but not here yet.
+    pub wanted: Vec<Hash>,
     pub apps: Vec<String>,
     pub logs: Vec<String>,
     pub identity: Option<Identity>,
@@ -96,10 +114,10 @@ pub struct Status {
 #[derive(Clone, Debug)]
 pub struct Identity {
     /// The DID of the identity. `None` while the node waits for the
-    /// identity folder from another node, or when its log is not valid.
+    /// identity space from another node, or when its log is not valid.
     pub did: Option<String>,
-    /// The identity folder.
-    pub folder: Hash,
+    /// The identity space.
+    pub space: Hash,
     /// The rotation keys, as `did:key`, the first one with the highest priority.
     pub rotation_keys: Vec<String>,
     /// Other names of the identity.
@@ -116,36 +134,31 @@ pub struct Identity {
 }
 
 #[derive(Clone, Debug)]
-pub struct FolderStatus {
+pub struct SpaceStatus {
     pub id: Hash,
-    pub name: String,
+    pub owner: Principal,
     pub mounted_at: Vec<String>,
-    pub entries: u64,
-    pub orderer: PublicKey,
-    pub fork: Option<Fork>,
+    pub entries: usize,
+    /// Entries in the graph that have no effect.
+    pub rejected: usize,
+    /// The checkpoint the space was compacted at, if any.
+    pub base: Option<Hash>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn join(mount: &str, inner: &str) -> String {
-    if inner == "/" {
-        mount.to_string()
-    } else {
-        format!("{mount}{inner}")
-    }
+/// The time now, in milliseconds since 1970.
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
-/// The abilities that a permission in a manifest asks for.
-fn abilities(access: &str) -> Result<Vec<Ability>, Error> {
-    Ok(match access {
-        "read" => vec![Ability::Read],
-        "write" => vec![Ability::Write],
-        "append" => vec![Ability::Append],
-        "read-write" => vec![Ability::Read, Ability::Write, Ability::Append],
-        _ => return Err(Error(format!("not an access: {access:?}"))),
-    })
+/// A node path without its first `/`, and with no `/` at the end.
+fn clean(path: &str) -> String {
+    path.trim_matches('/').to_string()
 }
 
 /// Packs the `.app` folder `dir` into the bytes of an `.app` file: a zip
@@ -162,10 +175,10 @@ pub fn pack_app(dir: &Path) -> Result<Vec<u8>, Error> {
 /// The ID of an app: the host name of its origin, `<app-id>.localhost`.
 ///
 /// It is the ID in the manifest (only lowercase letters, digits and `-`)
-/// and the start of the ID of the app folder. So it does not change, and is
+/// and the start of the ID of the app's space. So it does not change, and is
 /// not used again by another app, which would get the data that the browser
 /// keeps for the origin.
-pub fn app_id(manifest_id: &str, folder: Hash) -> String {
+pub fn app_id(manifest_id: &str, space: Hash) -> String {
     let name: String = manifest_id
         .to_ascii_lowercase()
         .chars()
@@ -173,7 +186,7 @@ pub fn app_id(manifest_id: &str, folder: Hash) -> String {
         .take(40)
         .collect();
     let name = name.trim_matches('-');
-    let short = &folder.to_string()[..10];
+    let short = &space.to_string()[..10];
     if name.is_empty() {
         format!("app-{short}")
     } else {
@@ -228,59 +241,76 @@ pub fn write_gateway_addr(dir: &Path, port: Option<u16>) -> Result<(), Error> {
     fos_store::write_atomic(&addr, format!("127.0.0.1:{port}").as_bytes())
 }
 
-/// Reads ability names, for example `read,write,store`.
+/// The permissions of the templates, for giving access to others.
+const READ: [Permission; 5] = [
+    Permission::FilesList,
+    Permission::FilesRead,
+    Permission::FilesHistory,
+    Permission::FilesWatch,
+    Permission::DataKeep,
+];
+const WRITE: [Permission; 3] = [
+    Permission::FilesCreate,
+    Permission::FilesChange,
+    Permission::FilesDelete,
+];
+const MANAGE: [Permission; 6] = [
+    Permission::AccessView,
+    Permission::AccessGive,
+    Permission::AccessTake,
+    Permission::RulesSet,
+    Permission::ShareSend,
+    Permission::SpaceCheckpoint,
+];
+
+/// Reads permissions: exact names such as `files.read`, or the templates
+/// `read`, `read-write` (or `write`), `manage` and `relay`, with `,`
+/// between them.
 ///
 /// # Errors
 ///
-/// When a name is not an ability.
-pub fn parse_abilities(list: &str) -> Result<Vec<Ability>, Error> {
-    list.split(',')
-        .map(|name| match name.trim() {
-            "read" => Ok(vec![Ability::Read]),
-            "write" => Ok(vec![Ability::Write]),
-            "append" => Ok(vec![Ability::Append]),
-            "grant" => Ok(vec![Ability::Grant]),
-            "store" => Ok(vec![Ability::Store]),
-            "all" => Ok(vec![
-                Ability::Read,
-                Ability::Write,
-                Ability::Append,
-                Ability::Grant,
-                Ability::Store,
-            ]),
-            other => Err(Error(format!("not an ability: {other:?}"))),
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(|lists| lists.concat())
+/// When a name is not a permission or a template.
+pub fn parse_permissions(list: &str) -> Result<Vec<Permission>, Error> {
+    let mut out = BTreeSet::new();
+    for name in list.split(',').map(str::trim) {
+        match name {
+            "read" => out.extend(READ),
+            "write" | "read-write" | "append" => out.extend(READ.into_iter().chain(WRITE)),
+            "manage" | "all" => out.extend(READ.into_iter().chain(WRITE).chain(MANAGE)),
+            "relay" | "store" => {
+                out.insert(Permission::DataKeep);
+            }
+            other => {
+                let permission = fos_core::decode::<Permission>(&fos_core::encode(&other))
+                    .map_err(|e| Error(format!("not a permission or template: {other:?} ({e})")))?;
+                out.insert(permission);
+            }
+        }
+    }
+    Ok(out.into_iter().collect())
 }
 
 impl Node {
-    /// Makes a new node in `dir`, with the engine in `engine`: an `.app`
-    /// file, or an `.app` folder.
+    /// Makes a new node in `dir`, with its home space.
     ///
     /// # Errors
     ///
-    /// When the directory already has a node, or the engine does not start.
-    pub fn init(dir: &Path, engine: &Path) -> Result<PublicKey, Error> {
+    /// When the directory already has a node.
+    pub fn init(dir: &Path) -> Result<PublicKey, Error> {
         let store = Store::open(dir)?;
-        if store.root()?.is_some() {
+        if store.home()?.is_some() {
             return Err(Error(format!("{} already has a node", dir.display())));
         }
-        let bundle = Bundle::read(engine)?;
-        if bundle.manifest.kind != Kind::Engine {
-            return Err(Error(format!("{} is not an engine", engine.display())));
-        }
-        bundle.write_dir(&store.engine_dir())?;
         let key = store.key()?;
-        let mut authz = Runtime::new()?.engine(&bundle)?;
-        let mut replica = Replica::new(key.clone(), 0);
-        let (root, step) = replica.create("root", &mut authz);
-        for event in step.events {
-            if let Event::Entries { folder, entries } = event {
-                store.append_entries(folder, &entries)?;
-            }
-        }
-        store.set_root(root)?;
+        let seed = fos_store::random_seed()?;
+        let (space, genesis) = Space::create(
+            Principal::Key(key.public()),
+            &key,
+            now(),
+            u64::from_le_bytes(seed[..8].try_into().unwrap_or_default()),
+        );
+        store.append_entries(space.id(), &[genesis])?;
+        store.set_home(space.id())?;
         Ok(key.public())
     }
 
@@ -288,10 +318,10 @@ impl Node {
     ///
     /// # Errors
     ///
-    /// When there is no node in `dir`, or its data or engine is broken.
+    /// When there is no node in `dir`, or its data is broken.
     pub fn open(dir: &Path) -> Result<Node, Error> {
         let store = Store::open(dir)?;
-        let root = store.root()?.ok_or_else(|| {
+        let home = store.home()?.ok_or_else(|| {
             Error(format!(
                 "{} has no node: run `fos node init`",
                 dir.display()
@@ -300,41 +330,47 @@ impl Node {
         let key = store.key()?;
         let rotation_key = store.identity_key("rotation")?;
         let signing_key = store.identity_key("signing")?;
-        let runtime = Runtime::new()?;
-        let mut engine = runtime.engine(&Bundle::read_dir(&store.engine_dir())?)?;
         let seed = fos_store::random_seed()?;
-        let mut replica = Replica::new(
+        let mut node = fos_space::Node::new(
             key.clone(),
             u64::from_le_bytes(seed[..8].try_into().unwrap_or_default()),
         );
-        for folder in store.load_folders(&mut engine)? {
-            replica.insert(folder);
+        let mut saved = BTreeMap::new();
+        for space in store.load_spaces()? {
+            let hashes = space.entries().iter().map(fos_space::Entry::hash).collect();
+            let base = space.base().map(|b| b.checkpoint.hash());
+            saved.insert(space.id(), (hashes, base));
+            node.insert(space);
         }
-        // The signing key is the ordering node of the identity folder.
-        if let Some(signing) = &signing_key {
-            replica.add_key(signing.clone());
-        }
-        let inner = Inner {
+        let mut inner = Inner {
             store,
             key: key.clone(),
-            replica,
-            engine,
-            root,
+            node,
+            home,
             kv: BTreeMap::new(),
             net: None,
             listening: Vec::new(),
+            saved,
+            seen: BTreeMap::new(),
             waiting: BTreeMap::new(),
             logs: VecDeque::new(),
             rotation_key,
             signing_key,
         };
+        // Follow the mounted spaces that are not here yet.
+        for (_, id) in inner.mounts() {
+            let _ = inner.node.follow(id);
+        }
+        for id in inner.node.spaces().map(Space::id).collect::<Vec<_>>() {
+            inner.note(id, &Mutex::new(VecDeque::new()));
+        }
         let node = Node {
             shared: Arc::new(Shared {
                 inner: Mutex::new(inner),
                 apps: Mutex::new(Vec::new()),
                 http: Mutex::new(BTreeMap::new()),
                 changed: Mutex::new(VecDeque::new()),
-                runtime,
+                runtime: Runtime::new()?,
                 key: key.public(),
             }),
         };
@@ -351,82 +387,71 @@ impl Node {
         lock(&self.shared.inner)
     }
 
-    /// Makes a new folder, and mounts it at `at`. Gives its ID.
+    /// Makes a new space, owned by this node, and mounts it at `at`. Gives
+    /// its ID.
     ///
     /// # Errors
     ///
-    /// When the mount is not allowed.
-    pub fn create(&self, name: &str, at: &str) -> Result<Hash, Error> {
+    /// When something is mounted at `at` already.
+    pub fn create(&self, at: &str) -> Result<Hash, Error> {
         let mut inner = self.inner();
-        let Inner {
-            replica, engine, ..
-        } = &mut *inner;
-        let (id, step) = replica.create(name, engine);
+        let (id, step) = inner.node.create(now());
         inner.process(step, &self.shared.changed)?;
         inner.mount(id, at, &self.shared.changed)?;
         Ok(id)
     }
 
-    /// Mounts a folder at `at`, and starts to get it from peers.
+    /// Mounts a space at `at`, and starts to get it from peers.
     ///
     /// # Errors
     ///
-    /// When the mount is not allowed.
-    pub fn mount(&self, folder: Hash, at: &str) -> Result<(), Error> {
+    /// When something is mounted at `at` already.
+    pub fn mount(&self, space: Hash, at: &str) -> Result<(), Error> {
         let mut inner = self.inner();
-        inner.mount(folder, at, &self.shared.changed)?;
-        let step = inner.replica.follow(folder);
+        inner.mount(space, at, &self.shared.changed)?;
+        let step = inner.node.follow(space);
         inner.process(step, &self.shared.changed)
     }
 
-    /// Puts a file.
+    /// Puts a file: a new version when the name is there, a new file when
+    /// it is not.
     ///
     /// # Errors
     ///
-    /// When the path is not valid, or the engine says no.
+    /// When the path is not valid, or the node has no grant for it.
     pub fn put(&self, path: &str, data: &[u8]) -> Result<(), Error> {
         let result = self.inner().put(None, path, data, &self.shared.changed);
         self.pump();
         result
     }
 
-    /// Adds a record to the end of a stream.
+    /// Adds bytes to the end of a file, as a new version.
     ///
     /// # Errors
     ///
-    /// When the path is not valid, or the engine says no.
+    /// When the path is not valid, or the node has no grant for it.
     pub fn append(&self, path: &str, data: &[u8]) -> Result<(), Error> {
-        let result = self.inner().write_at(
-            None,
-            path,
-            |p| Op::Append {
-                path: p,
-                data: Bytes(data.to_vec()),
-            },
-            &self.shared.changed,
-        );
+        let result = self.inner().append(None, path, data, &self.shared.changed);
         self.pump();
         result
     }
 
-    /// Takes a file or mount away.
+    /// Deletes a file, or takes a mount away.
     ///
     /// # Errors
     ///
-    /// When the path is not there, or the engine says no.
+    /// When the path is not there, or the node has no grant for it.
     pub fn delete(&self, path: &str) -> Result<(), Error> {
-        let result =
-            self.inner()
-                .write_at(None, path, |p| Op::Delete { path: p }, &self.shared.changed);
+        let result = self.inner().delete(None, path, &self.shared.changed);
         self.pump();
         result
     }
 
-    /// The bytes of a file, or the records of a stream one after the other.
+    /// The bytes of a file.
     ///
     /// # Errors
     ///
-    /// When the path is not there, or the engine says no.
+    /// When the path is not there, or the node has no grant for it.
     pub fn read(&self, path: &str) -> Result<Vec<u8>, Error> {
         let key = self.key();
         self.inner().read(key, path).map_err(fs_error)
@@ -436,39 +461,89 @@ impl Node {
     ///
     /// # Errors
     ///
-    /// When the folder is not here, or the engine says no.
+    /// When the space is not here, or the node has no grant for it.
     pub fn list(&self, path: &str) -> Result<Vec<String>, Error> {
         let key = self.key();
         self.inner().list(key, path).map_err(fs_error)
     }
 
-    /// Writes a policy entry into the folder that has `path`. The engine gives it meaning.
+    /// Gives `to` permissions on `path`: on the file when there is a file
+    /// with that name (the grant follows it when it is renamed), or else on
+    /// every name under it. Gives the ID of the grant.
     ///
     /// # Errors
     ///
-    /// When the engine does not take it.
-    pub fn policy(&self, path: &str, policy: &[u8]) -> Result<(), Error> {
-        self.inner().write_at(
+    /// When the node may not give them.
+    pub fn grant(
+        &self,
+        path: &str,
+        to: PublicKey,
+        permissions: &[Permission],
+    ) -> Result<Id, Error> {
+        let result = self.inner().grant(
             None,
             path,
-            |_| Op::Policy(Bytes(policy.to_vec())),
+            Principal::Key(to),
+            permissions,
             &self.shared.changed,
-        )
+        );
+        self.pump();
+        result
     }
 
-    /// Gives `to` abilities on `path`, in the form the engine asks for.
+    /// Takes back a grant in the space that has `path`.
     ///
     /// # Errors
     ///
-    /// When the engine does not take it.
-    pub fn grant(&self, path: &str, to: PublicKey, abilities: &[Ability]) -> Result<(), Error> {
-        self.inner()
-            .grant(path, to, abilities, &self.shared.changed)
+    /// When the node may not take it back.
+    pub fn take(&self, path: &str, grant: Id) -> Result<(), Error> {
+        let mut inner = self.inner();
+        let (space, _) = inner.resolve(path);
+        inner.write(None, space, vec![Act::Take { grant }], &self.shared.changed)?;
+        drop(inner);
+        self.pump();
+        Ok(())
     }
 
-    /// Installs an app from an `.app` file (or an `.app` folder): puts it into a folder at
-    /// `/apps/<name>`, gives its key the permissions in its manifest, and
-    /// starts it. Gives the app's key.
+    /// The grants in place in the space that has `path`, as text: one line
+    /// each.
+    pub fn grants(&self, path: &str) -> Vec<String> {
+        let inner = self.inner();
+        let (space, _) = inner.resolve(path);
+        let Some(s) = inner.node.space(space) else {
+            return Vec::new();
+        };
+        s.grants()
+            .into_iter()
+            .map(|g| {
+                let g_ = &g.given;
+                format!(
+                    "{} {:?} -> {:?} {:?} on {:?}{}",
+                    grant_text(g_.id),
+                    g_.effect,
+                    g_.to,
+                    g_.permissions,
+                    g_.on,
+                    if g.in_effect { "" } else { " (not in effect)" }
+                )
+            })
+            .collect()
+    }
+
+    /// Makes a checkpoint of the space that has `path`, and compacts it.
+    ///
+    /// # Errors
+    ///
+    /// When the node may not make checkpoints of it.
+    pub fn checkpoint(&self, path: &str) -> Result<(), Error> {
+        let mut inner = self.inner();
+        let (space, _) = inner.resolve(path);
+        inner.checkpoint(space, &self.shared.changed)
+    }
+
+    /// Installs an app from an `.app` file (or an `.app` folder): puts it into a space mounted
+    /// at `/apps/<name>`, gives its key the permissions in its manifest, and
+    /// starts it. Gives the app's key and ID.
     ///
     /// # Errors
     ///
@@ -485,21 +560,12 @@ impl Node {
             .unwrap_or_default();
         let at = format!("/apps/{name}");
         let app_key;
-        let folder;
+        let space;
         {
             let mut inner = self.inner();
             app_key = inner.app_key(&bundle.manifest.id);
-            if inner
-                .resolve(&at)
-                .is_ok_and(|(f, p)| p == "/" && f != inner.root)
-            {
-                return Err(Error(format!("{at} is already there")));
-            }
-            let Inner {
-                replica, engine, ..
-            } = &mut *inner;
-            let (id, step) = replica.create(&name, engine);
-            folder = id;
+            let (id, step) = inner.node.create(now());
+            space = id;
             inner.process(step, &self.shared.changed)?;
             inner.mount(id, &at, &self.shared.changed)?;
             for (path, data) in &bundle.files {
@@ -507,14 +573,15 @@ impl Node {
             }
             for permission in &bundle.manifest.permissions {
                 inner.grant(
+                    None,
                     &permission.path,
-                    app_key.public(),
-                    &abilities(&permission.access)?,
+                    Principal::Key(app_key.public()),
+                    &parse_permissions(&permission.access)?,
                     &self.shared.changed,
                 )?;
             }
         }
-        let id = self.start_app(&bundle, folder)?;
+        let id = self.start_app(&bundle, space)?;
         // Tell the new app about the files that are there already.
         let mut existing = Vec::new();
         {
@@ -549,20 +616,17 @@ impl Node {
     /// When this node already has an identity, or the keys cannot be kept.
     pub fn identity_new(&self) -> Result<String, Error> {
         let mut inner = self.inner();
-        if let Some(folder) = inner.identity_folder() {
+        if let Some(space) = inner.identity_space() {
             return Err(Error(format!(
-                "this node already has an identity, with the folder {folder}"
+                "this node already has an identity, with the space {space}"
             )));
         }
         // Keys from an earlier try that did not end are used again.
         let rotation = inner.identity_key("rotation")?;
         let signing = inner.identity_key("signing")?;
-        let Inner {
-            replica, engine, ..
-        } = &mut *inner;
-        let (folder, step) = replica.create_as(fos_id::FOLDER_NAME, &signing, engine);
+        let (space, step) = inner.node.create_as(&signing, now());
         inner.process(step, &self.shared.changed)?;
-        inner.mount(folder, IDENTITY_AT, &self.shared.changed)?;
+        inner.mount(space, IDENTITY_AT, &self.shared.changed)?;
         let state = State {
             rotation_keys: vec![fos_id::did_key(rotation.public())],
             verification_methods: [(
@@ -575,7 +639,7 @@ impl Node {
                 fos_id::FOLDER_SERVICE.to_string(),
                 Service {
                     kind: fos_id::FOLDER_SERVICE_TYPE.to_string(),
-                    endpoint: folder.to_string(),
+                    endpoint: space.to_string(),
                 },
             )]
             .into(),
@@ -596,25 +660,24 @@ impl Node {
     }
 
     /// Adds a node to the identity: puts its certificate into the identity
-    /// folder, and lets it read and keep the folder. Only the node that holds
-    /// the signing key of the identity can do this. Gives the ID of the identity
-    /// folder, which the other node joins.
+    /// space, and lets it read and keep the space. Only the node that holds
+    /// the signing key of the identity can do this. Gives the ID of the
+    /// identity space, which the other node joins.
     ///
     /// # Errors
     ///
     /// When this node does not hold the signing key of the identity.
     pub fn identity_add_node(&self, node: PublicKey) -> Result<Hash, Error> {
         let mut inner = self.inner();
-        let (did, signing, folder) = inner.held_identity()?;
+        let (did, signing, space) = inner.held_identity()?;
         inner.add_node(&did, &signing, node, &self.shared.changed)?;
         drop(inner);
         self.pump();
-        Ok(folder)
+        Ok(space)
     }
 
-    /// Takes a node away from the identity: deletes its certificate. The
-    /// node may still keep its copy of the folder until the engine takes its
-    /// grant away.
+    /// Takes a node away from the identity: deletes its certificate and
+    /// takes back its grant on the identity space.
     ///
     /// # Errors
     ///
@@ -622,33 +685,47 @@ impl Node {
     /// node is not one of its nodes.
     pub fn identity_remove_node(&self, node: PublicKey) -> Result<(), Error> {
         let mut inner = self.inner();
-        let (_, signing, _) = inner.held_identity()?;
+        let (_, signing, space) = inner.held_identity()?;
         let path = format!("{IDENTITY_AT}{}", fos_id::node_path(node));
-        inner.write_at(
-            Some(&signing),
-            &path,
-            |path| Op::Delete { path },
-            &self.shared.changed,
-        )?;
+        inner.delete(Some(&signing), &path, &self.shared.changed)?;
+        let grants: Vec<Id> = inner
+            .node
+            .space(space)
+            .map(|s| {
+                s.grants()
+                    .into_iter()
+                    .filter(|g| g.given.to == Principal::Key(node))
+                    .map(|g| g.given.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        for grant in grants {
+            inner.write(
+                Some(&signing),
+                space,
+                vec![Act::Take { grant }],
+                &self.shared.changed,
+            )?;
+        }
         drop(inner);
         self.pump();
         Ok(())
     }
 
     /// Makes this node one of the nodes of an identity, by the ID of its
-    /// folder. The node that holds the signing key must add this node first
-    /// ([`Node::identity_add_node`]), or the folder does not come.
+    /// space. The node that holds the signing key must add this node first
+    /// ([`Node::identity_add_node`]), or the space does not come.
     ///
     /// # Errors
     ///
     /// When this node already has an identity.
-    pub fn identity_join(&self, folder: Hash) -> Result<(), Error> {
-        if let Some(have) = self.inner().identity_folder() {
+    pub fn identity_join(&self, space: Hash) -> Result<(), Error> {
+        if let Some(have) = self.inner().identity_space() {
             return Err(Error(format!(
-                "this node already has an identity, with the folder {have}"
+                "this node already has an identity, with the space {have}"
             )));
         }
-        self.mount(folder, IDENTITY_AT)
+        self.mount(space, IDENTITY_AT)
     }
 
     /// The identity of this node, if it has one.
@@ -656,7 +733,7 @@ impl Node {
         self.inner().identity(self.key())
     }
 
-    /// The local key-value store of an app.
+    /// The cache of an app on this node.
     pub fn kv(&self, app: &str) -> BTreeMap<String, Vec<u8>> {
         self.inner().kv(app).clone()
     }
@@ -667,38 +744,34 @@ impl Node {
             .map(|a| a.manifest().id.clone())
             .collect();
         let mut inner = self.inner();
-        let root_mounts: Vec<(String, Hash)> = inner
-            .replica
-            .folder(inner.root)
-            .map(|r| r.mounts().map(|(p, id)| (p.to_string(), id)).collect())
-            .unwrap_or_default();
-        let folders = inner
-            .replica
-            .folders()
-            .map(|f| FolderStatus {
-                id: f.id(),
-                name: f.name().to_string(),
-                mounted_at: root_mounts
+        let mounts = inner.mounts();
+        let spaces = inner
+            .node
+            .spaces()
+            .map(|s| SpaceStatus {
+                id: s.id(),
+                owner: s.owner(),
+                mounted_at: mounts
                     .iter()
-                    .filter(|(_, id)| *id == f.id())
-                    .map(|(p, _)| p.clone())
+                    .filter(|(_, id)| *id == s.id())
+                    .map(|(at, _)| format!("/{at}"))
                     .collect(),
-                entries: f.next_seq(),
-                orderer: f.orderer(),
-                fork: f.fork().cloned(),
+                entries: s.len(),
+                rejected: s.rejected().len(),
+                base: s.base().map(|b| b.checkpoint.hash()),
             })
             .collect();
-        let peers = inner.replica.peers().copied().collect();
-        let pending = inner.replica.pending().len();
+        let peers = inner.node.peers().copied().collect();
+        let wanted = inner.node.wanted().copied().collect();
         let logs = inner.logs.drain(..).collect();
         let identity = inner.identity(self.key());
         Status {
             key: self.key(),
-            root: inner.root,
+            home: inner.home,
             listening: inner.listening.clone(),
             peers,
-            pending,
-            folders,
+            spaces,
+            wanted,
             apps,
             logs,
             identity,
@@ -744,12 +817,6 @@ impl Node {
     fn on_net(&self, event: fos_net::Event) {
         {
             let mut inner = self.inner();
-            let Inner {
-                replica,
-                engine,
-                store,
-                ..
-            } = &mut *inner;
             let step = match event {
                 fos_net::Event::Listening(addr) => {
                     inner.listening.push(format!(
@@ -760,12 +827,15 @@ impl Node {
                     ));
                     return;
                 }
-                fos_net::Event::Connected(peer) => replica.connected(peer, engine),
+                fos_net::Event::Connected(peer) => inner.node.connected(peer),
                 fos_net::Event::Disconnected(peer) => {
-                    replica.disconnected(peer);
+                    inner.node.disconnected(peer);
                     return;
                 }
-                fos_net::Event::Message { from, msg } => replica.handle(from, *msg, engine, store),
+                fos_net::Event::Message { from, msg } => {
+                    let Inner { node, store, .. } = &mut *inner;
+                    node.receive(from, *msg, store)
+                }
             };
             if let Err(e) = inner.process(step, &self.shared.changed) {
                 tracing::warn!("{e}");
@@ -777,32 +847,26 @@ impl Node {
     fn start_apps(&self) {
         let bundles = {
             let inner = self.inner();
-            let Some(root) = inner.replica.folder(inner.root) else {
-                return;
-            };
-            let mounts: Vec<Hash> = root
+            inner
                 .mounts()
-                .filter(|(p, _)| p.starts_with("/apps/"))
-                .map(|(_, id)| id)
-                .collect();
-            mounts
                 .into_iter()
-                .filter_map(|id| Some((inner.bundle(id)?, id)))
+                .filter(|(at, _)| at.starts_with("apps/"))
+                .filter_map(|(_, id)| Some((inner.bundle(id)?, id)))
                 .collect::<Vec<_>>()
         };
-        for (bundle, folder) in bundles {
-            if let Err(e) = self.start_app(&bundle, folder) {
+        for (bundle, space) in bundles {
+            if let Err(e) = self.start_app(&bundle, space) {
                 tracing::warn!("app {} did not start: {e}", bundle.manifest.id);
             }
         }
     }
 
-    /// Starts an app that is in the folder `folder`. Gives its app ID.
-    fn start_app(&self, bundle: &Bundle, folder: Hash) -> Result<String, Error> {
+    /// Starts an app that is in the space `space`. Gives its app ID.
+    fn start_app(&self, bundle: &Bundle, space: Hash) -> Result<String, Error> {
         let host = Arc::new(Host {
             shared: Arc::downgrade(&self.shared),
         });
-        let id = app_id(&bundle.manifest.id, folder);
+        let id = app_id(&bundle.manifest.id, space);
         let http = self
             .shared
             .runtime
@@ -817,6 +881,28 @@ impl Node {
     pub fn pump(&self) {
         pump(&self.shared);
     }
+}
+
+/// A grant ID as text: the hash of its entry and its index.
+fn grant_text(id: Id) -> String {
+    format!("{}:{}", id.entry, id.index)
+}
+
+/// Reads a grant ID written as `<entry hash>:<index>`.
+///
+/// # Errors
+///
+/// When the text is not a grant ID.
+pub fn parse_grant(text: &str) -> Result<Id, Error> {
+    let (entry, index) = text
+        .split_once(':')
+        .ok_or_else(|| Error(format!("not a grant ID: {text:?}")))?;
+    Ok(Id {
+        entry: entry.parse()?,
+        index: index
+            .parse()
+            .map_err(|e| Error(format!("not a grant ID: {text:?} ({e})")))?,
+    })
 }
 
 fn pump(shared: &Shared) {
@@ -841,12 +927,510 @@ fn fs_error(e: FsError) -> Error {
     }
 }
 
+/// The newest version of a file that has content: when there are more, the
+/// one made last (by its time, then its ID).
+fn newest(file: &File) -> Option<Content> {
+    file.versions
+        .iter()
+        .filter(|v| v.content.is_some())
+        .max_by_key(|v| (v.time, v.id))
+        .and_then(|v| v.content)
+}
+
 impl Inner {
-    /// The identity folder, if one is mounted.
-    fn identity_folder(&self) -> Option<Hash> {
-        match self.replica.folder(self.root)?.get(IDENTITY_AT)? {
-            FsNode::Mount(folder) => Some(*folder),
-            _ => None,
+    /// Every mount: (the name it is mounted at, without `/`, and the space).
+    fn mounts(&self) -> Vec<(String, Hash)> {
+        let Some(home) = self.node.space(self.home) else {
+            return Vec::new();
+        };
+        home.files()
+            .into_iter()
+            .filter_map(|f| {
+                let v = f.versions.iter().find(|v| v.name.starts_with(MOUNTS))?;
+                let at = v.name[MOUNTS.len()..].to_string();
+                let bytes = fos_space::content::join(&newest(&f)?, &self.store)?;
+                let id = String::from_utf8(bytes).ok()?.trim().parse().ok()?;
+                Some((at, id))
+            })
+            .collect()
+    }
+
+    /// The space and the name in it of a node path. Names are in the home
+    /// space when no mount has them.
+    fn resolve(&self, path: &str) -> (Hash, String) {
+        let path = clean(path);
+        let mut best: Option<(String, Hash)> = None;
+        for (at, id) in self.mounts() {
+            let fits = path == at || path.starts_with(&format!("{at}/"));
+            if fits && best.as_ref().is_none_or(|(b, _)| at.len() > b.len()) {
+                best = Some((at, id));
+            }
+        }
+        match best {
+            Some((at, id)) => (id, path[at.len()..].trim_start_matches('/').to_string()),
+            None => (self.home, path),
+        }
+    }
+
+    fn mount(
+        &mut self,
+        space: Hash,
+        at: &str,
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
+        let at = clean(at);
+        if at.is_empty() || self.mounts().iter().any(|(m, _)| *m == at) {
+            return Err(Error(format!("something is mounted at /{at} already")));
+        }
+        let home = self.home;
+        self.put_name(
+            None,
+            home,
+            &format!("{MOUNTS}{at}"),
+            space.to_string().as_bytes(),
+            changed,
+        )
+    }
+
+    fn identity_space(&self) -> Option<Hash> {
+        self.mounts()
+            .into_iter()
+            .find(|(at, _)| *at == clean(IDENTITY_AT))
+            .map(|(_, id)| id)
+    }
+
+    /// Writes acts into a space, as `author` (the node when `None`).
+    fn write(
+        &mut self,
+        author: Option<&SecretKey>,
+        space: Hash,
+        acts: Vec<Act>,
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<Id, Error> {
+        let author = author.cloned().unwrap_or_else(|| self.key.clone());
+        let (entry, step) = self.node.write_as(space, &author, now(), acts)?;
+        self.process(step, changed)?;
+        Ok(Id {
+            entry: entry.hash(),
+            index: 0,
+        })
+    }
+
+    /// Keeps content in the store, and gives what names it.
+    fn keep(&self, data: &[u8]) -> Result<Content, Error> {
+        let (content, pieces) = fos_space::content::split(data);
+        for (hash, bytes) in pieces {
+            self.store.put_piece(hash, &bytes)?;
+        }
+        Ok(content)
+    }
+
+    fn put(
+        &mut self,
+        author: Option<&SecretKey>,
+        path: &str,
+        data: &[u8],
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
+        let (space, name) = self.resolve(path);
+        self.put_name(author, space, &name, data, changed)
+    }
+
+    fn put_name(
+        &mut self,
+        author: Option<&SecretKey>,
+        space: Hash,
+        name: &str,
+        data: &[u8],
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
+        let content = self.keep(data)?;
+        let s = self
+            .node
+            .space(space)
+            .ok_or_else(|| Error(format!("space {space} is not here yet")))?;
+        let act = match s.find(name).first() {
+            Some(file) => Act::Change {
+                file: file.id,
+                parents: file.versions.iter().map(|v| v.id).collect(),
+                name: name.to_string(),
+                content: Some(content),
+            },
+            None => Act::Create {
+                name: name.to_string(),
+                content,
+            },
+        };
+        self.write(author, space, vec![act], changed).map(drop)
+    }
+
+    fn append(
+        &mut self,
+        author: Option<&SecretKey>,
+        path: &str,
+        data: &[u8],
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
+        let who = author.map_or_else(|| self.key.public(), SecretKey::public);
+        let mut bytes = match self.read(who, path) {
+            Ok(bytes) => bytes,
+            Err(FsError::NotFound) => Vec::new(),
+            Err(e) => return Err(fs_error(e)),
+        };
+        bytes.extend_from_slice(data);
+        self.put(author, path, &bytes, changed)
+    }
+
+    fn delete(
+        &mut self,
+        author: Option<&SecretKey>,
+        path: &str,
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
+        let at = clean(path);
+        if author.is_none() && self.mounts().iter().any(|(m, _)| *m == at) {
+            let home = self.home;
+            return self.delete_name(None, home, &format!("{MOUNTS}{at}"), changed);
+        }
+        let (space, name) = self.resolve(path);
+        self.delete_name(author, space, &name, changed)
+    }
+
+    fn delete_name(
+        &mut self,
+        author: Option<&SecretKey>,
+        space: Hash,
+        name: &str,
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
+        let s = self
+            .node
+            .space(space)
+            .ok_or_else(|| Error(format!("space {space} is not here yet")))?;
+        let file = s
+            .find(name)
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error(format!("{name:?} is not there")))?;
+        let act = Act::Change {
+            file: file.id,
+            parents: file.versions.iter().map(|v| v.id).collect(),
+            name: name.to_string(),
+            content: None,
+        };
+        self.write(author, space, vec![act], changed).map(drop)
+    }
+
+    /// What a grant on `name` in `space` is on: the file with that name, or
+    /// every name under it.
+    fn resource(s: &Space, name: &str) -> Resource {
+        match s.find(name).first() {
+            Some(file) => Resource::File(file.id),
+            None if name.is_empty() => Resource::Prefix(String::new()),
+            None => Resource::Prefix(format!("{name}/")),
+        }
+    }
+
+    fn grant(
+        &mut self,
+        author: Option<&SecretKey>,
+        path: &str,
+        to: Principal,
+        permissions: &[Permission],
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<Id, Error> {
+        let (space, name) = self.resolve(path);
+        let s = self
+            .node
+            .space(space)
+            .ok_or_else(|| Error(format!("space {space} is not here yet")))?;
+        let on = Self::resource(s, &name);
+        self.write(
+            author,
+            space,
+            vec![Act::Give {
+                to,
+                effect: Effect::Allow,
+                permissions: permissions.to_vec(),
+                on,
+            }],
+            changed,
+        )
+    }
+
+    fn checkpoint(&mut self, space: Hash, changed: &Mutex<VecDeque<String>>) -> Result<(), Error> {
+        let step = self.node.checkpoint(space, now(), Retention::default())?;
+        self.process(step, changed)?;
+        let (_, step) = self.node.compact(space);
+        self.process(step, changed)?;
+        self.save(space)
+    }
+
+    /// Says if `who` may do `permission` on `name` in `space`.
+    fn may(s: &Space, who: PublicKey, permission: Permission, name: &str) -> bool {
+        let on = Self::resource(s, name);
+        s.may(Principal::Key(who), permission, &on)
+    }
+
+    fn read(&self, who: PublicKey, path: &str) -> Result<Vec<u8>, FsError> {
+        let (space, name) = self.resolve(path);
+        let s = self.node.space(space).ok_or(FsError::NotFound)?;
+        let file = s.find(&name).into_iter().next().ok_or(FsError::NotFound)?;
+        if !Self::may(s, who, Permission::FilesRead, &name) {
+            return Err(FsError::Denied(format!("{who} may not read {path}")));
+        }
+        let content = newest(&file).ok_or(FsError::NotFound)?;
+        fos_space::content::join(&content, &self.store)
+            .ok_or_else(|| FsError::Invalid("the file is not on this node yet".into()))
+    }
+
+    fn list(&self, who: PublicKey, path: &str) -> Result<Vec<String>, FsError> {
+        let (space, name) = self.resolve(path);
+        let s = self.node.space(space).ok_or(FsError::NotFound)?;
+        let prefix = if name.is_empty() {
+            String::new()
+        } else {
+            format!("{name}/")
+        };
+        if !s.may(
+            Principal::Key(who),
+            Permission::FilesList,
+            &Resource::Prefix(prefix.clone()),
+        ) && !s.may(
+            Principal::Key(who),
+            Permission::FilesRead,
+            &Resource::Prefix(prefix.clone()),
+        ) {
+            return Err(FsError::Denied(format!("{who} may not list {path}")));
+        }
+        let mut names: BTreeSet<String> = s
+            .files()
+            .iter()
+            .flat_map(|f| f.versions.iter().map(|v| v.name.clone()))
+            .filter_map(|n| {
+                let rest = n.strip_prefix(&prefix)?;
+                Some(rest.split('/').next()?.to_string())
+            })
+            .filter(|n| !n.is_empty())
+            .collect();
+        if space == self.home {
+            names.remove(MOUNTS.trim_end_matches('/'));
+            let here = clean(path);
+            for (at, _) in self.mounts() {
+                let rest = if here.is_empty() {
+                    Some(at.as_str())
+                } else {
+                    at.strip_prefix(&format!("{here}/"))
+                };
+                if let Some(first) = rest.and_then(|r| r.split('/').next()) {
+                    names.insert(first.to_string());
+                }
+            }
+        }
+        Ok(names.into_iter().collect())
+    }
+
+    fn kv(&mut self, app: &str) -> &mut BTreeMap<String, Vec<u8>> {
+        let store = &self.store;
+        self.kv
+            .entry(app.to_string())
+            .or_insert_with(|| store.kv_load(app))
+    }
+
+    /// The node paths of every file under a node path.
+    fn files_under(&self, path: &str) -> Vec<String> {
+        let (space, name) = self.resolve(path);
+        let Some(s) = self.node.space(space) else {
+            return Vec::new();
+        };
+        let base = clean(path);
+        s.files()
+            .iter()
+            .flat_map(|f| f.versions.iter().map(|v| v.name.clone()))
+            .filter(|n| name.is_empty() || *n == name || n.starts_with(&format!("{name}/")))
+            .map(|n| {
+                let rest = n[name.len()..].trim_start_matches('/');
+                if rest.is_empty() {
+                    format!("/{base}")
+                } else if base.is_empty() {
+                    format!("/{rest}")
+                } else {
+                    format!("/{base}/{rest}")
+                }
+            })
+            .collect()
+    }
+
+    /// The node paths where a name of a space can be seen.
+    fn node_paths(&self, space: Hash, name: &str) -> Vec<String> {
+        if space == self.home {
+            return vec![format!("/{name}")];
+        }
+        self.mounts()
+            .into_iter()
+            .filter(|(_, id)| *id == space)
+            .map(|(at, _)| format!("/{at}/{name}"))
+            .collect()
+    }
+
+    /// The files of an app space, as a bundle.
+    fn bundle(&self, space: Hash) -> Option<Bundle> {
+        let s = self.node.space(space)?;
+        let files = s
+            .files()
+            .iter()
+            .map(|f| {
+                let name = &f.versions.first()?.name;
+                let bytes = fos_space::content::join(&newest(f)?, &self.store)?;
+                Some((format!("/{name}"), bytes))
+            })
+            .collect::<Option<_>>()?;
+        Bundle::from_files(files).ok()
+    }
+
+    /// Keeps the entries of a space that are not on disk yet. After
+    /// compaction, writes the space again.
+    fn save(&mut self, space: Hash) -> Result<(), Error> {
+        let Some(s) = self.node.space(space) else {
+            return Ok(());
+        };
+        let base = s.base().map(|b| b.checkpoint.hash());
+        let saved = self.saved.entry(space).or_default();
+        if saved.1 != base {
+            self.store.save_space(s)?;
+            *saved = (
+                s.entries().iter().map(fos_space::Entry::hash).collect(),
+                base,
+            );
+            return Ok(());
+        }
+        let new: Vec<fos_space::Entry> = s
+            .entries()
+            .into_iter()
+            .filter(|e| !saved.0.contains(&e.hash()))
+            .collect();
+        self.store.append_entries(space, &new)?;
+        saved.0.extend(new.iter().map(fos_space::Entry::hash));
+        Ok(())
+    }
+
+    /// Finds the names in a space whose newest versions changed since apps
+    /// last heard, and notes their node paths (or waits for their content).
+    fn note(&mut self, space: Hash, changed: &Mutex<VecDeque<String>>) {
+        let Some(s) = self.node.space(space) else {
+            return;
+        };
+        let mut now: BTreeMap<String, Vec<Id>> = BTreeMap::new();
+        let mut contents: BTreeMap<String, Option<Content>> = BTreeMap::new();
+        for f in s.files() {
+            for v in &f.versions {
+                now.entry(v.name.clone()).or_default().push(v.id);
+            }
+            if let Some(name) = f.versions.first().map(|v| v.name.clone()) {
+                contents.insert(name, newest(&f));
+            }
+        }
+        let before = self.seen.insert(space, now.clone()).unwrap_or_default();
+        let names: BTreeSet<&String> = now
+            .iter()
+            .filter(|(n, ids)| before.get(*n) != Some(*ids))
+            .map(|(n, _)| n)
+            .chain(before.keys().filter(|n| !now.contains_key(*n)))
+            .collect();
+        let mut ready = Vec::new();
+        for name in names {
+            let at = self.node_paths(space, name);
+            match contents.get(name).copied().flatten() {
+                Some(c) if !fos_space::content::complete(&c, &self.store) => {
+                    self.waiting.entry(c.hash).or_default().extend(at);
+                }
+                _ => ready.extend(at),
+            }
+        }
+        lock(changed).extend(ready);
+    }
+
+    /// Keeps what a step made, sends its messages, and notes changed paths.
+    fn process(&mut self, step: Step, changed: &Mutex<VecDeque<String>>) -> Result<(), Error> {
+        if let Some(net) = &self.net {
+            for (to, msg) in step.out {
+                let _ = net.send(fos_net::Command::Send {
+                    to,
+                    msg: Box::new(msg),
+                });
+            }
+        }
+        for event in step.events {
+            match event {
+                Event::Changed(space) => {
+                    self.save(space)?;
+                    self.note(space, changed);
+                    self.maybe_checkpoint(space, changed);
+                }
+                Event::Content(data) => {
+                    let hash = Hash::of(&data);
+                    self.store.put_piece(hash, &data)?;
+                    // A list of chunks or the last chunk came: the paths that
+                    // waited for content that is now complete can go.
+                    let done: Vec<Hash> = self
+                        .waiting
+                        .keys()
+                        .copied()
+                        .filter(|h| {
+                            self.store.has(*h)
+                                && self.node.spaces().any(|s| {
+                                    s.contents().iter().any(|c| {
+                                        c.hash == *h && fos_space::content::complete(c, &self.store)
+                                    })
+                                })
+                        })
+                        .collect();
+                    for h in done {
+                        let paths = self.waiting.remove(&h).unwrap_or_default();
+                        lock(changed).extend(paths);
+                    }
+                }
+                Event::Again { space, entries } => {
+                    self.log(format!(
+                        "{entries} changes made at the same time as a checkpoint of space \
+                         {space} were written again on top"
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The default policy: a node makes a checkpoint of a space it owns when
+    /// the space has many entries, and every node compacts when it can.
+    fn maybe_checkpoint(&mut self, space: Hash, changed: &Mutex<VecDeque<String>>) {
+        let Some(s) = self.node.space(space) else {
+            return;
+        };
+        if s.len() < CHECKPOINT_AFTER {
+            return;
+        }
+        let mine = s.may(
+            Principal::Key(self.key.public()),
+            Permission::SpaceCheckpoint,
+            &Resource::Prefix(String::new()),
+        );
+        let result = if mine {
+            self.checkpoint(space, changed)
+        } else {
+            let (_, step) = self.node.compact(space);
+            self.process(step, changed).and_then(|()| self.save(space))
+        };
+        if let Err(e) = result {
+            tracing::warn!("space {space}: {e}");
+        }
+    }
+
+    fn log(&mut self, message: String) {
+        tracing::info!("{message}");
+        self.logs.push_back(message);
+        while self.logs.len() > 100 {
+            self.logs.pop_front();
         }
     }
 
@@ -863,54 +1447,65 @@ impl Inner {
         let key = SecretKey::from_seed(&fos_store::random_seed()?);
         self.store.set_identity_key(usage, &key)?;
         *held = Some(key.clone());
-        if usage == "signing" {
-            self.replica.add_key(key.clone());
-        }
         Ok(key)
     }
 
-    /// The operations of the DID log in the identity folder.
-    fn identity_ops(&self, folder: Hash) -> Vec<DidOp> {
-        let Some(f) = self.replica.folder(folder) else {
+    /// The bytes of the files under `dir` in a space, by the rest of their
+    /// name.
+    fn files_in(&self, space: Hash, dir: &str) -> Vec<(String, Vec<u8>)> {
+        let Some(s) = self.node.space(space) else {
             return Vec::new();
         };
-        f.list(fos_id::OPS)
+        let prefix = format!("{}/", dir.trim_matches('/'));
+        s.files()
+            .iter()
+            .filter_map(|f| {
+                let name = f.versions.first()?.name.strip_prefix(&prefix)?.to_string();
+                let bytes = fos_space::content::join(&newest(f)?, &self.store)?;
+                Some((name, bytes))
+            })
+            .collect()
+    }
+
+    /// The operations of the DID log in the identity space.
+    fn identity_ops(&self, space: Hash) -> Vec<DidOp> {
+        self.files_in(space, fos_id::OPS)
             .into_iter()
-            .filter_map(|name| {
-                let (blob, _) = f.file(&format!("{}/{name}", fos_id::OPS))?;
-                let op = DidOp::from_bytes(&self.store.get(blob)?).ok()?;
+            .filter_map(|(name, bytes)| {
+                let op = DidOp::from_bytes(&bytes).ok()?;
                 (op.hash().to_string() == name).then_some(op)
             })
             .collect()
     }
 
-    /// The DID and the state of the identity whose log is in `folder`: the
-    /// one whose state names this folder, and whose signing key made it.
-    fn resolve_identity(&self, folder: Hash) -> Option<(String, State)> {
-        let creator = self.replica.folder(folder)?.creator();
-        let ops = self.identity_ops(folder);
+    /// The DID and the state of the identity whose log is in `space`: the
+    /// one whose state names this space, and whose signing key owns it.
+    fn resolve_identity(&self, space: Hash) -> Option<(String, State)> {
+        let owner = self.node.space(space)?.owner();
+        let ops = self.identity_ops(space);
         fos_id::dids(&ops).into_iter().find_map(|did| {
             let state = fos_id::resolve(&did, &ops).ok()?.state?;
-            (state.folder() == Some(folder) && state.signing_key() == Some(creator))
-                .then_some((did, state))
+            (state.folder() == Some(space)
+                && state.signing_key().map(Principal::Key) == Some(owner))
+            .then_some((did, state))
         })
     }
 
-    /// The DID, the signing key and the folder of the identity, when this
+    /// The DID, the signing key and the space of the identity, when this
     /// node holds the signing key.
     fn held_identity(&self) -> Result<(String, SecretKey, Hash), Error> {
         let none = || Error("this node does not hold the signing key of an identity".into());
         let signing = self.signing_key.clone().ok_or_else(none)?;
-        let folder = self.identity_folder().ok_or_else(none)?;
-        let (did, state) = self.resolve_identity(folder).ok_or_else(none)?;
+        let space = self.identity_space().ok_or_else(none)?;
+        let (did, state) = self.resolve_identity(space).ok_or_else(none)?;
         if state.signing_key() != Some(signing.public()) {
             return Err(none());
         }
-        Ok((did, signing, folder))
+        Ok((did, signing, space))
     }
 
-    /// Puts the certificate of `node` into the identity folder, and lets the
-    /// node read and keep the folder.
+    /// Puts the certificate of `node` into the identity space, and lets the
+    /// node read and keep the space.
     fn add_node(
         &mut self,
         did: &str,
@@ -921,29 +1516,30 @@ impl Inner {
         let cert = NodeCert::sign(did, signing, node);
         let path = format!("{IDENTITY_AT}{}", fos_id::node_path(node));
         self.put(Some(signing), &path, &cert.to_bytes(), changed)?;
-        let policy = self
-            .engine
-            .grant(node, &[Ability::Read, Ability::Store], "/");
-        self.write_at(
+        if node == signing.public() {
+            return Ok(());
+        }
+        self.grant(
             Some(signing),
             IDENTITY_AT,
-            |_| Op::Policy(Bytes(policy)),
+            Principal::Key(node),
+            &READ,
             changed,
         )
+        .map(drop)
     }
 
     /// The identity of this node. Which nodes belong to it is a fact: the
-    /// kernel checks the DID log and the certificates, and does not ask the
-    /// engine.
+    /// kernel checks the DID log and the certificates.
     fn identity(&self, me: PublicKey) -> Option<Identity> {
-        let folder = self.identity_folder()?;
+        let space = self.identity_space()?;
         let holds = |key: &Option<SecretKey>, keys: &[PublicKey]| {
             key.as_ref().is_some_and(|k| keys.contains(&k.public()))
         };
-        let Some((did, state)) = self.resolve_identity(folder) else {
+        let Some((did, state)) = self.resolve_identity(space) else {
             return Some(Identity {
                 did: None,
-                folder,
+                space,
                 rotation_keys: Vec::new(),
                 also_known_as: Vec::new(),
                 holds_rotation_key: false,
@@ -953,13 +1549,11 @@ impl Inner {
             });
         };
         let signing = state.signing_key();
-        let f = self.replica.folder(folder)?;
-        let nodes = f
-            .list(fos_id::NODES)
+        let nodes = self
+            .files_in(space, fos_id::NODES)
             .into_iter()
-            .filter_map(|name| {
-                let (blob, _) = f.file(&format!("{}/{name}", fos_id::NODES))?;
-                let cert = NodeCert::from_bytes(&self.store.get(blob)?).ok()?;
+            .filter_map(|(name, bytes)| {
+                let cert = NodeCert::from_bytes(&bytes).ok()?;
                 (cert.did == did
                     && signing.is_some_and(|key| cert.verify(key))
                     && cert.node.to_string() == name)
@@ -982,7 +1576,7 @@ impl Inner {
                 .to_string(),
             ),
             did: Some(did),
-            folder,
+            space,
             holds_rotation_key: holds(
                 &self.rotation_key,
                 &state.rotation_keys().unwrap_or_default(),
@@ -997,214 +1591,10 @@ impl Inner {
     fn app_key(&self, app: &str) -> SecretKey {
         self.key.derive(&format!("app:{app}"))
     }
-
-    fn resolve(&self, path: &str) -> Result<(Hash, String), Error> {
-        resolve(self.root, path, |id| self.replica.folder(id))
-    }
-
-    fn mount(
-        &mut self,
-        folder: Hash,
-        at: &str,
-        changed: &Mutex<VecDeque<String>>,
-    ) -> Result<(), Error> {
-        let key = self.key.clone();
-        let step = self.replica.write(
-            self.root,
-            Op::Mount {
-                path: at.into(),
-                folder,
-            },
-            &key,
-            &mut self.engine,
-        )?;
-        self.process(step, changed)
-    }
-
-    /// Writes into the folder that has `path`, as `author` (the node when `None`).
-    fn write_at(
-        &mut self,
-        author: Option<&SecretKey>,
-        path: &str,
-        op: impl FnOnce(String) -> Op,
-        changed: &Mutex<VecDeque<String>>,
-    ) -> Result<(), Error> {
-        let (folder, inner) = self.resolve(path)?;
-        let author = author.cloned().unwrap_or_else(|| self.key.clone());
-        let step = self
-            .replica
-            .write(folder, op(inner), &author, &mut self.engine)?;
-        self.process(step, changed)
-    }
-
-    fn put(
-        &mut self,
-        author: Option<&SecretKey>,
-        path: &str,
-        data: &[u8],
-        changed: &Mutex<VecDeque<String>>,
-    ) -> Result<(), Error> {
-        let blob = self.store.put_blob(data)?;
-        let size = data.len() as u64;
-        self.write_at(author, path, |path| Op::Put { path, blob, size }, changed)
-    }
-
-    fn grant(
-        &mut self,
-        path: &str,
-        to: PublicKey,
-        abilities: &[Ability],
-        changed: &Mutex<VecDeque<String>>,
-    ) -> Result<(), Error> {
-        let (_, inner) = self.resolve(path)?;
-        let policy = self.engine.grant(to, abilities, &inner);
-        self.write_at(None, path, |_| Op::Policy(Bytes(policy)), changed)
-    }
-
-    fn check(
-        &mut self,
-        principal: PublicKey,
-        ability: Ability,
-        path: &str,
-    ) -> Result<(Hash, String), FsError> {
-        let (folder, inner) = self.resolve(path).map_err(|e| FsError::Invalid(e.0))?;
-        let f = self.replica.folder(folder).ok_or(FsError::NotFound)?;
-        match f.check(&mut self.engine, principal, ability, &inner) {
-            Decision::Allow => Ok((folder, inner)),
-            Decision::Deny(reason) => Err(FsError::Denied(reason)),
-        }
-    }
-
-    fn read(&mut self, principal: PublicKey, path: &str) -> Result<Vec<u8>, FsError> {
-        let (folder, inner) = self.check(principal, Ability::Read, path)?;
-        let f = self.replica.folder(folder).ok_or(FsError::NotFound)?;
-        match f.get(&inner) {
-            Some(FsNode::File(_)) => {
-                let (hash, _) = f.file(&inner).ok_or(FsError::NotFound)?;
-                self.store
-                    .get(hash)
-                    .ok_or_else(|| FsError::Invalid("the file is not on this node yet".into()))
-            }
-            Some(FsNode::Stream(records)) => Ok(records
-                .iter()
-                .flat_map(|r| r.data.iter().copied())
-                .collect()),
-            Some(FsNode::Mount(_)) | None => Err(FsError::NotFound),
-        }
-    }
-
-    fn list(&mut self, principal: PublicKey, path: &str) -> Result<Vec<String>, FsError> {
-        let (folder, inner) = self.check(principal, Ability::Read, path)?;
-        Ok(self
-            .replica
-            .folder(folder)
-            .ok_or(FsError::NotFound)?
-            .list(&inner))
-    }
-
-    fn kv(&mut self, app: &str) -> &mut BTreeMap<String, Vec<u8>> {
-        let store = &self.store;
-        self.kv
-            .entry(app.to_string())
-            .or_insert_with(|| store.kv_load(app))
-    }
-
-    /// The node paths of every file under a node path.
-    fn files_under(&self, path: &str) -> Vec<String> {
-        let Ok((folder, inner)) = self.resolve(path) else {
-            return Vec::new();
-        };
-        let Some(f) = self.replica.folder(folder) else {
-            return Vec::new();
-        };
-        let prefix = if inner == "/" {
-            String::from("/")
-        } else {
-            format!("{inner}/")
-        };
-        f.files()
-            .filter(|(p, _, _)| inner == "/" || *p == inner || p.starts_with(&prefix))
-            .map(|(p, _, _)| join(path.trim_end_matches('/'), p))
-            .collect()
-    }
-
-    /// The node paths where a path of a folder can be seen.
-    fn node_paths(&self, folder: Hash, path: &str) -> Vec<String> {
-        if folder == self.root {
-            return vec![path.to_string()];
-        }
-        let Some(root) = self.replica.folder(self.root) else {
-            return Vec::new();
-        };
-        root.mounts()
-            .filter(|(_, id)| *id == folder)
-            .map(|(at, _)| join(at, path))
-            .collect()
-    }
-
-    /// The files of an app folder, as a bundle.
-    fn bundle(&self, folder: Hash) -> Option<Bundle> {
-        let f = self.replica.folder(folder)?;
-        let files = f
-            .files()
-            .map(|(p, h, _)| Some((p.to_string(), self.store.get(h)?)))
-            .collect::<Option<_>>()?;
-        Bundle::from_files(files).ok()
-    }
-
-    /// Keeps what a step made, sends its messages, and notes changed paths.
-    fn process(&mut self, step: Step, changed: &Mutex<VecDeque<String>>) -> Result<(), Error> {
-        if let Some(net) = &self.net {
-            for out in step.out {
-                let _ = net.send(fos_net::Command::Send {
-                    to: out.to,
-                    msg: Box::new(out.msg),
-                });
-            }
-        }
-        let mut paths = Vec::new();
-        for event in step.events {
-            match event {
-                Event::Added(_) => {}
-                Event::Entries { folder, entries } => {
-                    self.store.append_entries(folder, &entries)?;
-                    for entry in &entries {
-                        let (path, blob) = match &entry.write.write.op {
-                            Op::Put { path, blob, .. } => (path, Some(*blob)),
-                            Op::Delete { path } | Op::Append { path, .. } => (path, None),
-                            _ => continue,
-                        };
-                        let at = self.node_paths(folder, path);
-                        match blob {
-                            Some(blob) if !self.store.has(blob) => {
-                                self.waiting.entry(blob).or_default().extend(at);
-                            }
-                            _ => paths.extend(at),
-                        }
-                    }
-                }
-                Event::Forked { folder, fork } => {
-                    tracing::warn!(
-                        "folder {folder} forked at entry {}: {}",
-                        fork.seq,
-                        fork.reason
-                    );
-                }
-                Event::Refused { write, reason } => {
-                    tracing::warn!("the ordering node did not take write {write}: {reason}");
-                }
-                Event::Blob(data) => {
-                    let hash = self.store.put_blob(&data)?;
-                    paths.extend(self.waiting.remove(&hash).unwrap_or_default());
-                }
-            }
-        }
-        lock(changed).extend(paths);
-        Ok(())
-    }
 }
 
-/// What an app may call. Every call checks with the engine, as the app's key.
+/// What an app may call. Every call is checked against the grants of the
+/// app's key.
 struct Host {
     shared: Weak<Shared>,
 }
@@ -1216,14 +1606,8 @@ impl Host {
         Some(f(&mut inner, &shared.changed))
     }
 
-    fn write(&self, app: &str, path: &str, op: impl FnOnce(String) -> Op) -> Result<(), FsError> {
-        self.with(|inner, changed| {
-            let key = inner.app_key(app);
-            inner
-                .write_at(Some(&key), path, op, changed)
-                .map_err(|e| FsError::Denied(e.0))
-        })
-        .unwrap_or(Err(FsError::Invalid("the node stopped".into())))
+    fn stopped<T>() -> Result<T, FsError> {
+        Err(FsError::Invalid("the node stopped".into()))
     }
 }
 
@@ -1233,27 +1617,37 @@ impl AppHost for Host {
             let key = inner.app_key(app).public();
             inner.read(key, path)
         })
-        .unwrap_or(Err(FsError::Invalid("the node stopped".into())))
+        .unwrap_or_else(Host::stopped)
     }
 
     fn write(&self, app: &str, path: &str, data: Vec<u8>) -> Result<(), FsError> {
-        let blob = self
-            .with(|inner, _| inner.store.put_blob(&data))
-            .unwrap_or_else(|| Err(Error("the node stopped".into())))
-            .map_err(|e| FsError::Invalid(e.0))?;
-        let size = data.len() as u64;
-        Host::write(self, app, path, |path| Op::Put { path, blob, size })
+        self.with(|inner, changed| {
+            let key = inner.app_key(app);
+            inner
+                .put(Some(&key), path, &data, changed)
+                .map_err(|e| FsError::Denied(e.0))
+        })
+        .unwrap_or_else(Host::stopped)
     }
 
     fn append(&self, app: &str, path: &str, data: Vec<u8>) -> Result<(), FsError> {
-        Host::write(self, app, path, |path| Op::Append {
-            path,
-            data: Bytes(data),
+        self.with(|inner, changed| {
+            let key = inner.app_key(app);
+            inner
+                .append(Some(&key), path, &data, changed)
+                .map_err(|e| FsError::Denied(e.0))
         })
+        .unwrap_or_else(Host::stopped)
     }
 
     fn delete(&self, app: &str, path: &str) -> Result<(), FsError> {
-        Host::write(self, app, path, |path| Op::Delete { path })
+        self.with(|inner, changed| {
+            let key = inner.app_key(app);
+            inner
+                .delete(Some(&key), path, changed)
+                .map_err(|e| FsError::Denied(e.0))
+        })
+        .unwrap_or_else(Host::stopped)
     }
 
     fn list(&self, app: &str, path: &str) -> Result<Vec<String>, FsError> {
@@ -1261,7 +1655,7 @@ impl AppHost for Host {
             let key = inner.app_key(app).public();
             inner.list(key, path)
         })
-        .unwrap_or(Err(FsError::Invalid("the node stopped".into())))
+        .unwrap_or_else(Host::stopped)
     }
 
     fn kv_get(&self, app: &str, key: &str) -> Option<Vec<u8>> {
@@ -1303,13 +1697,7 @@ impl AppHost for Host {
     }
 
     fn log(&self, app: &str, message: &str) {
-        tracing::info!("[{app}] {message}");
-        self.with(|inner, _| {
-            inner.logs.push_back(format!("[{app}] {message}"));
-            while inner.logs.len() > 100 {
-                inner.logs.pop_front();
-            }
-        });
+        self.with(|inner, _| inner.log(format!("[{app}] {message}")));
     }
 }
 
@@ -1323,12 +1711,12 @@ impl fmt::Display for Identity {
             None => {
                 let _ = writeln!(
                     out,
-                    "did      (waiting for the identity folder: the node that holds the \
+                    "did      (waiting for the identity space: the node that holds the \
                      signing key must add this node, and be connected)"
                 );
             }
         }
-        let _ = writeln!(out, "folder   {}", self.folder);
+        let _ = writeln!(out, "space    {}", self.space);
         if let Some(link) = &self.link {
             let _ = writeln!(out, "link     {link}");
         }
@@ -1355,13 +1743,13 @@ impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut out = String::new();
         let _ = writeln!(out, "node     {}", self.key);
-        let _ = writeln!(out, "root     {}", self.root);
+        let _ = writeln!(out, "home     {}", self.home);
         match &self.identity {
             Some(Identity { did: Some(did), .. }) => {
                 let _ = writeln!(out, "identity {did}");
             }
-            Some(Identity { folder, .. }) => {
-                let _ = writeln!(out, "identity (waiting for its folder {folder})");
+            Some(Identity { space, .. }) => {
+                let _ = writeln!(out, "identity (waiting for its space {space})");
             }
             None => {}
         }
@@ -1371,35 +1759,32 @@ impl fmt::Display for Status {
         for peer in &self.peers {
             let _ = writeln!(out, "peer     {peer}");
         }
-        let _ = writeln!(
-            out,
-            "waiting  {} writes for their ordering node",
-            self.pending
-        );
-        for folder in &self.folders {
-            let at = if folder.mounted_at.is_empty() {
+        for space in &self.spaces {
+            let at = if space.mounted_at.is_empty() {
                 "-".to_string()
             } else {
-                folder.mounted_at.join(", ")
+                space.mounted_at.join(", ")
             };
             let _ = writeln!(
                 out,
-                "folder   {} {:?} at {at}, {} entries",
-                folder.id, folder.name, folder.entries
+                "space    {} at {at}, {} entries",
+                space.id, space.entries
             );
-            if folder.orderer != self.key {
-                let _ = writeln!(out, "           ordered by {}", folder.orderer);
+            if space.owner != Principal::Key(self.key) {
+                let _ = writeln!(out, "           owned by {:?}", space.owner);
             }
-            if let Some(fork) = &folder.fork {
-                let _ = writeln!(
-                    out,
-                    "           FORK at entry {}: {}",
-                    fork.seq, fork.reason
-                );
+            if space.rejected > 0 {
+                let _ = writeln!(out, "           {} entries have no effect", space.rejected);
+            }
+            if let Some(base) = space.base {
+                let _ = writeln!(out, "           compacted at {base}");
             }
         }
+        for id in &self.wanted {
+            let _ = writeln!(out, "waiting  for space {id} from peers");
+        }
         // Apps and their messages are not part of the status of the
-        // kernel. The app folders are in /apps, as any folder.
+        // kernel. The app spaces are in /apps, as any space.
         f.write_str(&out)
     }
 }

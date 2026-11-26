@@ -2,7 +2,7 @@
 
 //! `fos`: run a fileOS node, and use its kernel from the command line.
 //!
-//! The commands are in groups: `node`, `fs`, `folder`, `identity` and `app`,
+//! The commands are in groups: `node`, `fs`, `space`, `identity` and `app`,
 //! and `fos curl` runs curl against the gateway.
 //! They are about the kernel only: what an app or a plugin does is not here,
 //! but packing and installing them is. `fos node init` and `fos node run`
@@ -45,15 +45,15 @@ enum Command {
         #[command(subcommand)]
         command: NodeCommand,
     },
-    /// Files and streams, by path.
+    /// Files, by path.
     Fs {
         #[command(subcommand)]
         command: FsCommand,
     },
-    /// Folders: make them, mount them, give access to them.
-    Folder {
+    /// Spaces: make them, mount them, give and take back access.
+    Space {
         #[command(subcommand)]
-        command: FolderCommand,
+        command: SpaceCommand,
     },
     /// The identity (a did:fos DID) that this node is a node of. With no
     /// command, show it.
@@ -80,12 +80,8 @@ enum Command {
 
 #[derive(Subcommand)]
 enum NodeCommand {
-    /// Make a new node, with the authorization plugin (the engine) in an
-    /// .app file (or an .app folder).
-    Init {
-        #[arg(long)]
-        engine: PathBuf,
-    },
+    /// Make a new node, with its home space.
+    Init,
     /// Run the node: the network, the apps and the gateway.
     Run {
         /// libp2p addresses to listen on.
@@ -101,7 +97,7 @@ enum NodeCommand {
         #[arg(long)]
         no_mdns: bool,
     },
-    /// What the node is doing: its key, addresses, peers and folders.
+    /// What the node is doing: its key, addresses, peers and spaces.
     Status,
     /// Connect to another node by its multiaddr.
     Connect { addr: String },
@@ -114,28 +110,42 @@ enum FsCommand {
         #[arg(default_value = "/")]
         path: String,
     },
-    /// Print a file or stream.
+    /// Print a file.
     Cat { path: String },
     /// Put a file. With no FILE, it reads standard input.
     Put { path: String, file: Option<PathBuf> },
-    /// Add a line to the end of a stream.
+    /// Add a line to the end of a file.
     Append { path: String, text: String },
     /// Take a file or mount away. Old versions stay in the history.
     Rm { path: String },
 }
 
 #[derive(Subcommand)]
-enum FolderCommand {
-    /// Make a folder and mount it at a path. Prints its ID.
-    New { name: String, at: String },
-    /// Mount a folder from other nodes at a path.
+enum SpaceCommand {
+    /// Make a space and mount it at a path. Prints its ID.
+    New { at: String },
+    /// Mount a space from other nodes at a path.
     Mount { id: String, at: String },
-    /// Give a key abilities (read, write, append, grant, store or all) on a path.
+    /// Give a key permissions on a path: on the file there, or on every
+    /// name under it. PERMISSIONS are exact names (files.read, access.give,
+    /// and so on) or templates (read, read-write, manage, relay), with
+    /// commas. Prints the ID of the grant.
     Grant {
         path: String,
         key: String,
-        abilities: String,
+        permissions: String,
     },
+    /// The grants in the space that has a path.
+    Grants {
+        #[arg(default_value = "/")]
+        path: String,
+    },
+    /// Take back a grant, by its ID, in the space that has a path. What was
+    /// given on from it is taken back too.
+    Take { path: String, id: String },
+    /// Make a checkpoint of the space that has a path, and drop the entries
+    /// before it.
+    Checkpoint { path: String },
 }
 
 #[derive(Subcommand)]
@@ -146,8 +156,8 @@ enum IdentityCommand {
     AddNode { key: String },
     /// Take a node away from the identity.
     RemoveNode { key: String },
-    /// Join an identity, with the folder ID that `fos identity add-node` gave.
-    Join { folder: String },
+    /// Join an identity, with the space ID that `fos identity add-node` gave.
+    Join { space: String },
 }
 
 #[derive(Subcommand)]
@@ -202,7 +212,7 @@ fn run(cli: Cli) -> Result<(), Error> {
     match cli.command {
         Command::Node { command } => node(command, &dir),
         Command::Fs { command } => fs(&Client::new(&dir)?, command),
-        Command::Folder { command } => folder(&Client::new(&dir)?, command),
+        Command::Space { command } => space(&Client::new(&dir)?, command),
         Command::Identity { command } => identity(&Client::new(&dir)?, command, &dir),
         Command::Curl { args } => curl(&dir, args),
         Command::App {
@@ -246,8 +256,8 @@ fn run(cli: Cli) -> Result<(), Error> {
 
 fn node(command: NodeCommand, dir: &Path) -> Result<(), Error> {
     match command {
-        NodeCommand::Init { engine } => {
-            let key = Node::init(dir, &engine)?;
+        NodeCommand::Init => {
+            let key = Node::init(dir)?;
             println!("made a node in {}\nnode key {key}", dir.display());
             Ok(())
         }
@@ -299,35 +309,44 @@ fn fs(client: &Client, command: FsCommand) -> Result<(), Error> {
     }
 }
 
-fn folder(client: &Client, command: FolderCommand) -> Result<(), Error> {
+fn space(client: &Client, command: SpaceCommand) -> Result<(), Error> {
     match command {
-        FolderCommand::New { name, at } => print(&client.call(
-            "POST",
-            &format!("/v0/folder?name={}&at={}", enc(&name), enc(&at)),
-            &[],
-        )?),
-        FolderCommand::Mount { id, at } => client
+        SpaceCommand::New { at } => {
+            print(&client.call("POST", &format!("/v0/space?at={}", enc(&at)), &[])?)
+        }
+        SpaceCommand::Mount { id, at } => client
             .call(
                 "POST",
                 &format!("/v0/mount?id={}&at={}", enc(&id), enc(&at)),
                 &[],
             )
             .map(drop),
-        FolderCommand::Grant {
+        SpaceCommand::Grant {
             path,
             key,
-            abilities,
-        } => client
+            permissions,
+        } => print(&client.call(
+            "POST",
+            &format!(
+                "/v0/grants{}?to={}&permissions={}",
+                url_path(&path),
+                enc(&key),
+                enc(&permissions)
+            ),
+            &[],
+        )?),
+        SpaceCommand::Grants { path } => {
+            print(&client.call("GET", &format!("/v0/grants{}", url_path(&path)), &[])?)
+        }
+        SpaceCommand::Take { path, id } => client
             .call(
-                "POST",
-                &format!(
-                    "/v0/grant{}?to={}&abilities={}",
-                    url_path(&path),
-                    enc(&key),
-                    enc(&abilities)
-                ),
+                "DELETE",
+                &format!("/v0/grants{}?id={}", url_path(&path), enc(&id)),
                 &[],
             )
+            .map(drop),
+        SpaceCommand::Checkpoint { path } => client
+            .call("POST", &format!("/v0/checkpoint{}", url_path(&path)), &[])
             .map(drop),
     }
 }
@@ -348,21 +367,21 @@ fn identity(client: &Client, command: Option<IdentityCommand>, dir: &Path) -> Re
             Ok(())
         }
         Some(IdentityCommand::AddNode { key }) => {
-            let folder =
+            let space =
                 text(client.call("POST", &format!("/v0/id/node?key={}", enc(&key)), &[])?);
-            println!("added node {key}\nOn that node, run: fos identity join {folder}");
+            println!("added node {key}\nOn that node, run: fos identity join {space}");
             Ok(())
         }
         Some(IdentityCommand::RemoveNode { key }) => {
             client.call("DELETE", &format!("/v0/id/node?key={}", enc(&key)), &[])?;
             println!(
-                "took away node {key}\nIt may still keep its copy of the identity folder \
-                 until your engine takes its grant away."
+                "took away node {key}\nIts certificate is deleted, and its grant on the \
+                 identity space is taken back."
             );
             Ok(())
         }
-        Some(IdentityCommand::Join { folder }) => client
-            .call("POST", &format!("/v0/id/join?folder={}", enc(&folder)), &[])
+        Some(IdentityCommand::Join { space }) => client
+            .call("POST", &format!("/v0/id/join?space={}", enc(&space)), &[])
             .map(drop),
     }
 }

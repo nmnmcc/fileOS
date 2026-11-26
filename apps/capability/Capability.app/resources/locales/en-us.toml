@@ -1,4 +1,0 @@
-# SPDX-License-Identifier: AGPL-3.0-only
-
-name = "Capabilities"
-description = "The default rules: the maker of a folder may do everything, and gives others what they may do."

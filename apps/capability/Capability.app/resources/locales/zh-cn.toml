@@ -1,4 +1,0 @@
-# SPDX-License-Identifier: AGPL-3.0-only
-
-name = "Capability"
-description = "默认规则：文件夹的创建者可以做任何事，并决定别人可以做什么。"

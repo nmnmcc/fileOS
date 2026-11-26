@@ -1,93 +1,28 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-/// The interfaces between the fileOS core and WebAssembly components.
+/// The interfaces between the fileOS core and WebAssembly apps.
 ///
-/// An authorization engine is a component of the `engine` world. An app is a
-/// component of the `app` world. Both come in `.app` files. The WASI
+/// An app is a component of the `app` world, in an `.app` file. The WASI
 /// interfaces that the `app` world uses are in `deps/`.
 package fos:app@0.1.0;
 
-interface types {
-  /// An ed25519 public key, 32 bytes. People, devices, nodes and apps are
-  /// all keys.
-  type key = list<u8>;
-
-  /// What an operation does.
-  enum ability {
-    /// Read a path.
-    read,
-    /// Put or delete a file, or mount a folder.
-    write,
-    /// Add a record to the end of a stream.
-    append,
-    /// Change the rules (policy entries) or the ordering node.
-    grant,
-    /// Keep a copy of the folder on a node.
-    store,
-  }
-
-  /// One operation, by someone, on one path of one folder.
-  record op {
-    ability: ability,
-    /// The folder ID, as 64 hex characters.
-    folder: string,
-    /// The path in the folder, starting with "/".
-    path: string,
-  }
-
-  variant decision {
-    allow,
-    deny(string),
-  }
-}
-
-/// The rules of a node. The core asks; the engine answers.
-///
-/// The engine keeps its own state for each folder, as bytes. The core keeps
-/// these bytes and gives them back on each call. The core gives no meaning to
-/// them.
-interface authz {
-  use types.{key, ability, op, decision};
-
-  /// The state of a new folder, made by `creator`.
-  init: func(folder: string, creator: key) -> list<u8>;
-
-  /// Read one policy entry written by `author`. Gives the new state, or the
-  /// reason the entry is not taken.
-  apply: func(state: list<u8>, author: key, policy: list<u8>) -> result<list<u8>, string>;
-
-  /// Says if `principal` may do `op`.
-  check: func(state: list<u8>, principal: key, op: op) -> decision;
-
-  /// The keys that may read the folder.
-  readers: func(state: list<u8>) -> list<key>;
-
-  /// The keys of the nodes that may keep a copy of the folder.
-  storers: func(state: list<u8>) -> list<key>;
-
-  /// The policy entry that gives `to` these abilities on `path` and the
-  /// paths under it. The core uses it when the user gives access to an app
-  /// or a person, so the core does not need to know the format of policy
-  /// entries.
-  grant: func(to: key, abilities: list<ability>, path: string) -> list<u8>;
-}
-
 /// The file system, as an app sees it. Paths start with "/". The first part
-/// of a path is a mount in the root folder of the node, for example
-/// "/photos/2026/a.jpg".
+/// of a path is a space mounted in the home space of the node, for example
+/// "/photos/2026/a.jpg". The kernel checks every call against the grants of
+/// the app's key.
 interface fs {
   variant error {
-    /// The engine said no.
+    /// The app's key has no grant for this.
     denied(string),
     not-found,
     invalid(string),
   }
 
-  /// The bytes of a file, or the records of a stream, one after the other.
+  /// The bytes of a file.
   read: func(path: string) -> result<list<u8>, error>;
   /// Put a file.
   write: func(path: string, data: list<u8>) -> result<_, error>;
-  /// Add one record to the end of a stream.
+  /// Add bytes to the end of a file, as a new version.
   append: func(path: string, data: list<u8>) -> result<_, error>;
   /// Take a file away. Its old versions stay in the history.
   delete: func(path: string) -> result<_, error>;
@@ -115,10 +50,6 @@ interface events {
   on-change: func(path: string);
 }
 
-world engine {
-  export authz;
-}
-
 /// An app. It may also give a service over HTTP: the kernel gives it the
 /// requests for its own origin, `<app-id>.localhost`, as `wasi:http`. The
 /// kernel signs people in, and puts the person in the `fos-user` header.
@@ -128,6 +59,8 @@ world app {
   import fs;
   import kv;
   import log;
+  /// The time of day, for names that sort by time.
+  import wasi:clocks/wall-clock@0.2.12;
   export events;
   export wasi:http/incoming-handler@0.2.12;
 }

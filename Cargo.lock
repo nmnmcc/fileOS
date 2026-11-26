@@ -1078,14 +1078,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fos-fs"
-version = "0.1.0"
-dependencies = [
- "fos-core",
- "serde",
-]
-
-[[package]]
 name = "fos-gateway"
 version = "0.1.0"
 dependencies = [
@@ -1114,7 +1106,7 @@ name = "fos-net"
 version = "0.1.0"
 dependencies = [
  "fos-core",
- "fos-sync",
+ "fos-space",
  "libp2p",
  "tokio",
  "tracing",
@@ -1125,12 +1117,11 @@ name = "fos-node"
 version = "0.1.0"
 dependencies = [
  "fos-core",
- "fos-fs",
  "fos-id",
  "fos-net",
  "fos-runtime",
+ "fos-space",
  "fos-store",
- "fos-sync",
  "tempfile",
  "tokio",
  "tracing",
@@ -1142,7 +1133,6 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "fos-core",
- "fos-fs",
  "http-body-util",
  "hyper",
  "rawzip",
@@ -1161,9 +1151,7 @@ name = "fos-sim"
 version = "0.1.0"
 dependencies = [
  "fos-core",
- "fos-fs",
  "fos-space",
- "fos-sync",
 ]
 
 [[package]]
@@ -1179,19 +1167,9 @@ name = "fos-store"
 version = "0.1.0"
 dependencies = [
  "fos-core",
- "fos-fs",
- "fos-sync",
+ "fos-space",
  "getrandom 0.3.4",
  "tempfile",
-]
-
-[[package]]
-name = "fos-sync"
-version = "0.1.0"
-dependencies = [
- "fos-core",
- "fos-fs",
- "serde",
 ]
 
 [[package]]

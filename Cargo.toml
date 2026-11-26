@@ -19,9 +19,7 @@ publish = false
 # The WebAssembly apps and engines are in their own workspace, in apps/.
 [workspace.dependencies]
 fos-core = { path = "crates/fos-core" }
-fos-fs = { path = "crates/fos-fs" }
 fos-id = { path = "crates/fos-id" }
-fos-sync = { path = "crates/fos-sync" }
 fos-space = { path = "crates/fos-space" }
 fos-store = { path = "crates/fos-store" }
 fos-runtime = { path = "crates/fos-runtime" }
