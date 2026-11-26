@@ -1,4 +1,4 @@
-# The development environment we suggest for homeserver. You do not have to use it: see CONTRIBUTING.md.
+# The development environment we suggest for fileOS. You do not have to use it: see CONTRIBUTING.md.
 inputs:
   nixpkgs:
     url: github:cachix/devenv-nixpkgs/rolling

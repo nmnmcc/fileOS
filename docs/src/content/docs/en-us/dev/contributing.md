@@ -35,7 +35,7 @@ budget on every pull request, measured on a 4-core laptop with 8 GB of RAM:
 | ---------------------------------- | ------- |
 | Clean debug build of the workspace | ≤ 180 s |
 | Rebuild after editing a leaf crate | ≤ 5 s   |
-| Rebuild after editing `hs-core`    | ≤ 20 s  |
+| Rebuild after editing `fos-core`   | ≤ 20 s  |
 
 We treat a pull request over budget like one that fails the tests.
 
@@ -48,17 +48,17 @@ and neither is C or C++ that needs cmake.
 
 ## Shape of the code
 
-- Small crates and a shallow graph. Dependencies only go down. `hs-core`
-  depends on no other homeserver crate, and `hs` stays thin.
+- Small crates and a shallow graph. Dependencies only go down. `fos-core`
+  depends on no other fileOS crate, and `fos` stays thin.
 - Crates marked `portable = true` must build for `wasm32-unknown-unknown`, so
   they have no threads, files, sockets or clocks.
 - Protocol logic is sans-IO (it does no input or output itself). So the same
-  code runs in the deterministic simulation (`hs-sim`).
+  code runs in the deterministic simulation (`fos-sim`).
 - Mechanism, not policy: when code decides what should happen (whom to help,
   what to share, what to keep), make it a policy with a default that can be
   changed for another.
 
-The crate layout is in [Architecture](../architecture/#crates).
+The crate layout is in [Architecture](../fileos/#crate-layout).
 
 ## Language
 
@@ -84,8 +84,8 @@ workflow makes the tag and the GitHub release. The steps are in
 
 ## Licensing and sign-off
 
-homeserver is AGPL-3.0-only. `hs-plugin-api` is MIT OR Apache-2.0, so that
-plugins can use any license. Start every source file with an SPDX header.
+fileOS is AGPL-3.0-only. The app SDK (`apps/fos-app`) and the interfaces
+in `wit/` are MIT OR Apache-2.0, so that apps and engines can use any license. Start every source file with an SPDX header.
 There is no CLA: you keep your copyright.
 
 Every commit must be signed off under the
@@ -106,4 +106,4 @@ Write for the reader of that manual. The user manual takes it that the
 reader knows nothing about servers. The administration manual takes it that
 the reader can use a terminal. Only the developer manual talks about crates
 and protocols. Say what the current release does; designs that are not built
-yet go in [Architecture](../architecture/).
+yet go in [Architecture](../fileos/).

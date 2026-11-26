@@ -137,7 +137,7 @@ in
     };
 
     docs = pkgs.buildNpmPackage {
-      pname = "homeserver-docs";
+      pname = "fileos-docs";
       inherit version;
       src = lib.fileset.toSource {
         root = ./docs;

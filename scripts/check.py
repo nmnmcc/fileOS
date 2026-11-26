@@ -26,7 +26,7 @@ APPS = ["--manifest-path", "apps/Cargo.toml"]
 def portable_check() -> list[str]:
     """`cargo check` for the browser, for every crate with `portable = true`.
 
-    The list comes from `[package.metadata.hs]` in each Cargo.toml, so it is
+    The list comes from `[package.metadata.fos]` in each Cargo.toml, so it is
     never written down twice.
     """
     out = subprocess.run(
@@ -40,8 +40,8 @@ def portable_check() -> list[str]:
     command = ["cargo", "check", "--locked", "--target", WASM_TARGET]
     for package in packages:
         metadata = package.get("metadata")
-        hs = metadata.get("hs") if isinstance(metadata, dict) else None
-        if isinstance(hs, dict) and hs.get("portable") is True:
+        fos = metadata.get("fos") if isinstance(metadata, dict) else None
+        if isinstance(fos, dict) and fos.get("portable") is True:
             command += ["--package", str(package["name"])]
     return command
 
@@ -52,7 +52,18 @@ CHECKS: list[list[str] | Callable[[], list[str]]] = [
     # The engine and apps in target/apps/, which the tests of the node use.
     [sys.executable, str(ROOT / "scripts" / "apps.py")],
     ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"],
-    ["cargo", "clippy", *APPS, "--target", WASM_TARGET, "--all-targets", "--locked", "--", "-D", "warnings"],
+    [
+        "cargo",
+        "clippy",
+        *APPS,
+        "--target",
+        WASM_TARGET,
+        "--all-targets",
+        "--locked",
+        "--",
+        "-D",
+        "warnings",
+    ],
     ["cargo", "test", "--workspace", "--locked"],
     ["cargo", "test", *APPS, "--locked"],
     ["cargo", "doc", "--workspace", "--no-deps", "--locked"],

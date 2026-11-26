@@ -1,44 +1,90 @@
 ---
-title: Administration manual
-description: Set up and take care of a homeserver node for yourself or your family.
+title: Running a node
+description: Build fileOS, make a node, run it, and connect it to other nodes.
 ---
 
-This manual is for the person who sets up a homeserver: for themselves, for
-their family, or as a second node for a friend's backups. It takes for
-granted that you are comfortable in a terminal. The people who use the node
-need only the [user manual](../user/).
-
-:::caution[Version 0.1.0]
-homeserver is experimental. Data formats may still change between versions,
-so keep an export and an encrypted replica. There are no automatic updates
-and no web app yet.
+:::caution[Prototype]
+fileOS is a prototype. Its data formats will change between versions.
 :::
 
-## What you are running
+## Build
 
-A node is **one program, `hs`, and one data directory**. You do not set up a
-database server, a container or a reverse proxy. `hs` runs the node
-(`hs ctl serve`), manages it (`hs ctl …`, or `hsctl`, a link to the same
-program) and uses it (`hs ls`, `hs search`, …).
+In the repository, with the devenv shell (it has every tool):
 
-## Requirements
+```sh
+cargo build --release -p fos   # the program: target/release/fos
+apps                           # the engine and apps: target/apps/*.app
+```
 
-- Linux (x86_64 or aarch64) or macOS. macOS is good for trying it out.
-- Little memory and CPU: the design goal is one core and 1 GB of RAM for a
-  family of ten.
-- Disk space for what you keep, and for thumbnails.
-- To be reached from outside your home: a router that supports NAT-PMP or
-  PCP, or a port you forward by hand. Without either, the node works on your
-  local network. A public HTTPS domain is optional; it needs your own
-  reverse proxy.
+A release has the same files: the `fos` program and the `apps/` folder.
 
-## The path through this manual
+## Make a node
 
-1. [Install](install/) `hs`.
-2. Make the node and [run it](running/).
-3. Give people and apps [tokens](access/).
-4. Set up [backups](backups/), and keep the recovery code safe.
-5. If you want, let other apps [sign in](sign-in/) with the node.
+```sh
+fos init --engine target/apps/Capability.app
+```
 
-[Configuration](configuration/) and [Troubleshooting](troubleshooting/)
-cover the rest.
+This makes the data directory (by default `~/.fileos`; change it with `--dir`
+or `FOS_DIR`), a key for the node, and a root folder. The engine is the set of
+rules of the node. `Capability.app` is the default engine: the maker of a
+folder may do everything in it, and gives others what they may do.
+
+## Run it
+
+```sh
+fos run
+```
+
+This starts the network, the apps and the gateway. The gateway is a small
+HTTP API on `127.0.0.1` for the other `fos` commands. It needs the token in
+`gateway.token` in the data directory.
+
+| Option           | What it does                                                   |
+| ---------------- | -------------------------------------------------------------- |
+| `--listen ADDR`  | A libp2p address to listen on (default: TCP on every address)  |
+| `--peer ADDR`    | A node to connect to at the start                              |
+| `--gateway ADDR` | Where the gateway listens (default `127.0.0.1`, any free port) |
+| `--no-mdns`      | Do not look for nodes on the home network                      |
+
+`fos status` shows the node key, the addresses it listens on (with `/p2p/…`,
+ready to give to another node), the peers, the folders and the apps.
+
+## Connect two nodes
+
+On the home network, nodes find each other with mDNS. In other places, give
+one node the address of the other:
+
+```sh
+fos dial /ip4/192.0.2.10/tcp/4001/p2p/12D3KooW…
+```
+
+The network is [libp2p](https://libp2p.io): TCP with Noise and Yamux, relays
+and hole punching. There is no DHT: a node only talks to the nodes you
+connect it to, and only sends a folder to the nodes that its rules allow.
+
+## The data directory
+
+```text
+node.key          the key of the node (keep it secret)
+root              the ID of the root folder
+engine/           the engine of this node
+blobs/            file contents, named by their hash
+folders/*.log     the signed log of each folder
+local/*.kv        the data each app keeps on this node only
+gateway.token     the token for the gateway
+```
+
+A copy of the directory, made while the node is stopped, is a full backup.
+When the node starts, it reads every log again and checks each entry with the
+engine.
+
+## When something is wrong
+
+- **A folder does not come.** Check that the nodes are connected
+  (`fos status` lists the peers), and that the owner of the folder gave your
+  node key `store` on it.
+- **Writes wait.** `fos status` says how many writes wait for their ordering
+  node. They are sent when that node is connected again.
+- **`FORK` in `fos status`.** Your engine did not take an entry that the
+  ordering node took. The status says which entry and why.
+- **More detail.** Run the node with `RUST_LOG=debug fos run`.

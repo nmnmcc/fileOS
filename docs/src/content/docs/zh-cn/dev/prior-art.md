@@ -3,7 +3,7 @@ title: 值得学习的项目
 description: 在自己动手之前要研究的已有项目，以及从每个项目中学什么。
 ---
 
-homeserver 自己编写核心，使它保持轻量、易于扩展，并符合我们的目标。
+fileOS 自己编写核心，使它保持轻量、易于扩展，并符合我们的目标。
 为此需要研究已有的工作：软件、协议、论文、文章，以及未能成功的项目。
 本页按领域列出这些项目，写明各自值得学习之处；必要时也写明我们的不同做法。
 
@@ -96,7 +96,7 @@ homeserver 自己编写核心，使它保持轻量、易于扩展，并符合我
   [CardDAV](https://www.rfc-editor.org/rfc/rfc6352)。
 - **登录**：[WebAuthn](https://www.w3.org/TR/webauthn-3/)（通行密钥）、
   [OpenID Connect](https://openid.net/developers/specs/) 和
-  [OAuth 2.1](https://oauth.net/2.1/)：homeserver 作为身份提供方要实现的协议。
+  [OAuth 2.1](https://oauth.net/2.1/)：fileOS 的 login App 作为身份提供方要实现的协议。
 
 ## 身份与信任
 
@@ -113,7 +113,7 @@ homeserver 自己编写核心，使它保持轻量、易于扩展，并符合我
 - **[通行密钥](https://passkeys.dev/)**：不用密码登录，普通人已经在用。
 - **[Kanidm](https://kanidm.com/)**：用 Rust 编写的身份管理服务器，支持 OpenID Connect 和通行密钥。
 - **[Authelia](https://www.authelia.com/)** 和 **[Authentik](https://goauthentik.io/)**：
-  自托管用户目前需要单独运行和维护的认证网关。homeserver 内置的身份提供方用来替代它们。
+  自托管用户目前需要单独运行和维护的认证网关。fileOS 的 login App 用来替代它们。
 - **[IndieAuth](https://indieauth.spec.indieweb.org/)**：用你自己的网址作为身份登录别的网站。
 
 ## 加密
@@ -137,7 +137,6 @@ homeserver 自己编写核心，使它保持轻量、易于扩展，并符合我
   大多数用户仍在少数几个大服务器上。需要研究原因：身份绑定在服务器域名上；
   加入房间的每个服务器都要复制并解析整个房间的状态，所以小服务器加入大房间代价很高；
   运行服务器本身也需要持续投入。它的点对点实验（Pinecone）也值得一读。
-  注意 "homeserver" 也是 Matrix 的术语。
 - **[ActivityPub](https://www.w3.org/TR/activitypub/)** 和 Mastodon：
   使用最广的联邦协议，以服务器而不是以人为中心。身份绑定在实例上，迁移会丢掉过去的帖子；
   小实例活跃度低，审核和反垃圾的工作又落在管理员身上，于是人们聚集到大实例上。
@@ -145,7 +144,7 @@ homeserver 自己编写核心，使它保持轻量、易于扩展，并符合我
   和在不同托管方之间迁移。PDS 可以自托管，但大多数人的数据仍在官方 PDS 上，
   中继和 AppView 也主要由一家公司运营。_我们的不同：_ 不需要全局的中继或索引服务。
 - **[Nostr](https://github.com/nostr-protocol/nips)**：密钥加上简单的中继，
-  看一个极简协议能走多远。身份不属于任何服务器，这一点和 homeserver 一致。
+  看一个极简协议能走多远。身份不属于任何服务器，这一点和 fileOS 一致。
 - **[Briar](https://briarproject.org/)** 及其
   [Mailbox](https://briarproject.org/download-briar-mailbox/)：替离线的联系人暂存消息，
   正是我们的"信箱"角色。
@@ -279,7 +278,7 @@ homeserver 自己编写核心，使它保持轻量、易于扩展，并符合我
 
 ## 功能范围内的应用
 
-这些项目已经覆盖了 homeserver 的某一部分。学习它们的功能和数据模型，而不是架构。
+这些项目已经覆盖了 fileOS 的某一部分。学习它们的功能和数据模型，而不是架构。
 
 只收录 80% 的人日常都会用到的通用需求。影音媒体库、智能家居、代码托管这类专业需求不进核心，见下一节。
 

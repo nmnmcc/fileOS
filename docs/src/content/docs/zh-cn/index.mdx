@@ -1,9 +1,9 @@
 ---
-title: homeserver 文档
-description: 一台属于你自己的个人服务器，存放你保存和分享的数据。
+title: fileOS 文档
+description: 一个由你的电脑和你认识的人的电脑共同保存的文件系统。
 template: splash
 hero:
-  tagline: 一台属于你自己的个人服务器，存放你保存和分享的数据。按你要做的事选择手册。
+  tagline: 一个由你的电脑和你认识的人的电脑共同保存的文件系统。其他一切都是 App。按你要做的事选择手册。
 ---
 
 import { Aside, CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -12,21 +12,20 @@ import { Aside, CardGrid, LinkCard } from "@astrojs/starlight/components";
   <LinkCard
     title="用户手册"
     href="user/"
-    description="写给在 homeserver 上保存东西的每个人：登录、添加和查找数据、与认识的人分享，以及接入你已经在用的应用。"
+    description="面向在 fileOS 上保存文件的每个人：文件夹、和认识的人分享，以及 App。"
   />
   <LinkCard
     title="管理手册"
     href="admin/"
-    description="写给为自己或家人搭建节点的人：安装 hs、运行、配置、令牌、备份与恢复。"
+    description="面向运行节点的人：构建 fos、创建节点、运行它，并连接到其他节点。"
   />
   <LinkCard
     title="开发者手册"
     href="dev/"
-    description="写给开发 homeserver 或基于它开发的人：参与贡献、REST API、架构，以及我们学习的项目。"
+    description="面向开发 fileOS 或为它编写 App 和引擎的人：架构、接口和参与贡献的方式。"
   />
 </CardGrid>
 
-<Aside type="caution" title="实验阶段">
-  0.1.0 是最小可用版本，数据格式仍可能变化，请保留一份导出。各手册描述 0.1.0
-  实际能做的事；[架构](dev/architecture/)描述它的方向。
+<Aside type="caution" title="原型">
+  fileOS 还是原型，格式还会改变。[架构](dev/fileos/)一页写明了哪些部分已经实现。
 </Aside>

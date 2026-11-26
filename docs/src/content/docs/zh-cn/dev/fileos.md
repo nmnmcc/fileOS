@@ -1,21 +1,21 @@
 ---
-title: "设计：fileOS"
-description: 一个新的架构。内核只是一个能在节点之间同步的文件系统。其他一切，包括访问规则，都是 WebAssembly App。
+title: "架构：fileOS"
+description: 内核只是一个能在节点之间同步的文件系统。其他一切，包括访问规则，都是 WebAssembly App。
 ---
 
-:::note[状态：提案]
-本页是供讨论的设计，还没有任何部分被实现。在它被接受之前，[架构](../architecture/)和规范都不变。"fileOS"是暂定的名字。
+:::note[状态：原型]
+仓库里已经有这个设计的原型。[原型已经有什么](#原型已经有什么)一节写明了哪些部分已经实现、哪些还没有。"fileOS"是暂定的名字。
 :::
 
 ## 一句话
 
 **内核只保存事实：数据、签名、密钥和传输。所有规则和所有功能，都是用户自己选的 WebAssembly 代码：授权引擎决定规则，App 提供功能。**
 
-## 为什么要新设计
+## 为什么只要一个底层
 
-现在 homeserver 有很多互相独立的概念：space、条目、grant、令牌、身份、节点、副本、中继和插件。每个新功能都会带来一个新概念，每个概念都要有自己的代码、自己的测试和自己的同步规则。
+一个系统如果有很多互相独立的概念（群组、条目、授权、令牌、副本、中继、插件），每个新功能都会带来一个新概念，每个概念都要有自己的代码、自己的测试和自己的同步规则。
 
-新设计只有一个底层，其他一切都在它上面构建。它最初的想法来自 IPFS：文件按哈希命名。但它比 IPFS 小得多，因为它是为 homeserver 设计的，而不是为全球网络设计的：
+fileOS 只有一个底层，其他一切都在它上面构建。它最初的想法来自 IPFS：文件按哈希命名。但它比 IPFS 小得多，因为它是为个人和家庭的电脑设计的，而不是为全球网络设计的：
 
 - 没有全局的内容 DHT。节点通过人与人的关系找到彼此。
 - 默认什么都不公开。
@@ -193,9 +193,9 @@ capability = {
 - capability 可以转给别人，但权限只能变小，不能变大。
 - 收回 capability 时，在文件夹日志里写一条 `policy` 记录，它会随文件夹一起同步。
 
-有了 capability，原来的概念都变得很简单：
+有了 capability，熟悉的概念都变得很简单：
 
-| 原来的概念     | 用默认引擎实现                                     |
+| 概念           | 用默认引擎实现                                     |
 | -------------- | -------------------------------------------------- |
 | 群组成员       | 持有这个文件夹的 `read`、`write` 或 `append`       |
 | 群主           | 持有 `grant`                                       |
@@ -218,19 +218,21 @@ capability = {
 
 ```wit
 interface authz {
+  // 新文件夹的状态。
+  init: func(folder: string, creator: key) -> list<u8>;
   // 读取一条 policy 记录，更新引擎自己的状态。
-  apply: func(state: state, entry: entry) -> result<state, reason>;
+  apply: func(state: list<u8>, author: key, policy: list<u8>) -> result<list<u8>, string>;
   // 判断一个操作是否允许。
-  check: func(state: state, principal: key, op: op) -> decision;
+  check: func(state: list<u8>, principal: key, op: op) -> decision;
   // 内核需要的查询。
-  readers: func(state: state) -> list<key>;   // 用来分发密钥
-  storers: func(state: state) -> list<key>;   // 用来同步
+  readers: func(state: list<u8>) -> list<key>;   // 用来分发密钥
+  storers: func(state: list<u8>) -> list<key>;   // 用来同步
+  // 给 `to` 在 `path` 上一些能力的 policy 记录。
+  grant: func(to: key, abilities: list<ability>, path: string) -> list<u8>;
 }
-
-variant decision { allow, deny(reason) }
 ```
 
-内核会缓存结果：同一个状态、同一个人、同一个操作，只算一次。
+有了 `grant`，内核不需要知道 policy 记录的格式，也能给 App 或别人授权。完整接口见 `wit/fos.wit`。以后内核会缓存结果：同一个状态、同一个人、同一个操作，只算一次。
 
 ## 加密
 
@@ -247,7 +249,7 @@ variant decision { allow, deny(reason) }
 | 我们需要的           | libp2p 提供的                                  |
 | -------------------- | ---------------------------------------------- |
 | 节点身份             | PeerId，由节点的 ed25519 密钥生成              |
-| 加密传输             | QUIC，TCP 加 Noise 或 TLS（rustls 和 `ring`）  |
+| 加密传输             | TCP 加 Noise 和 Yamux（QUIC 以后再加，见下文） |
 | 不需要公网 IP 和域名 | AutoNAT、DCUtR（打洞）、Circuit Relay v2、UPnP |
 | 为朋友中继（互助）   | Circuit Relay v2，由引擎决定帮谁               |
 | 发现家里网络中的节点 | mDNS                                           |
@@ -439,15 +441,14 @@ manifest 是人写的，所以用 TOML。内核读取后转成 CBOR 保存。
 
 ## 网关
 
-内核只开一个 HTTP 和 QUIC 端口，只做三件事：
+网关是给客户端用的一个 HTTP 端口。节点之间的同步不经过它，而是走 libp2p。网关只做两件事：
 
-1. 节点之间的同步协议。
-2. 一个很小的文件系统 API，让客户端按路径读写。
-3. **其他请求都按 manifest 里的路由，交给 App 的 `handle-http`。**
+1. 一个很小的文件系统 API，让客户端按路径读写。
+2. **其他请求都按 manifest 里的路由，交给 App 的 `handle-http`。**
 
-网关验证调用者是谁：设备密钥的签名，或者 capability 令牌。然后把调用者交给 App。App 永远不处理密钥。
+网关验证调用者是谁：设备密钥的签名，或者 capability 令牌。然后把调用者交给 App。App 永远不处理密钥。在原型中，网关只监听 `127.0.0.1`，并检查数据目录里的一个令牌。
 
-## 现有功能变成 App
+## 日常功能都是 App
 
 | App        | 使用的路径                            | 提供的功能                            |
 | ---------- | ------------------------------------- | ------------------------------------- |
@@ -464,7 +465,7 @@ manifest 是人写的，所以用 TOML。内核读取后转成 CBOR 保存。
 | **import** | 写入对应的路径                        | Google Takeout、iCloud、聊天记录导入  |
 | **backup** | 只用 `store` capability               | 备份到目录、S3 或朋友的节点           |
 
-这些 App 随 fileOS 一起提供。它们和别人的 App 用同样的接口和沙箱。
+这些 App 将随 fileOS 一起提供（照片 App 已经实现）。它们和别人的 App 用同样的接口和沙箱。
 
 ## 例子
 
@@ -483,24 +484,22 @@ crates/
   fos            程序本身，只负责把各部分组装起来
   fos-node       把内核组装成一个节点
   fos-gateway    网关
-  fos-runtime    App 运行时（wasmtime）
-  fos-authz      调用引擎，缓存结果，执行结论
+  fos-runtime    App 运行时（wasmtime）：.app 文件夹、引擎、App
   fos-net        libp2p
-  fos-store      磁盘：blob、日志、本地键值存储
+  fos-store      磁盘：节点密钥、blob、日志、本地键值存储
   fos-sync       同步协议（sans-IO，portable）
-  fos-fs         文件夹、日志、路径树、排序（sans-IO，portable）
-  fos-core       格式：CBOR、COSE、哈希（portable，最底层）
-  fos-app-api    WIT 和 Rust SDK（MIT OR Apache-2.0）
+  fos-fs         文件夹、日志、顺序、分叉、挂载（sans-IO，portable）
+  fos-core       格式：CBOR、ed25519、BLAKE3（portable，最底层）
   fos-sim        多节点的确定性模拟，只测内核
-engines/
+apps/            第二个 workspace，编译成 wasm32-unknown-unknown
+  fos-app        App 和引擎的 Rust SDK（MIT OR Apache-2.0）
   capability     默认引擎
-apps/
-  photos search people chat vault dav login mcp s3 push import backup
+  photos         照片 App
+wit/
+  fos.wit        接口（MIT OR Apache-2.0）
 ```
 
-依赖仍然只能向下。App 和引擎只依赖 `fos-app-api`。只有 `fos-runtime` 用 wasmtime，只有 `fos-net` 用 libp2p，所以其余代码仍然编译得很快。
-
-现有代码中以下部分会去掉：节点之间的 HTTP Message Signatures、NAT-PMP/PCP 端口映射，以及计划中自己做的 NAT 穿透和中继。这些都由 libp2p 提供。
+依赖仍然只能向下。App 和引擎只依赖 `fos-app`。只有 `fos-runtime` 用 wasmtime，只有 `fos-net` 用 libp2p，所以其余代码仍然编译得很快。
 
 ## 如何契合宣言
 
@@ -520,23 +519,37 @@ apps/
 
 它也回答了宣言里"为什么只有联邦还不够"那张表：身份不绑定在域名上，因为身份就是密钥；成本不随网络增长，因为节点只同步自己的文件夹；不需要管理员，因为每个人的引擎就是他自己的规则。
 
+## 原型已经有什么
+
+| 部分                                                  | 是否实现                              |
+| ----------------------------------------------------- | ------------------------------------- |
+| 文件夹：签名日志、文件、流、挂载、顺序、分叉          | 是（`fos-fs`）                        |
+| 同步，以及等待排序节点的写入                          | 是（`fos-sync`，在 `fos-sim` 里测试） |
+| 引擎是 WASM 组件，不加限制                            | 是，默认引擎是 `apps/capability`      |
+| App 是 WASM 组件，有自己的密钥和资源限制              | 是，照片 App 是 `apps/photos`         |
+| `.app` 文件夹像其他文件夹一样同步                     | 是                                    |
+| libp2p：TCP、Noise、Yamux、mDNS、中继、DCUtR、AutoNAT | 是，在一台机器上测试了两个节点        |
+| `fos` 命令和网关                                      | 是，只供本机客户端使用                |
+| QUIC                                                  | 否，见下文                            |
+| 用 MLS 加密文件夹                                     | 否                                    |
+| App 的 `handle-http`、扩展、辅助组件、网页界面        | 否                                    |
+| App 发布者签名；第一次使用时询问用户                  | 否                                    |
+| 引擎结果的缓存；`.cwasm` 预编译缓存                   | 否                                    |
+| 分块传输 blob                                         | 否：一个 blob 是一条消息，最大 64 MiB |
+
 ## 代价和待定问题
 
-1. **编译时间。** wasmtime 和 libp2p 都很大，引入后一定会超出现在的预算。提议：在 CONTRIBUTING 里写明这两个是有意接受的代价，并按新的基线重设预算。只开用到的 feature，并且只在 `fos-runtime` 和 `fos-net` 里使用它们。这一条需要决定。
-2. **每个 crate 只有一个版本。** libp2p 的依赖很多，有些 crate 可能出现两个版本（比如 `rand` 或 `hickory`），可能需要在 cargo-deny 里加例外。
-3. **WASM 的速度。** 缩略图和全文搜索可能比原生代码慢 1.5 到 2 倍，需要在家用硬件上测量。
-4. **每次写入都要运行引擎**，同步时每条记录也要运行一次。缓存的效果需要测量。
-5. **让人看得懂的分叉。** 不懂技术的人也要能理解"你的副本和主线不同"。
-6. **login App** 能签发 capability，权限几乎和内核一样大。用户同意它的方式需要单独设计。
-7. **宣言要改。** 现在写的是"日常需求放在核心，特殊需求通过插件"。改成"内核只有文件系统，一切都是 App，日常用的 App 随系统提供"。
-8. **名字。** 如果改名，crate、`did:hs` 方法、文档和域名都要改。改之前应该先确认这个名字没有被别人使用。
+1. **编译时间。** 预算不需要改。在一台 15 核的电脑上：干净构建 38.6 秒（预算 180 秒），修改 `fos` 后重建 0.8 秒（预算 5 秒），修改 `fos-core` 后重建 1.6 秒（预算 20 秒）。
+2. **QUIC。** `libp2p-quic` 总会打开 quinn 的 `aws-lc-rs` 后端，而 aws-lc-sys 是不允许的（`deny.toml`）。所以原型使用 TCP。中继和打洞在 TCP 上也能工作。等 libp2p 允许使用 `ring`，或者我们修改这条规则时，再加上 QUIC。
+3. **每个 crate 只有一个版本。** libp2p 和 wasmtime 会带来一些 crate 的两个版本（比如 `sha2`、`curve25519-dalek` 和 `getrandom`）。每一个都写在 `deny.toml` 里，并注明原因。它们都不来自我们自己的代码。
+4. **WASM 的速度。** 缩略图和全文搜索可能比原生代码慢 1.5 到 2 倍，需要在家用硬件上测量。
+5. **每次写入都要运行引擎**，同步时每条记录也要运行一次。缓存的效果需要测量。
+6. **让人看得懂的分叉。** 不懂技术的人也要能理解"你的副本和主线不同"。
+7. **login App** 能签发 capability，权限几乎和内核一样大。用户同意它的方式需要单独设计。
+8. **名字。** 如果改名，仓库、文档和域名都要改。改之前应该先确认这个名字没有被别人使用。
 
-## 第一步
+## 下一步
 
-先用一个小原型验证最大的未知问题：
-
-1. 两个节点通过 libp2p 打洞连接，并同步一个文件夹。
-2. wasmtime 从一个 `.app` 文件夹运行默认引擎和一个 photos App。
-3. 测量一次干净构建的时间，确定新的预算。
-
-原型跑通后，再把现有的 crate 一步步迁移到新的结构，并更新规范。
+1. 用 MLS 加密文件夹，让只有 `store` 的节点只能看到密文。
+2. App 的 `handle-http`，以及人们每天都用的第一批 App：通过 WebDAV 访问文件、给 Bitwarden 客户端用的密码库、聊天。
+3. 在家用硬件上测量 WASM 的速度和引擎的开销。

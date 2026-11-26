@@ -1,4 +1,4 @@
-# 参与 homeserver 开发
+# 参与 fileOS 开发
 
 [English](CONTRIBUTING.md) | **简体中文**
 
@@ -50,7 +50,7 @@ direnv allow
 | ----------------------------- | -------- |
 | 全新 debug 编译整个 workspace | ≤ 180 秒 |
 | 改动叶子 crate 后重新编译     | ≤ 5 秒   |
-| 改动 `hs-core` 后重新编译     | ≤ 20 秒  |
+| 改动 `fos-core` 后重新编译    | ≤ 20 秒  |
 
 参考机器是一台 4 核、8GB 内存的笔记本。预算会随代码增长重新校准。
 
@@ -58,9 +58,9 @@ direnv allow
 
 1. **每个新增的外部依赖都要评审。** 在 PR 中说明为什么需要它，以及它让全新编译多花了多少时间（对比前后的 `cargo build --timings`）。评判一个依赖，看的是构建时间、二进制体积和它带进来了什么（第二套加密库或 HTTP 栈、被禁用的 crate、沉重的过程宏、构建脚本、C 或 C++），而不是 crate 数量：拆分成小 crate 的库，代价可能比一个大 crate 更小。
 2. 只在根目录 `Cargo.toml` 的 `[workspace.dependencies]` 中声明一次，使用 `default-features = false`，只开启用到的功能。
-3. 每个库只允许一个版本。`cargo deny check` 会拒绝重复版本，因为每个副本都要单独编译。
-4. 不使用需要 cmake 的 C 或 C++ 代码。由 `cc` crate 编译的小型 C 代码可以使用，例如通过 SQLx SQLite 驱动的 `bundled` 特性编译的 SQLite。TLS 使用 rustls 的 `ring` 后端。`hs` 以单个可执行文件发布，运行时不下载、不加载任何东西。
-5. 重型依赖（网络、加密、搜索、WASM）只放在需要它的 crate 里，这样改动其他代码时不会重编它们。
+3. 每个库只允许一个版本。`cargo deny check` 会拒绝重复版本，因为每个副本都要单独编译。上游 crate 带来、我们无法去掉的第二个版本，写进 `deny.toml` 的 `skip`，并注明原因。
+4. 不使用需要 cmake 的 C 或 C++ 代码。由 `cc` crate 编译的小型 C 代码可以使用，例如 `ring` 里的代码。TLS 使用 rustls 的 `ring` 后端。`fos` 以单个可执行文件发布，只加载用户给它的 `.app` 文件夹。
+5. 重型依赖只放在需要它的 crate 里，这样改动其他代码时不会重编它们：wasmtime 只在 `fos-runtime` 里，libp2p 只在 `fos-net` 里。
 
 ### 写出编译快的代码
 
@@ -88,30 +88,31 @@ direnv allow
 
 ```
 crates/
-  hs              可执行程序：只负责把各组件连起来
-  hs-api          所有 HTTP 服务：REST、联邦、DAV、MCP、Bitwarden、S3
-  hs-node         把各组件组装成一个节点
-  hs-net          服务器之间的联邦与互助
-  hs-client       REST 客户端和协议类型，可选择启用 OpenAPI schema
-  hs-plugin-host  沙箱化的 WebAssembly 插件运行时
-  hs-idp          OpenID Connect 身份提供方、通行密钥、转发认证（无 I/O）
-  hs-objects      blob、副本、信任边界处的加密
-  hs-store        SQLite 中的派生索引：资源、链接、搜索、地点
-  hs-space        空间日志：排序、成员、授权（sans-IO）
-  hs-media        媒体元数据与缩略图
-  hs-sim          用于测试的确定性多节点模拟
-  hs-identity     基于密钥的身份、设备、迁移（可移植）
-  hs-plugin-api   插件接口（MIT OR Apache-2.0，no_std，可移植）
-  hs-core         核心格式：CBOR、COSE、哈希、日志（依赖图最底层，可移植）
+  fos             可执行程序：只负责把各组件连起来
+  fos-node        把各组件组装成一个节点
+  fos-gateway     给客户端用的本地 HTTP API
+  fos-runtime     wasmtime：.app 文件夹、引擎和 App
+  fos-net         libp2p：在节点之间传送同步消息
+  fos-store       数据目录：节点密钥、blob、文件夹日志、本地键值存储
+  fos-sync        节点之间的同步（sans-IO，可移植）
+  fos-fs          文件夹：签名日志、顺序、分叉、挂载（sans-IO，可移植）
+  fos-core        格式：CBOR、ed25519、BLAKE3（依赖图最底层，可移植）
+  fos-sim         用于测试的确定性多节点模拟
+apps/             第二个 workspace，由 `apps` 编译成 wasm32-unknown-unknown
+  fos-app         App 和引擎的 SDK（MIT OR Apache-2.0）
+  capability      默认引擎
+  photos          照片 App
+wit/
+  fos.wit         内核与组件之间的接口（MIT OR Apache-2.0）
 ```
 
-标记为*可移植*的 crate 在 `Cargo.toml` 的 `[package.metadata.hs]` 下写有 `portable = true`。它们必须能为 `wasm32-unknown-unknown` 构建，因为插件、手机外壳和 Web 应用共用它们；`check` 会验证这一点。其中不要直接使用线程、文件、socket 和时钟，应通过各宿主实现的接口访问。
+标记为*可移植*的 crate 在 `Cargo.toml` 的 `[package.metadata.fos]` 下写有 `portable = true`。它们必须能为 `wasm32-unknown-unknown` 构建，因为 App、手机外壳和 Web 应用共用它们；`check` 会验证这一点。其中不要直接使用线程、文件、socket 和时钟，应通过各宿主实现的接口访问。
 
-文档站点位于 `docs/`，使用 [Astro Starlight](https://starlight.astro.build) 构建，支持全文搜索和多语言。英文页面在 `docs/src/content/docs/en-us/`，简体中文页面在 `docs/src/content/docs/zh-cn/`，文件名一一对应。页面分为三本手册，每本是侧栏顶部切换器中的一个主题：`user/` 写给使用 homeserver 的人，`admin/` 写给运行它的人，`dev/` 写给开发者。新页面要用两种语言编写，加入 `docs/astro.config.mjs` 的 `topics` 列表，并为该手册的读者而写。
+文档站点位于 `docs/`，使用 [Astro Starlight](https://starlight.astro.build) 构建，支持全文搜索和多语言。英文页面在 `docs/src/content/docs/en-us/`，简体中文页面在 `docs/src/content/docs/zh-cn/`，文件名一一对应。页面分为三本手册，每本是侧栏顶部切换器中的一个主题：`user/` 写给使用 fileOS 的人，`admin/` 写给运行节点的人，`dev/` 写给开发者。新页面要用两种语言编写，加入 `docs/astro.config.mjs` 的 `topics` 列表，并为该手册的读者而写。
 
 生产构建时，将 `DOCS_SITE_URL` 设为站点的公开源地址，以生成规范网址、`hreflang` 链接和站点地图。根路径 `/` 仅用于语言跳转，不参与搜索索引，也不列入站点地图。
 
-依赖只能向下。`hs-core` 不依赖任何其他 homeserver crate。`hs-plugin-api` 没有任何依赖。`hs` 保持精简，以便几秒内重新编译。
+依赖只能向下。`fos-core` 不依赖任何其他 fileOS crate。App 和引擎只依赖 `fos-app`。`fos` 保持精简，以便几秒内重新编译。
 
 ## 只提供机制，不内置政策
 
@@ -119,12 +120,12 @@ crates/
 
 ## 许可证
 
-homeserver 采用 [AGPL-3.0-only](LICENSE) 授权，并为只使用插件接口的插件提供 [homeserver 插件例外](PLUGIN-EXCEPTION.zh-CN.md)。提交贡献即表示你同意你的贡献采用以下许可证：
+fileOS 采用 [AGPL-3.0-only](LICENSE) 授权，并为只使用插件接口的 App 和引擎提供 [fileOS 插件例外](PLUGIN-EXCEPTION.zh-CN.md)。提交贡献即表示你同意你的贡献采用以下许可证：
 
-- **AGPL-3.0-only**：除 `crates/hs-plugin-api` 以外的所有内容
-- **MIT OR Apache-2.0**：`crates/hs-plugin-api`，以便插件可以使用任何许可证
+- **AGPL-3.0-only**：除 `apps/fos-app` 和 `wit/` 以外的所有内容
+- **MIT OR Apache-2.0**：`apps/fos-app` 和 `wit/`，以便 App 和引擎可以使用任何许可证
 
-你的作品版权仍归你所有。项目不使用贡献者许可协议（CLA），因此任何人（包括维护者）都无法单方面更改 homeserver 的许可证。
+你的作品版权仍归你所有。项目不使用贡献者许可协议（CLA），因此任何人（包括维护者）都无法单方面更改 fileOS 的许可证。
 
 每个源文件以 SPDX 文件头开始：
 
@@ -156,7 +157,7 @@ budget   # 编译时间预算
 
 工作区在 `Cargo.toml` 中声明最低 Rust 版本。Nix 使用该版本检查锁定依赖下的所有原生目标。
 
-运行 `cargo bench -p hs-api --bench request_path` 可测量开启访问日志后的请求处理速度，用 `HS_BENCH_REQUESTS` 调整样本量。基准包含访问日志的入队和刷盘，也通过本机回环 HTTP 测量并发 blob 范围读取和资源写入的 p99 延迟。
+`apps` 会把引擎和 App 编译到 `target/apps/`。`fos-runtime` 和 `fos-node` 的测试要用到它们，所以先运行 `apps`，再运行 `cargo test`。`check` 会自动做这一步。
 
 格式化工具及其配置只在 `devenv.nix` 中定义（通过 treefmt-nix）。进入 shell 不会改写文件，需要手动运行 `treefmt`。
 
@@ -210,6 +211,6 @@ Knope 会询问改动类型和一句摘要：
 knope prepare-release
 ```
 
-Knope 根据变更文件算出新版本号，写入 `Cargo.toml`（包括 `hs-client` 的版本），把变更文件写进 `CHANGELOG.md` 中新版本的小节，然后删除这些文件。随后 [`scripts/release_pr.py`](scripts/release_pr.py) 建立分支 `release/v<版本>`，提交一个 commit 并开 PR。
+Knope 根据变更文件算出新版本号，写入 `Cargo.toml` 和 `apps/Cargo.toml`，把变更文件写进 `CHANGELOG.md` 中新版本的小节，然后删除这些文件。随后 [`scripts/release_pr.py`](scripts/release_pr.py) 建立分支 `release/v<版本>`，提交一个 commit 并开 PR。
 
-该 PR 合并后，[Release 工作流](.github/workflows/release.yml) 发现 `Cargo.toml` 中的版本还没有对应标签，于是构建发布文件（`hs-<版本>-linux-x86_64.tar.gz`、文档和 `SHA256SUMS`）并执行 `knope release`。Knope 创建标签 `v<版本>` 和 GitHub Release，发布说明取自 `CHANGELOG.md` 中该版本的小节。
+该 PR 合并后，[Release 工作流](.github/workflows/release.yml) 发现 `Cargo.toml` 中的版本还没有对应标签，于是构建发布文件（包含 `fos` 和各个 `.app` 文件夹的 `fos-<版本>-linux-x86_64.tar.gz`、文档和 `SHA256SUMS`）并执行 `knope release`。Knope 创建标签 `v<版本>` 和 GitHub Release，发布说明取自 `CHANGELOG.md` 中该版本的小节。

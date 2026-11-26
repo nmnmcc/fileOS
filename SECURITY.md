@@ -2,7 +2,7 @@
 
 **English** | [简体中文](SECURITY.zh-CN.md)
 
-homeserver keeps people's private data. We take security problems seriously, even while the project is an early test version.
+fileOS keeps people's private data. We take security problems seriously, even while the project is an early test version.
 
 ## Versions
 

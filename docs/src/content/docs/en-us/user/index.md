@@ -1,47 +1,62 @@
 ---
 title: User manual
-description: What a homeserver keeps for you, and the few ideas you need to use it.
+description: What fileOS is, and how you use it.
 ---
 
-A homeserver keeps your notes, files, photos, contacts, calendars and
-passwords on a machine that is yours, or belongs to someone you trust. This
-manual is for the people who use it. To set up the node itself, see the
-[administration manual](../admin/).
-
-:::note[Version 0.1.0]
-There is no web app yet. You use your homeserver with the `hs` command line
-and with the apps you already have: address books, calendars, Bitwarden and
-AI assistants.
+:::caution[Prototype]
+fileOS is a prototype. You use it from the command line, and its formats will
+change. Keep a copy of anything that is important to you somewhere else too.
 :::
 
-## Five ideas
+## What fileOS is
 
-**Identity.** You are a key, not an account on someone's server. Your
-identity ID is a long string of letters and digits made from that key. It
-stays the same when your homeserver goes to another machine or another
-address. `hs identity` prints it as a DID document.
+fileOS keeps your files on computers that you control: a small box at home, a
+server, your laptop. Each of these is a **node**. Your nodes, and the nodes of
+people you know, keep each other up to date.
 
-**Spaces.** A space is a group of things that is kept and shared as one
-unit: your private space, a family space, a shared album. Each space has
-members, and one node keeps it in order.
+There are only a few ideas:
 
-**Items.** Everything in a space is an item with a type and an ID, written
-`TYPE/ID`: `note/shopping`, `contact/ada`, `event/dentist`, `file/…`. Most
-items are JSON; files are kept byte for byte, unchanged.
+- **Everything is a folder.** Your photos, your notes, a chat with your family
+  and even the apps are folders.
+- **A shared folder is a folder that more than one node keeps.** When you share
+  a folder with a friend, their node keeps a copy, and changes go both ways.
+- **Your node, your rules.** Each node has rules that say who may read, write
+  or keep what. You can see every rule, and take any of them back.
+- **Apps only see what you let them see.** An app is a small program in a
+  sandbox. It can only use the folders you gave it.
 
-**History.** Every change is signed and added to the end of the space's log.
-Search, the timeline and places are made from that log, and you can always
-make them again.
+## Using your files
 
-**Grants.** Every app and person gets to your data with a token. Every token
-is a grant that you can list and take back (revoke). Nothing has access that
-you cannot see.
+These commands work on the node that runs on your computer. Paths start with
+the folder, for example `/photos/2026/beach.jpg`.
 
-## Where to go next
+| Command                        | What it does                            |
+| ------------------------------ | --------------------------------------- |
+| `fos ls /photos`               | The names in a folder                   |
+| `fos cat /notes/todo.txt`      | Print a file                            |
+| `fos put /notes/todo.txt FILE` | Put a file (or the text you type)       |
+| `fos rm /notes/todo.txt`       | Take a file away; old versions are kept |
+| `fos append /family/chat "…"`  | Add a line to a stream, such as a chat  |
+| `fos status`                   | What your node is doing                 |
 
-- [Getting started](getting-started/): sign in and look around.
-- [Spaces and items](data/): add, change and remove things.
-- [Finding things](finding/): search, timeline, places and links.
-- [Sharing](sharing/): spaces with people on other homeservers.
-- [Apps and assistants](apps/): contacts, calendars, passwords and AI.
-- [Your recovery code](recovery/): the one thing you must not lose.
+## Sharing a folder
+
+1. Make a folder: `fos new family /family`. It prints the folder ID.
+2. Give your friend's node access: `fos grant /family <their node key> all`.
+3. Your friend mounts it on their node: `fos mount <folder ID> /family`.
+
+Now you both see the same files. Your friend's writes go to your node, which
+puts them in order, and then come back to everyone.
+
+If your friend's node has different rules from yours, its copy can stop at
+the first change its rules do not take. `fos status` then says `FORK`. Nothing
+is lost; your friend can change their rules or make a new folder.
+
+## Apps
+
+An app is a folder with a `.app` name, such as `Photos.app`. Install one with
+`fos install Photos.app`. When you install it, your node gives the app only
+the access that its manifest asks for. The photos app reads the photos in
+`/photos` and keeps an index on your node: `fos kv photos` shows it.
+
+To run a node, see the [administration manual](../admin/).

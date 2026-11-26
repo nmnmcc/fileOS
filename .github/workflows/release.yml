@@ -56,7 +56,7 @@ jobs:
           mkdir "$name" release
           cp -rP artifacts/fos artifacts/apps LICENSE PLUGIN-EXCEPTION.md README.md CHANGELOG.md "$name/"
           tar -czf "release/$name.tar.gz" "$name"
-          tar -czf "release/homeserver-docs-$VERSION.tar.gz" -C artifacts docs
+          tar -czf "release/fileos-docs-$VERSION.tar.gz" -C artifacts docs
           (cd release && sha256sum ./*.tar.gz > SHA256SUMS)
       - run: devenv shell -- knope release
         env:

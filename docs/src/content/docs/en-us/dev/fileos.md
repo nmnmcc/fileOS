@@ -1,12 +1,12 @@
 ---
-title: "Design: fileOS"
-description: A new architecture. The core is only a file system that syncs between nodes. Everything else, and the rules for access too, is a WebAssembly app.
+title: "Architecture: fileOS"
+description: The core is only a file system that syncs between nodes. Everything else, and the rules for access too, is a WebAssembly app.
 ---
 
-:::note[Status: proposal]
-This page is a design for discussion. Nothing on it is built yet. It does not
-change [Architecture](../architecture/) or the specification until it is
-accepted. The name "fileOS" is a working name.
+:::note[Status: prototype]
+A prototype of this design is in the repository. The section
+[What the prototype has](#what-the-prototype-has) says which parts are built
+and which are not yet. The name "fileOS" is a working name.
 :::
 
 ## In one sentence
@@ -15,16 +15,16 @@ accepted. The name "fileOS" is a working name.
 and every feature is WebAssembly code that the user picks: the authorization
 engine makes the rules, and apps make the features.**
 
-## Why a new design
+## Why one base
 
-At present homeserver has many separate ideas: spaces, items, grants, tokens,
-identities, nodes, replicas, relays and plugins. Each new feature brings one
-more idea, and each idea needs its own code, its own tests and its own rules
-for sync.
+When a system has many separate ideas (groups, items, grants, tokens,
+replicas, relays, plugins), each new feature brings one more idea. Each idea
+needs its own code, its own tests and its own rules for sync.
 
-The new design has one base, and everything is made on top of it. It took its
-first idea from IPFS: files are named by their hash. But it is much smaller
-than IPFS, because it is made for homeservers, not for a global network:
+fileOS has one base, and everything is made on top of it. It took its first
+idea from IPFS: files are named by their hash. But it is much smaller than
+IPFS, because it is made for the computers of people and families, not for a
+global network:
 
 - No global DHT for content. Nodes find each other through people.
 - Nothing is public by default.
@@ -238,9 +238,9 @@ capability = {
 - To take a capability back, a `policy` entry goes into the log of the folder
   and syncs with it.
 
-With capabilities, the old ideas become simple:
+With capabilities, familiar ideas become simple:
 
-| Old idea              | With the default engine                                           |
+| Idea                  | With the default engine                                           |
 | --------------------- | ----------------------------------------------------------------- |
 | Member of a group     | Has `read`, `write` or `append` on its folder                     |
 | Owner of a group      | Has `grant`                                                       |
@@ -263,19 +263,23 @@ Other people may write other engines, for example:
 
 ```wit
 interface authz {
+  // The state of a new folder.
+  init: func(folder: string, creator: key) -> list<u8>;
   // Read one policy entry and update the engine's own state.
-  apply: func(state: state, entry: entry) -> result<state, reason>;
+  apply: func(state: list<u8>, author: key, policy: list<u8>) -> result<list<u8>, string>;
   // Say if an operation is allowed.
-  check: func(state: state, principal: key, op: op) -> decision;
+  check: func(state: list<u8>, principal: key, op: op) -> decision;
   // Questions that the core needs answered.
-  readers: func(state: state) -> list<key>;   // for giving out keys
-  storers: func(state: state) -> list<key>;   // for sync
+  readers: func(state: list<u8>) -> list<key>;   // for giving out keys
+  storers: func(state: list<u8>) -> list<key>;   // for sync
+  // The policy entry that gives `to` abilities on `path`.
+  grant: func(to: key, abilities: list<ability>, path: string) -> list<u8>;
 }
-
-variant decision { allow, deny(reason) }
 ```
 
-The core keeps the answers in a cache: the same state, the same person and
+With `grant`, the core can give access to an app or a person without knowing
+the format of policy entries. The full interface is in `wit/fos.wit`. Later,
+the core will keep the answers in a cache: the same state, the same person and
 the same operation are worked out one time only.
 
 ## Encryption
@@ -297,7 +301,7 @@ It is tested and used widely, and it does what we need:
 | What we need                       | What libp2p gives                                      |
 | ---------------------------------- | ------------------------------------------------------ |
 | Node identity                      | PeerId, made from the ed25519 key of the node          |
-| Encrypted transport                | QUIC, TCP with Noise or TLS (rustls with `ring`)       |
+| Encrypted transport                | TCP with Noise and Yamux (QUIC later; see below)       |
 | No public IP address and no domain | AutoNAT, DCUtR (hole punching), Circuit Relay v2, UPnP |
 | Relays for friends (mutual aid)    | Circuit Relay v2; the engine says whom to help         |
 | Finding nodes on the home network  | mDNS                                                   |
@@ -522,17 +526,19 @@ at build time with `wac`. So each part can be updated and changed on its own.
 
 ## The gateway
 
-The core opens one port for HTTP and QUIC. It does three things only:
+The gateway is one HTTP port for clients. Sync between nodes does not use it;
+it goes over libp2p. The gateway does two things only:
 
-1. The sync protocol between nodes.
-2. A small file system API, so clients can read and write paths.
-3. **Every other request goes to the `handle-http` of an app**, by the routes
+1. A small file system API, so clients can read and write paths.
+2. **Every other request goes to the `handle-http` of an app**, by the routes
    in the manifests.
 
 The gateway checks who is calling: a device key signature or a capability
-token. Then it gives the caller to the app. Apps never handle keys.
+token. Then it gives the caller to the app. Apps never handle keys. In the
+prototype, the gateway listens on `127.0.0.1` only, and checks one token from
+the data directory.
 
-## Present features become apps
+## Everyday features are apps
 
 | App        | Paths it uses                                   | What it gives                               |
 | ---------- | ----------------------------------------------- | ------------------------------------------- |
@@ -549,7 +555,7 @@ token. Then it gives the caller to the app. Apps never handle keys.
 | **import** | Writes the right paths                          | Google Takeout, iCloud, chat exports        |
 | **backup** | Only `store` capabilities                       | Backups to a directory, S3, a friend's node |
 
-These apps come with fileOS. They use the same interface and sandbox as
+These apps will come with fileOS (the photos app is built now). They use the same interface and sandbox as
 everyone else's apps.
 
 ## Examples
@@ -579,28 +585,24 @@ crates/
   fos            the program; only joins the parts together
   fos-node       puts the core together into one node
   fos-gateway    the gateway
-  fos-runtime    the app runtime (wasmtime)
-  fos-authz      calls the engine, keeps a cache of answers, does what it says
+  fos-runtime    the app runtime (wasmtime): .app folders, engines, apps
   fos-net        libp2p
-  fos-store      disk: blobs, logs, local key-value store
+  fos-store      disk: the node key, blobs, logs, local key-value stores
   fos-sync       the sync protocol (sans-IO, portable)
-  fos-fs         folders, logs, path tree, order (sans-IO, portable)
-  fos-core       formats: CBOR, COSE, hashes (portable, at the bottom)
-  fos-app-api    WIT and the Rust SDK (MIT OR Apache-2.0)
+  fos-fs         folders, logs, order, forks, mounts (sans-IO, portable)
+  fos-core       formats: CBOR, ed25519, BLAKE3 (portable, at the bottom)
   fos-sim        deterministic simulation of many nodes; tests the core only
-engines/
+apps/            a second workspace, built for wasm32-unknown-unknown
+  fos-app        the Rust SDK for apps and engines (MIT OR Apache-2.0)
   capability     the default engine
-apps/
-  photos search people chat vault dav login mcp s3 push import backup
+  photos         the photos app
+wit/
+  fos.wit        the interfaces (MIT OR Apache-2.0)
 ```
 
-Dependencies still go down only. Apps and engines depend only on
-`fos-app-api`. Only `fos-runtime` uses wasmtime, and only `fos-net` uses
-libp2p, so the rest of the code still builds fast.
-
-These parts of the present code go away: HTTP Message Signatures between
-nodes, NAT-PMP/PCP port mapping, and the plan for our own NAT traversal and
-relays. libp2p does all of these.
+Dependencies still go down only. Apps and engines depend only on `fos-app`.
+Only `fos-runtime` uses wasmtime, and only `fos-net` uses libp2p, so the rest
+of the code still builds fast.
 
 ## How it fits the manifesto
 
@@ -623,37 +625,53 @@ manifesto. Identity is not fixed to a domain, because identity is a key. Cost
 does not get bigger with the network, because a node syncs only its own
 folders. No admin is needed, because each person's engine is their own rules.
 
+## What the prototype has
+
+| Part                                                          | Built                                        |
+| ------------------------------------------------------------- | -------------------------------------------- |
+| Folders: signed log, files, streams, mounts, order, forks     | Yes (`fos-fs`)                               |
+| Sync, with writes that wait for the ordering node             | Yes (`fos-sync`, tested in `fos-sim`)        |
+| Engine as a WASM component, with no limits                    | Yes; the default engine is `apps/capability` |
+| Apps as WASM components, with their own keys and limits       | Yes; the photos app is `apps/photos`         |
+| `.app` folders that sync like any folder                      | Yes                                          |
+| libp2p: TCP, Noise, Yamux, mDNS, relays, `DCUtR`, `AutoNAT`   | Yes; tested between two nodes on one machine |
+| The `fos` command and the gateway                             | Yes, for local clients only                  |
+| QUIC                                                          | No, see below                                |
+| Encryption of folders with MLS                                | No                                           |
+| `handle-http` for apps, extensions, helpers, web interfaces   | No                                           |
+| Signatures of app publishers; asking the user the first time  | No                                           |
+| A cache of the engine's answers; compiled `.cwasm` in a cache | No                                           |
+| Blobs sent in parts                                           | No: a blob is one message, up to 64 MiB      |
+
 ## Costs and open questions
 
-1. **Compile time.** wasmtime and libp2p are large. With them, the build will
-   be over the present budget. Proposal: write in CONTRIBUTING that these two
-   are costs we take on purpose, and set a new budget from the new baseline.
-   Turn on only the features we use. Keep them in `fos-runtime` and `fos-net`
-   only. This needs a decision.
-2. **One version of every crate.** libp2p has many dependencies. There may be
-   two versions of some crates (for example `rand` or `hickory`). We may need
-   exceptions in cargo-deny.
-3. **Speed of WASM.** Thumbnails and full-text search may be 1.5 to 2 times
+1. **Compile time.** The budget did not need to change. On a machine with 15
+   cores: a clean build is 38.6 s (the budget is 180 s), a rebuild after a
+   change to `fos` is 0.8 s (budget 5 s), and after a change to `fos-core` is
+   1.6 s (budget 20 s).
+2. **QUIC.** `libp2p-quic` always turns on the `aws-lc-rs` backend of quinn,
+   and aws-lc-sys is not allowed (`deny.toml`). So the prototype uses TCP.
+   Relays and hole punching work over TCP too. We can add QUIC when libp2p
+   lets us use `ring`, or if we change the rule.
+3. **One version of every crate.** libp2p and wasmtime bring some crates in
+   two versions (for example `sha2`, `curve25519-dalek` and `getrandom`).
+   Each one is in `deny.toml` with its reason. None of them comes from our
+   own code.
+4. **Speed of WASM.** Thumbnails and full-text search may be 1.5 to 2 times
    slower than native code. We need measurements on home hardware.
-4. **The engine runs for every write**, and for every entry in sync. The cache
+5. **The engine runs for every write**, and for every entry in sync. The cache
    needs measurements.
-5. **Forks that people can understand.** A person who is not technical has to
+6. **Forks that people can understand.** A person who is not technical has to
    understand "your copy is different from the main line".
-6. **The login app** gives capabilities, so it has nearly as much power as the
+7. **The login app** gives capabilities, so it has nearly as much power as the
    core. The way the user agrees to it needs its own design.
-7. **The manifesto changes.** It says "everyday needs are in the core; special
-   needs come through plugins". It will say "the core is only the file system;
-   everything is an app; the everyday apps come with it".
-8. **The name.** The crates, the `did:hs` method, the docs and the domain change
-   if the name changes. We should check that the name is free first.
+8. **The name.** The repository, the docs and the domain change if the name
+   changes. We should check that the name is free first.
 
-## First steps
+## Next steps
 
-A small prototype checks the largest unknowns first:
-
-1. Two nodes connect through libp2p with hole punching, and sync one folder.
-2. wasmtime runs the default engine and a photos app from an `.app` folder.
-3. Measure the time of a clean build, to set the new budget.
-
-When the prototype works, we move the present crates to the new layout one
-step at a time, and update the specification.
+1. Encryption of folders with MLS, so that nodes with only `store` see only
+   ciphertext.
+2. `handle-http` for apps, and the first apps that people use every day:
+   files over WebDAV, a vault for Bitwarden clients, chat.
+3. Measurements of WASM speed and of the engine on home hardware.

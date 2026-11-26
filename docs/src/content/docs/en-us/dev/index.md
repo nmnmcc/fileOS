@@ -1,33 +1,25 @@
 ---
 title: Developer manual
-description: For people who build homeserver or build on it.
+description: For people who build fileOS or build on it.
 ---
 
-This manual is for two kinds of developer: people who work on homeserver
-itself, and people who write apps, scripts and services that talk to a
-homeserver.
+This manual is for two kinds of developer: people who work on fileOS itself,
+and people who write apps and engines for it.
 
-## Building on homeserver
+## Building on fileOS
 
-You can get to everything a node does over HTTP. Every client has the same
-permission model.
+Everything on top of the core is a WebAssembly component in an `.app`
+folder: the apps, and the engine that makes the rules of a node.
 
-- [REST API](api/): the typed REST API, its OpenAPI document and the Rust
-  client.
-- Standard protocols, for apps that already use them: CardDAV and CalDAV,
-  the Bitwarden API, Model Context Protocol, OpenID Connect and forward
-  auth, Web Push, and an S3 subset. See
-  [Apps and assistants](../user/apps/) and
-  [Sign-in for other apps](../admin/sign-in/).
-- Plugins (WebAssembly components) have a design, but they are not in
-  0.1.0.
+- [Writing apps and engines](apps/): the interfaces, the SDK, the `.app`
+  folder and the manifest.
+- The interfaces are in [`wit/fos.wit`](https://github.com/nmnmcc/homeserver/blob/main/wit/fos.wit).
 
-## Working on homeserver
+## Working on fileOS
 
 - [Contributing](contributing/): how to set up, the rules a change must
   keep, and how to send it.
-- [Architecture](architecture/): how homeserver is built, the technology we
-  picked and why.
+- [Architecture](fileos/): how fileOS is made, and why.
 - [Projects to learn from](prior-art/): projects we study, and what we take
   from each.
 

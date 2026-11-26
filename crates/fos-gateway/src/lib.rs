@@ -138,8 +138,9 @@ fn route(
             .ok_or_else(|| Error(format!("`{name}` is needed")))
     };
     let ok = |text: String| Ok(reply(StatusCode::OK, text));
-    let text =
-        |body: Vec<u8>| String::from_utf8(body).map_err(|e| Error(format!("the body is not text: {e}")));
+    let text = |body: Vec<u8>| {
+        String::from_utf8(body).map_err(|e| Error(format!("the body is not text: {e}")))
+    };
     if let Some(fs_path) = path.strip_prefix("/v0/fs") {
         let fs_path = if fs_path.is_empty() { "/" } else { fs_path };
         return match *method {
