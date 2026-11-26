@@ -49,6 +49,12 @@ Protocol, which millions of Bluesky accounts use, and we keep its rules:
   A rotation key can change everything, so it may be kept offline, for
   example on paper. The signing key does the daily work, on one node.
 
+In fileOS, this log is kept in the identity folder and synced like other
+data. Every node checks it with the keys in the log itself, so no one else
+has to be trusted. A person is a **principal**, not a folder or a file: the
+DID names the person, and the spaces they own have IDs of their own (see
+[The model](../access/)).
+
 We change three things, each for a reason:
 
 | `did:plc`                                                                                                               | `did:fos`                                                                                                                                                                                           | Why                                                                                                                                          |
