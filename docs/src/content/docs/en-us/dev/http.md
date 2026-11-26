@@ -3,8 +3,9 @@ title: "HTTP and the browser"
 description: How apps and plugins give their services over HTTP, each with an origin of its own, with no domains for people to configure and no cookies.
 ---
 
-:::note[Status: design]
-Nothing on this page is built yet.
+:::note[Status: design, partly built]
+The gateway (step 1 of the [plan](#plan)) is built. The rest is not built
+yet.
 :::
 
 ## The goal

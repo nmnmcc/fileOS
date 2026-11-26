@@ -164,17 +164,33 @@ pub fn token(dir: &Path) -> Result<String, Error> {
     Store::open(dir)?.token()
 }
 
-/// Writes the address of the running gateway into `dir`, or takes it away.
+/// Writes the port of the running gateway into `dir`, or takes it away.
+///
+/// With `None`, the files go. Next to it is `gateway.curl`, a curl config file that `fos curl`
+/// uses: it sends the token, and sends every connection to the gateway, so
+/// the token never leaves this machine.
 ///
 /// # Errors
 ///
-/// When the file cannot be written.
-pub fn write_gateway_addr(dir: &Path, addr: Option<std::net::SocketAddr>) -> Result<(), Error> {
-    let path = dir.join("gateway.addr");
-    match addr {
-        Some(addr) => fos_store::write_atomic(&path, addr.to_string().as_bytes()),
-        None => std::fs::remove_file(&path).or(Ok(())),
-    }
+/// When a file cannot be written.
+pub fn write_gateway_addr(dir: &Path, port: Option<u16>) -> Result<(), Error> {
+    let addr = dir.join("gateway.addr");
+    let curl = dir.join("gateway.curl");
+    let Some(port) = port else {
+        let _ = std::fs::remove_file(&curl);
+        return std::fs::remove_file(&addr).or(Ok(()));
+    };
+    let token = Store::open(dir)?.token()?;
+    fos_store::write_atomic(
+        &curl,
+        format!(
+            "# Made by `fos node run` for `fos curl`. It goes when the node stops.\n\
+             header = \"Authorization: Bearer {token}\"\n\
+             connect-to = \"::127.0.0.1:{port}\"\n"
+        )
+        .as_bytes(),
+    )?;
+    fos_store::write_atomic(&addr, format!("127.0.0.1:{port}").as_bytes())
 }
 
 /// Reads ability names, for example `read,write,store`.

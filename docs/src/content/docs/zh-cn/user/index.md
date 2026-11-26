@@ -28,7 +28,8 @@ fileOS 把你的文件保存在你自己控制的电脑上：家里的小盒子�
 | `fos fs`                   | 文件和流：`ls`、`cat`、`put`、`append`、`rm`       |
 | `fos folder`               | 文件夹：`new`、`mount`、`grant`                    |
 | `fos identity`（`fos id`） | 你的身份：`new`、`add-node`、`remove-node`、`join` |
-| `fos app`                  | `install` 安装 App                                 |
+| `fos app`                  | `pack` 打包或 `install` 安装 App                   |
+| `fos curl`                 | 带着节点令牌运行 curl，例如 `fos curl /v0/status`  |
 
 App 做了什么不在 `fos` 里，要在 App 里看。`fos help <组>` 会进一步说明每一组。
 
