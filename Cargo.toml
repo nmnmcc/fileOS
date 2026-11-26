@@ -190,6 +190,15 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 opt-level = 1
 
+# Not for wasmtime's compiler: it is the longest part of a clean build, and
+# with no optimization it builds about a third faster. Debug builds then
+# compile WebAssembly a little more slowly, which tests do not see.
+[profile.dev.package.cranelift-codegen]
+opt-level = 0
+
+[profile.dev.package.wasmtime-internal-cranelift]
+opt-level = 0
+
 [profile.release]
 lto = "thin"
 strip = true
