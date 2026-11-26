@@ -3,7 +3,7 @@
 /// The interfaces between the fileOS core and WebAssembly components.
 ///
 /// An authorization engine is a component of the `engine` world. An app is a
-/// component of the `app` world. Both are kept in `.app` folders.
+/// component of the `app` world. Both come in `.app` files.
 package fos:app@0.1.0;
 
 interface types {

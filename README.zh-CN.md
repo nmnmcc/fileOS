@@ -24,23 +24,23 @@ fileOS 是一个面向个人及其所属小群体的复制文件系统。系统�
 使用 devenv shell（`direnv allow`）：
 
 ```sh
-cargo build -p fos                                   # 程序
-apps                                                 # 引擎和 App，放在 target/apps/
-fos init --engine target/apps/Capability.app         # 在 ~/.fileos 创建节点
-fos run                                              # 网络、App 和网关
+cargo build -p fos                                  # 程序
+apps                                                # 引擎和 App，放在 target/apps/
+fos node init --engine target/apps/Capability.app   # 在 ~/.fileos 创建节点
+fos node run                                        # 网络、App 和网关
 ```
 
 在另一个终端里：
 
 ```sh
-fos new photos /photos                               # 创建文件夹，挂载到 /photos
-fos install target/apps/Photos.app                   # 安装照片 App
-fos put /photos/cat.png cat.png
-fos kv photos                                        # 照片 App 找到的信息
-fos status
+fos folder new photos /photos                       # 创建文件夹，挂载到 /photos
+fos app install target/apps/Photos.app              # 安装照片 App
+fos fs put /photos/cat.png cat.png
+fos fs ls /photos
+fos node status
 ```
 
-把 `/photos` 分享给另一个节点：在这里运行 `fos grant /photos <对方节点密钥> all`，在对方那里运行 `fos mount <文件夹 ID> /photos`。
+把 `/photos` 分享给另一个节点：在这里运行 `fos folder grant /photos <对方节点密钥> all`，在对方那里运行 `fos folder mount <文件夹 ID> /photos`。
 
 ## 已有功能
 
@@ -53,7 +53,7 @@ fos status
   - [x] 每个节点一个引擎，由节点主人选择，不加限制
   - [x] 默认引擎：capability，转授时只能变小，收回时连同由它而来的一起收回
 - [ ] **App**
-  - [x] App 是带 manifest 的 `.app` 文件夹，像其他文件夹一样同步
+  - [x] App 以 `.app` 文件提供（本身不压缩的 zip：manifest，加上 `tar.zst` 里的其余文件），安装后像其他文件夹一样同步
   - [x] 每个 App 有自己的密钥，只得到 manifest 申请的权限，运行时有 fuel 和内存限制
   - [x] 照片 App：把图片尺寸写入节点上的索引
   - [ ] 响应 HTTP 的 App（`handle-http`）、按文件类型的扩展、网页界面

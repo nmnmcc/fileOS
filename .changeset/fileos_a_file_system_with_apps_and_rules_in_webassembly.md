@@ -12,5 +12,5 @@ The rules of a node are an engine, and features are apps. Both are
 WebAssembly components in `.app` folders, run with wasmtime. The default
 engine (`Capability.app`) and a photos app (`Photos.app`) come with it.
 
-The program is `fos`: `fos init`, `fos run`, and commands for files, folders,
+The program is `fos`: `fos node init`, `fos node run`, and commands for files, folders,
 sharing and apps.

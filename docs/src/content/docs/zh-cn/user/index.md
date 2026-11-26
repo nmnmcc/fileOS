@@ -18,42 +18,56 @@ fileOS 把你的文件保存在你自己控制的电脑上：家里的小盒子�
 - **你的节点，你的规则。** 每个节点都有规则，决定谁可以读、写或保存什么。每条规则你都能看到，也都能收回。
 - **App 只能看到你允许它看的东西。** App 是运行在沙箱里的小程序，只能使用你给它的文件夹。
 
+## `fos` 命令
+
+`fos` 用于和节点的内核交互。命令分为几组：
+
+| 组                         | 用途                                               |
+| -------------------------- | -------------------------------------------------- |
+| `fos node`                 | 本节点：`init`、`run`、`status`、`connect`         |
+| `fos fs`                   | 文件和流：`ls`、`cat`、`put`、`append`、`rm`       |
+| `fos folder`               | 文件夹：`new`、`mount`、`grant`                    |
+| `fos identity`（`fos id`） | 你的身份：`new`、`add-node`、`remove-node`、`join` |
+| `fos app`                  | `install` 安装 App                                 |
+
+App 做了什么不在 `fos` 里，要在 App 里看。`fos help <组>` 会进一步说明每一组。
+
 ## 使用你的文件
 
 这些命令作用于你电脑上运行的节点。路径以文件夹开头，比如 `/photos/2026/beach.jpg`。
 
-| 命令                           | 作用                             |
-| ------------------------------ | -------------------------------- |
-| `fos ls /photos`               | 列出文件夹里的名字               |
-| `fos cat /notes/todo.txt`      | 显示一个文件                     |
-| `fos put /notes/todo.txt FILE` | 放入一个文件（或者你输入的文字） |
-| `fos rm /notes/todo.txt`       | 删除文件；旧版本会保留           |
-| `fos append /family/chat "…"`  | 在流（比如聊天）末尾加一行       |
-| `fos status`                   | 查看节点在做什么                 |
+| 命令                              | 作用                             |
+| --------------------------------- | -------------------------------- |
+| `fos fs ls /photos`               | 列出文件夹里的名字               |
+| `fos fs cat /notes/todo.txt`      | 显示一个文件                     |
+| `fos fs put /notes/todo.txt FILE` | 放入一个文件（或者你输入的文字） |
+| `fos fs rm /notes/todo.txt`       | 删除文件；旧版本会保留           |
+| `fos fs append /family/chat "…"`  | 在流（比如聊天）末尾加一行       |
+| `fos node status`                 | 查看节点在做什么                 |
 
 ## 分享文件夹
 
-1. 创建文件夹：`fos new family /family`，它会显示文件夹 ID。
-2. 允许朋友的节点使用它：`fos grant /family <对方的节点密钥> all`。
-3. 朋友在自己的节点上挂载它：`fos mount <文件夹 ID> /family`。
+1. 创建文件夹：`fos folder new family /family`，它会显示文件夹 ID。
+2. 允许朋友的节点使用它：`fos folder grant /family <对方的节点密钥> all`。
+3. 朋友在自己的节点上挂载它：`fos folder mount <文件夹 ID> /family`。
 
 现在你们看到的是同样的文件。朋友的写入先发到你的节点，由你的节点排好顺序，再同步给所有人。
 
-如果朋友节点的规则和你的不同，它的副本可能会停在它的规则不接受的第一处修改上。这时 `fos status` 会显示 `FORK`。什么都不会丢：朋友可以修改自己的规则，或者另建一个文件夹。
+如果朋友节点的规则和你的不同，它的副本可能会停在它的规则不接受的第一处修改上。这时 `fos node status` 会显示 `FORK`。什么都不会丢：朋友可以修改自己的规则，或者另建一个文件夹。
 
 ## 一个身份，多个节点
 
 身份是你这个人，节点是你的一台机器。你的身份是一个 DID（`did:fos:…`），有了它，你的所有节点都能被认出是你的。
 
-1. 在要保存身份密钥的节点上（比如你的笔记本）运行 `fos id new`。它会打印你的 DID，并给出两个密钥文件的位置，请把它们备份到安全的地方。
-2. 在另一个节点上运行 `fos status`，复制它的节点密钥。
-3. 在第一个节点上运行 `fos id add-node <节点密钥>`，它会打印一条命令。
-4. 在另一个节点上运行这条命令：`fos id join <文件夹 ID>`。
+1. 在要保存身份密钥的节点上（比如你的笔记本）运行 `fos identity new`。它会打印你的 DID，并给出两个密钥文件的位置，请把它们备份到安全的地方。
+2. 在另一个节点上运行 `fos node status`，复制它的节点密钥。
+3. 在第一个节点上运行 `fos identity add-node <节点密钥>`，它会打印一条命令。
+4. 在另一个节点上运行这条命令：`fos identity join <文件夹 ID>`。
 
-`fos id` 显示你的身份、它的节点和它的链接。链接是你分享给别人的东西。只有保存签名密钥的节点才能添加节点（`fos id add-node`）或移除节点（`fos id remove-node`）。
+`fos identity` 显示你的身份、它的节点和它的链接。链接是你分享给别人的东西。只有保存签名密钥的节点才能添加节点（`fos identity add-node`）或移除节点（`fos identity remove-node`）。
 
 ## App
 
-App 是一个以 `.app` 结尾的文件夹，比如 `Photos.app`。用 `fos install Photos.app` 安装。安装时，节点只给 App 它的 manifest 里申请的权限。照片 App 会读取 `/photos` 里的照片，并在你的节点上建立索引：`fos kv photos` 可以查看。
+App 以 `.app` 文件的形式提供，比如 `Photos.app`。用 `fos app install Photos.app` 安装。安装时，节点只给 App 它的 manifest 里申请的权限。照片 App 会读取 `/photos` 里的照片，并在你的节点上建立索引。`fos` 命令只用于内核：App 做了什么，要在 App 里看。
 
 如何运行节点，见[管理手册](../admin/)。

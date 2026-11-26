@@ -1,6 +1,6 @@
 ---
 title: 编写 App 和引擎
-description: 接口、SDK、.app 文件夹和 manifest。
+description: 接口、SDK、.app 文件和 manifest。
 ---
 
 App 和引擎都是 WebAssembly 组件。内核用 [wasmtime](https://wasmtime.dev) 运行它们。它们只通过 [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit) 里的接口和内核通信。
@@ -59,7 +59,9 @@ fos_app::app::export_app!(Sizes);
 
 内核对引擎不加任何限制。但使用不同引擎的两个节点，可能对同一条记录得出不同的结论，这时它们的文件夹副本就会分叉。见[架构](../fileos/#共享文件夹)。
 
-## .app 文件夹
+## .app 文件
+
+App 以 `.app` 文件夹的形式编写：
 
 ```text
 Photos.app/
@@ -86,8 +88,17 @@ reason = "reason.photos"  # resources/locales/ 里的键
 path = "/photos"
 ```
 
-App 安装后，它的 `.app` 文件夹会变成 `/apps/<name>.app` 上的一个 fileOS 文件夹，所以它会像其他文件夹一样同步到你的其他节点。
+要把 App 交给别人，就把文件夹打包成一个 `.app` 文件：`fos app pack Photos.app/ out/Photos.app`。这不需要正在运行的节点。`.app` 文件是一个本身不压缩的 zip：
+
+| 条目              | 是什么                                      |
+| ----------------- | ------------------------------------------- |
+| `manifest.toml`   | 元数据，原样存放，工具不用解压就能读        |
+| `payload.tar.zst` | 其余所有文件，放在一个 tar 里，用 zstd 压缩 |
+
+同一个文件夹总是打包出同样的文件：tar 里不记录时间和所有者。`fos node init --engine` 和 `fos app install` 接受 `.app` 文件；在编写 App 的时候，也接受 `.app` 文件夹。
+
+App 安装后，它的文件会变成 `/apps/<name>.app` 上的一个 fileOS 文件夹，所以它会像其他文件夹一样同步到你的其他节点。
 
 ## 构建
 
-把 crate 放在 `apps/` 下，在它的 `Cargo.toml` 旁边放一个 `<Name>.app/` 文件夹。然后运行 `apps`（`scripts/apps.py`）。它会把 `apps/` 里的每个 crate 编译成 `wasm32-unknown-unknown`，用 `wasm-tools component new` 生成组件，再把 `.app` 文件夹放到 `target/apps/`。
+把 crate 放在 `apps/` 下，在它的 `Cargo.toml` 旁边放一个 `<Name>.app/` 文件夹。然后运行 `apps`（`scripts/apps.py`）。它会把 `apps/` 里的每个 crate 编译成 `wasm32-unknown-unknown`，用 `wasm-tools component new` 生成组件，再把 `.app` 文件夹放到 `target/apps/`。`fos app pack` 可以把它打包成 `.app` 文件。

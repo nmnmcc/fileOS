@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! `fos`: run a fileOS node, and use it from the command line.
+//! `fos`: run a fileOS node, and use its kernel from the command line.
 //!
-//! `fos init` and `fos run` work on the data directory. The other commands
-//! talk to a running node through its gateway on this machine.
+//! The commands are in groups: `node`, `fs`, `folder`, `identity` and `app`.
+//! They are about the kernel only: what an app or a plugin does is not here,
+//! but packing and installing them is. `fos node init` and `fos node run`
+//! work on the data directory, and `fos app pack` on the files it is given.
+//! The other commands talk to a running node through its gateway on this
+//! machine.
+//!
+//! The command line keeps no state: it saves nothing of its own, and there
+//! is no login. It reads the address and the token of the gateway from the
+//! data directory of the node.
 
 use std::io::{Read as _, Write as _};
 use std::net::TcpStream;
@@ -31,7 +39,39 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Make a new node, with the engine in an .app directory.
+    /// This node: make it, run it, see what it does, connect it to others.
+    Node {
+        #[command(subcommand)]
+        command: NodeCommand,
+    },
+    /// Files and streams, by path.
+    Fs {
+        #[command(subcommand)]
+        command: FsCommand,
+    },
+    /// Folders: make them, mount them, give access to them.
+    Folder {
+        #[command(subcommand)]
+        command: FolderCommand,
+    },
+    /// The identity (a did:fos DID) that this node is a node of. With no
+    /// command, show it.
+    #[command(visible_alias = "id")]
+    Identity {
+        #[command(subcommand)]
+        command: Option<IdentityCommand>,
+    },
+    /// Apps: pack them, install them.
+    App {
+        #[command(subcommand)]
+        command: AppCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum NodeCommand {
+    /// Make a new node, with the authorization plugin (the engine) in an
+    /// .app file (or an .app folder).
     Init {
         #[arg(long)]
         engine: PathBuf,
@@ -51,12 +91,14 @@ enum Command {
         #[arg(long)]
         no_mdns: bool,
     },
-    /// What the node is doing.
+    /// What the node is doing: its key, addresses, peers and folders.
     Status,
-    /// Make a folder and mount it at a path.
-    New { name: String, at: String },
-    /// Mount a folder from other nodes at a path.
-    Mount { id: String, at: String },
+    /// Connect to another node by its multiaddr.
+    Connect { addr: String },
+}
+
+#[derive(Subcommand)]
+enum FsCommand {
     /// The names under a path.
     Ls {
         #[arg(default_value = "/")]
@@ -68,39 +110,47 @@ enum Command {
     Put { path: String, file: Option<PathBuf> },
     /// Add a line to the end of a stream.
     Append { path: String, text: String },
-    /// Take a file or mount away.
+    /// Take a file or mount away. Old versions stay in the history.
     Rm { path: String },
+}
+
+#[derive(Subcommand)]
+enum FolderCommand {
+    /// Make a folder and mount it at a path. Prints its ID.
+    New { name: String, at: String },
+    /// Mount a folder from other nodes at a path.
+    Mount { id: String, at: String },
     /// Give a key abilities (read, write, append, grant, store or all) on a path.
     Grant {
         path: String,
         key: String,
         abilities: String,
     },
-    /// Write a policy entry for the engine into the folder that has a path.
-    Policy { path: String, text: String },
-    /// Install an app from an .app directory.
-    Install { app: PathBuf },
-    /// Show the local key-value store of an app.
-    Kv { app: String },
-    /// Connect to another node by its multiaddr.
-    Dial { addr: String },
-    /// The identity of this node. With no command, show it.
-    Id {
-        #[command(subcommand)]
-        command: Option<IdCommand>,
-    },
 }
 
 #[derive(Subcommand)]
-enum IdCommand {
-    /// Make a new identity (a did:fos DID). This node holds its keys and is its first node.
+enum IdentityCommand {
+    /// Make a new identity. This node holds its keys and is its first node.
     New,
     /// Add a node to the identity. Only the node that holds the signing key can.
     AddNode { key: String },
     /// Take a node away from the identity.
     RemoveNode { key: String },
-    /// Join an identity, with the folder ID that `fos id add-node` gave.
+    /// Join an identity, with the folder ID that `fos identity add-node` gave.
     Join { folder: String },
+}
+
+#[derive(Subcommand)]
+enum AppCommand {
+    /// Install an app from an .app file (or an .app folder, while you make it).
+    Install { app: PathBuf },
+    /// Pack an .app folder into an .app file. Works with no running node.
+    Pack {
+        /// The .app folder.
+        folder: PathBuf,
+        /// The .app file to make. It must not be there yet.
+        file: PathBuf,
+    },
 }
 
 fn default_dir() -> PathBuf {
@@ -139,42 +189,70 @@ fn url_path(path: &str) -> String {
 
 fn run(cli: Cli) -> Result<(), Error> {
     let dir = cli.dir;
-    let client = || Client::new(&dir);
     match cli.command {
-        Command::Init { engine } => {
-            let key = Node::init(&dir, &engine)?;
+        Command::Node { command } => node(command, &dir),
+        Command::Fs { command } => fs(&Client::new(&dir)?, command),
+        Command::Folder { command } => folder(&Client::new(&dir)?, command),
+        Command::Identity { command } => identity(&Client::new(&dir)?, command, &dir),
+        Command::App {
+            command: AppCommand::Pack { folder, file },
+        } => {
+            let data = fos_node::pack_app(&folder)?;
+            // Writes only the file that was asked for, and never over another one.
+            let mut out = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&file)
+                .map_err(|e| Error(format!("{}: {e}", file.display())))?;
+            out.write_all(&data)
+                .map_err(|e| Error(format!("{}: {e}", file.display())))?;
+            println!("packed {} ({} bytes)", file.display(), data.len());
+            Ok(())
+        }
+        Command::App {
+            command: AppCommand::Install { app },
+        } => {
+            let app = std::fs::canonicalize(&app)
+                .map_err(|e| Error(format!("{}: {e}", app.display())))?;
+            let key = Client::new(&dir)?.call(
+                "POST",
+                &format!("/v0/install?dir={}", enc(&app.to_string_lossy())),
+                &[],
+            )?;
+            print(&[b"installed; app key ", key.as_slice()].concat())
+        }
+    }
+}
+
+fn node(command: NodeCommand, dir: &Path) -> Result<(), Error> {
+    match command {
+        NodeCommand::Init { engine } => {
+            let key = Node::init(dir, &engine)?;
             println!("made a node in {}\nnode key {key}", dir.display());
             Ok(())
         }
-        Command::Run {
+        NodeCommand::Run {
             listen,
             peer,
             gateway,
             no_mdns,
-        } => serve(&dir, listen, peer, &gateway, !no_mdns),
-        Command::Status => print(&client()?.call("GET", "/v0/status", &[])?),
-        Command::New { name, at } => print(&client()?.call(
-            "POST",
-            &format!("/v0/folder?name={}&at={}", enc(&name), enc(&at)),
-            &[],
-        )?),
-        Command::Mount { id, at } => client()?
-            .call(
-                "POST",
-                &format!("/v0/mount?id={}&at={}", enc(&id), enc(&at)),
-                &[],
-            )
+        } => serve(dir, listen, peer, &gateway, !no_mdns),
+        NodeCommand::Status => print(&Client::new(dir)?.call("GET", "/v0/status", &[])?),
+        NodeCommand::Connect { addr } => Client::new(dir)?
+            .call("POST", "/v0/dial", addr.as_bytes())
             .map(drop),
-        Command::Ls { path } => {
-            print(&client()?.call("GET", &format!("/v0/fs{}?list", url_path(&path)), &[])?)
+    }
+}
+
+fn fs(client: &Client, command: FsCommand) -> Result<(), Error> {
+    match command {
+        FsCommand::Ls { path } => {
+            print(&client.call("GET", &format!("/v0/fs{}?list", url_path(&path)), &[])?)
         }
-        Command::Cat { path } => {
-            let data = client()?.call("GET", &format!("/v0/fs{}", url_path(&path)), &[])?;
-            std::io::stdout()
-                .write_all(&data)
-                .map_err(|e| Error(e.to_string()))
+        FsCommand::Cat { path } => {
+            print(&client.call("GET", &format!("/v0/fs{}", url_path(&path)), &[])?)
         }
-        Command::Put { path, file } => {
+        FsCommand::Put { path, file } => {
             let data = if let Some(file) = file {
                 std::fs::read(&file).map_err(|e| Error(format!("{}: {e}", file.display())))?
             } else {
@@ -184,25 +262,42 @@ fn run(cli: Cli) -> Result<(), Error> {
                     .map_err(|e| Error(e.to_string()))?;
                 data
             };
-            client()?
+            client
                 .call("PUT", &format!("/v0/fs{}", url_path(&path)), &data)
                 .map(drop)
         }
-        Command::Append { path, text } => client()?
+        FsCommand::Append { path, text } => client
             .call(
                 "POST",
                 &format!("/v0/fs{}?append", url_path(&path)),
                 format!("{text}\n").as_bytes(),
             )
             .map(drop),
-        Command::Rm { path } => client()?
+        FsCommand::Rm { path } => client
             .call("DELETE", &format!("/v0/fs{}", url_path(&path)), &[])
             .map(drop),
-        Command::Grant {
+    }
+}
+
+fn folder(client: &Client, command: FolderCommand) -> Result<(), Error> {
+    match command {
+        FolderCommand::New { name, at } => print(&client.call(
+            "POST",
+            &format!("/v0/folder?name={}&at={}", enc(&name), enc(&at)),
+            &[],
+        )?),
+        FolderCommand::Mount { id, at } => client
+            .call(
+                "POST",
+                &format!("/v0/mount?id={}&at={}", enc(&id), enc(&at)),
+                &[],
+            )
+            .map(drop),
+        FolderCommand::Grant {
             path,
             key,
             abilities,
-        } => client()?
+        } => client
             .call(
                 "POST",
                 &format!(
@@ -214,38 +309,14 @@ fn run(cli: Cli) -> Result<(), Error> {
                 &[],
             )
             .map(drop),
-        Command::Policy { path, text } => client()?
-            .call(
-                "POST",
-                &format!("/v0/policy{}", url_path(&path)),
-                text.as_bytes(),
-            )
-            .map(drop),
-        Command::Install { app } => {
-            let app = std::fs::canonicalize(&app)
-                .map_err(|e| Error(format!("{}: {e}", app.display())))?;
-            let key = client()?.call(
-                "POST",
-                &format!("/v0/install?dir={}", enc(&app.to_string_lossy())),
-                &[],
-            )?;
-            print(&[b"installed; app key ", key.as_slice()].concat())
-        }
-        Command::Kv { app } => {
-            print(&client()?.call("GET", &format!("/v0/kv/{}", enc(&app)), &[])?)
-        }
-        Command::Dial { addr } => client()?
-            .call("POST", "/v0/dial", addr.as_bytes())
-            .map(drop),
-        Command::Id { command } => id(&client()?, command, &dir),
     }
 }
 
-fn id(client: &Client, command: Option<IdCommand>, dir: &Path) -> Result<(), Error> {
+fn identity(client: &Client, command: Option<IdentityCommand>, dir: &Path) -> Result<(), Error> {
     let text = |data: Vec<u8>| String::from_utf8_lossy(&data).trim().to_string();
     match command {
         None => print(&client.call("GET", "/v0/id", &[])?),
-        Some(IdCommand::New) => {
+        Some(IdentityCommand::New) => {
             let did = text(client.call("POST", "/v0/id/new", &[])?);
             println!(
                 "identity {did}\nThis node holds the keys of the identity:\n  {}\n  {}\n\
@@ -256,13 +327,13 @@ fn id(client: &Client, command: Option<IdCommand>, dir: &Path) -> Result<(), Err
             );
             Ok(())
         }
-        Some(IdCommand::AddNode { key }) => {
+        Some(IdentityCommand::AddNode { key }) => {
             let folder =
                 text(client.call("POST", &format!("/v0/id/node?key={}", enc(&key)), &[])?);
-            println!("added node {key}\nOn that node, run: fos id join {folder}");
+            println!("added node {key}\nOn that node, run: fos identity join {folder}");
             Ok(())
         }
-        Some(IdCommand::RemoveNode { key }) => {
+        Some(IdentityCommand::RemoveNode { key }) => {
             client.call("DELETE", &format!("/v0/id/node?key={}", enc(&key)), &[])?;
             println!(
                 "took away node {key}\nIt may still keep its copy of the identity folder \
@@ -270,7 +341,7 @@ fn id(client: &Client, command: Option<IdCommand>, dir: &Path) -> Result<(), Err
             );
             Ok(())
         }
-        Some(IdCommand::Join { folder }) => client
+        Some(IdentityCommand::Join { folder }) => client
             .call("POST", &format!("/v0/id/join?folder={}", enc(&folder)), &[])
             .map(drop),
     }
@@ -331,7 +402,7 @@ impl Client {
     fn new(dir: &Path) -> Result<Self, Error> {
         let addr = std::fs::read_to_string(dir.join("gateway.addr")).map_err(|e| {
             Error(format!(
-                "no node is running for {} ({e}): start it with `fos run`",
+                "no node is running for {} ({e}): start it with `fos node run`",
                 dir.display()
             ))
         })?;
@@ -372,5 +443,33 @@ impl Client {
         } else {
             Err(Error(String::from_utf8_lossy(&body).trim().to_string()))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory as _;
+
+    use super::*;
+
+    #[test]
+    fn the_commands_are_well_made() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn arguments_do_not_take_the_place_of_dir() {
+        let cli =
+            Cli::try_parse_from(["fos", "--dir", "/data", "app", "install", "Photos.app"]).unwrap();
+        assert_eq!(cli.dir, PathBuf::from("/data"));
+        let Command::App {
+            command: AppCommand::Install { app },
+        } = cli.command
+        else {
+            panic!("not app install");
+        };
+        assert_eq!(app, PathBuf::from("Photos.app"));
+        let cli = Cli::try_parse_from(["fos", "id"]).unwrap();
+        assert!(matches!(cli.command, Command::Identity { command: None }));
     }
 }

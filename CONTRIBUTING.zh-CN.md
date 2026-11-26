@@ -59,7 +59,7 @@ direnv allow
 1. **每个新增的外部依赖都要评审。** 在 PR 中说明为什么需要它，以及它让全新编译多花了多少时间（对比前后的 `cargo build --timings`）。评判一个依赖，看的是构建时间、二进制体积和它带进来了什么（第二套加密库或 HTTP 栈、被禁用的 crate、沉重的过程宏、构建脚本、C 或 C++），而不是 crate 数量：拆分成小 crate 的库，代价可能比一个大 crate 更小。
 2. 只在根目录 `Cargo.toml` 的 `[workspace.dependencies]` 中声明一次，使用 `default-features = false`，只开启用到的功能。
 3. 每个库只允许一个版本。`cargo deny check` 会拒绝重复版本，因为每个副本都要单独编译。上游 crate 带来、我们无法去掉的第二个版本，写进 `deny.toml` 的 `skip`，并注明原因。
-4. 不使用需要 cmake 的 C 或 C++ 代码。由 `cc` crate 编译的小型 C 代码可以使用，例如 `ring` 里的代码。TLS 使用 rustls 的 `ring` 后端。`fos` 以单个可执行文件发布，只加载用户给它的 `.app` 文件夹。
+4. 不使用需要 cmake 的 C 或 C++ 代码。由 `cc` crate 编译的小型 C 代码可以使用，例如 `ring` 里的代码。TLS 使用 rustls 的 `ring` 后端。`fos` 以单个可执行文件发布，只加载用户给它的 `.app` 文件。
 5. 重型依赖只放在需要它的 crate 里，这样改动其他代码时不会重编它们：wasmtime 只在 `fos-runtime` 里，libp2p 只在 `fos-net` 里。
 
 ### 写出编译快的代码
@@ -91,7 +91,7 @@ crates/
   fos             可执行程序：只负责把各组件连起来
   fos-node        把各组件组装成一个节点
   fos-gateway     给客户端用的本地 HTTP API
-  fos-runtime     wasmtime：.app 文件夹、引擎和 App
+  fos-runtime     wasmtime：.app 文件和文件夹、引擎和 App
   fos-net         libp2p：在节点之间传送同步消息
   fos-store       数据目录：节点密钥、blob、文件夹日志、本地键值存储
   fos-sync        节点之间的同步（sans-IO，可移植）
@@ -114,6 +114,10 @@ wit/
 生产构建时，将 `DOCS_SITE_URL` 设为站点的公开源地址，以生成规范网址、`hreflang` 链接和站点地图。根路径 `/` 仅用于语言跳转，不参与搜索索引，也不列入站点地图。
 
 依赖只能向下。`fos-core` 不依赖任何其他 fileOS crate。App 和引擎只依赖 `fos-app`。`fos` 保持精简，以便几秒内重新编译。
+
+## 命令行
+
+`fos` 用于内核。它的命令分为几组（`node`、`fs`、`folder`、`identity`、`app`）。App 或插件做什么不在其中，打包和安装它们除外。命令行不保存任何状态：它不保存自己的任何东西，也没有登录或其他会改变后续命令行为的命令。它从节点的数据目录读取网关的地址和令牌。
 
 ## 只提供机制，不内置政策
 

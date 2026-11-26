@@ -21,7 +21,7 @@ A release has the same files: the `fos` program and the `apps/` folder.
 ## Make a node
 
 ```sh
-fos init --engine target/apps/Capability.app
+fos node init --engine target/apps/Capability.app
 ```
 
 This makes the data directory (by default `~/.fileos`; change it with `--dir`
@@ -32,7 +32,7 @@ folder may do everything in it, and gives others what they may do.
 ## Run it
 
 ```sh
-fos run
+fos node run
 ```
 
 This starts the network, the apps and the gateway. The gateway is a small
@@ -46,7 +46,7 @@ HTTP API on `127.0.0.1` for the other `fos` commands. It needs the token in
 | `--gateway ADDR` | Where the gateway listens (default `127.0.0.1`, any free port) |
 | `--no-mdns`      | Do not look for nodes on the home network                      |
 
-`fos status` shows the node key, the addresses it listens on (with `/p2p/…`,
+`fos node status` shows the node key, the addresses it listens on (with `/p2p/…`,
 ready to give to another node), the peers, the folders and the apps.
 
 ## Connect two nodes
@@ -55,7 +55,7 @@ On the home network, nodes find each other with mDNS. In other places, give
 one node the address of the other:
 
 ```sh
-fos dial /ip4/192.0.2.10/tcp/4001/p2p/12D3KooW…
+fos node connect /ip4/192.0.2.10/tcp/4001/p2p/12D3KooW…
 ```
 
 The network is [libp2p](https://libp2p.io): TCP with Noise and Yamux, relays
@@ -81,10 +81,10 @@ engine.
 ## When something is wrong
 
 - **A folder does not come.** Check that the nodes are connected
-  (`fos status` lists the peers), and that the owner of the folder gave your
+  (`fos node status` lists the peers), and that the owner of the folder gave your
   node key `store` on it.
-- **Writes wait.** `fos status` says how many writes wait for their ordering
+- **Writes wait.** `fos node status` says how many writes wait for their ordering
   node. They are sent when that node is connected again.
-- **`FORK` in `fos status`.** Your engine did not take an entry that the
+- **`FORK` in `fos node status`.** Your engine did not take an entry that the
   ordering node took. The status says which entry and why.
-- **More detail.** Run the node with `RUST_LOG=debug fos run`.
+- **More detail.** Run the node with `RUST_LOG=debug fos node run`.

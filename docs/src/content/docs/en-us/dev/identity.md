@@ -88,15 +88,15 @@ signing key makes a new identity folder, and the operation names it.
 
 ### Making an identity and adding a node
 
-1. `fos id new` makes a rotation key and a signing key on this node, the
+1. `fos identity new` makes a rotation key and a signing key on this node, the
    identity folder, and the first operation. It prints the DID.
-2. On the node that holds the signing key: `fos id add-node <node key>`. It
+2. On the node that holds the signing key: `fos identity add-node <node key>`. It
    puts the certificate of the node into the identity folder, lets the node
    read and keep the folder, and prints the ID of the folder.
-3. On the new node: `fos id join <folder ID>`. It mounts the folder at
+3. On the new node: `fos identity join <folder ID>`. It mounts the folder at
    `/identity`, and gets it from the first node.
 
-`fos id remove-node <node key>` deletes the certificate. The node may still
+`fos identity remove-node <node key>` deletes the certificate. The node may still
 keep its copy of the folder until the engine takes its grant away.
 
 ### Identity links
@@ -199,7 +199,7 @@ It is not special:
 - It runs the normal `fos`, with the same code and protocol as any other
   rendezvous node. Its address is not in the kernel.
 - It is a default in the policy, as the default engine is. A new identity has
-  it in its rendezvous list. `fos id` shows it, and one command takes it away.
+  it in its rendezvous list. `fos identity` shows it, and one command takes it away.
 - The nodes of the owner come first. When an identity has a node with a public
   address, that node comes first in the list and in the hints of its link.
 - When it is down, nobody is lost. People who know you already have your
@@ -290,7 +290,7 @@ a look) is sans-IO, in a portable crate, so it runs in `fos-sim`.
 
 1. **Identity:** `did:fos` (the DID log, rotation keys, the signing key),
    the identity folder, node certificates, identity links, and adding a node
-   (`fos id`, `fos id new`, `fos id add-node`, `fos id join`). Built.
+   (`fos identity`, `fos identity new`, `fos identity add-node`, `fos identity join`). Built.
 2. **More keys and names:** add and change rotation keys and the signing key,
    a recovery key kept on paper, and domain names (`_fos` and
    `/.well-known/fos-did`).

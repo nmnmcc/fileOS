@@ -173,7 +173,7 @@ fn route(
     match (method, path) {
         (&Method::GET, "/v0/status") => ok(node.status().to_string()),
         (&Method::GET, "/v0/id") => ok(node.identity().map_or_else(
-            || "no identity: make one with `fos id new`, or join one with `fos id join`\n".into(),
+            || "no identity: make one with `fos identity new`, or join one with `fos identity join`\n".into(),
             |id| id.to_string(),
         )),
         (&Method::POST, "/v0/id/new") => ok(format!("{}\n", node.identity_new()?)),
