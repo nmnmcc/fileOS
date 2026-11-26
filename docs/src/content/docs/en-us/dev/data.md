@@ -367,6 +367,13 @@ between the two would mean nothing. So the kernel is written again:
 - **Order:** first the data model in `fos-sim`, starting from the first test,
   "a node reads its own write while it is offline"; then storage, network and
   the runtime; last, the old `fos-fs`, `fos-sync` and engine are taken away.
+- **Done:** the data model is in the crate `fos-space` (sans-IO, portable),
+  with tests in `fos-sim`: signed logs in a causal graph, spaces with flat
+  names, files with fixed IDs and versions side by side, grants with strong
+  removal, groups (owned by keys or by groups, and in groups), content in
+  chunks cut where the content says, checkpoints with compaction, snapshots
+  and retention, and sync between nodes. Next: storage, network and the
+  runtime use it; then keys that follow prefixes.
 
 ## Still open
 

@@ -94,7 +94,10 @@ fn a_rename_keeps_the_id_and_moves_out_of_a_prefix_grant() {
         .unwrap();
     let cat = first(&e);
     space
-        .write(&ming, 0, vec![
+        .write(
+            &ming,
+            0,
+            vec![
                 give(&mom, &[Permission::FilesRead], prefix("2026/")),
                 give(&chat, &[Permission::FilesRead], Resource::File(cat)),
             ],
@@ -104,7 +107,10 @@ fn a_rename_keeps_the_id_and_moves_out_of_a_prefix_grant() {
     assert!(space.may_read(who(&chat), cat));
 
     space
-        .write(&ming, 0, vec![Act::Change {
+        .write(
+            &ming,
+            0,
+            vec![Act::Change {
                 file: cat,
                 parents: vec![cat],
                 name: "best/cat.jpg".into(),
@@ -133,7 +139,10 @@ fn grants_are_given_on_only_smaller() {
     let (ming, mom, ann) = (key(1), key(2), key(3));
     let (mut space, _) = Space::create(who(&ming), &ming, 0, 1);
     space
-        .write(&ming, 0, vec![give(
+        .write(
+            &ming,
+            0,
+            vec![give(
                 &mom,
                 &[Permission::FilesRead, Permission::AccessGive],
                 prefix("2026/"),
@@ -142,15 +151,25 @@ fn grants_are_given_on_only_smaller() {
         .unwrap();
     // Less: fine.
     space
-        .write(&mom, 0, vec![give(&ann, &[Permission::FilesRead], prefix("2026/05/"))],
+        .write(
+            &mom,
+            0,
+            vec![give(&ann, &[Permission::FilesRead], prefix("2026/05/"))],
         )
         .unwrap();
     // A wider prefix, or a permission Mom does not have: not allowed.
     space
-        .write(&mom, 0, vec![give(&ann, &[Permission::FilesRead], prefix(""))])
+        .write(
+            &mom,
+            0,
+            vec![give(&ann, &[Permission::FilesRead], prefix(""))],
+        )
         .unwrap_err();
     space
-        .write(&mom, 0, vec![give(&ann, &[Permission::FilesChange], prefix("2026/"))],
+        .write(
+            &mom,
+            0,
+            vec![give(&ann, &[Permission::FilesChange], prefix("2026/"))],
         )
         .unwrap_err();
 }
@@ -160,7 +179,10 @@ fn taking_back_a_grant_takes_back_what_was_given_on_from_it() {
     let (ming, mom, ann) = (key(1), key(2), key(3));
     let (mut space, _) = Space::create(who(&ming), &ming, 0, 1);
     let g = space
-        .write(&ming, 0, vec![give(
+        .write(
+            &ming,
+            0,
+            vec![give(
                 &mom,
                 &[Permission::FilesRead, Permission::AccessGive],
                 prefix(""),
@@ -168,7 +190,11 @@ fn taking_back_a_grant_takes_back_what_was_given_on_from_it() {
         )
         .unwrap();
     space
-        .write(&mom, 0, vec![give(&ann, &[Permission::FilesRead], prefix(""))])
+        .write(
+            &mom,
+            0,
+            vec![give(&ann, &[Permission::FilesRead], prefix(""))],
+        )
         .unwrap();
     let all = prefix("");
     assert!(space.may(who(&ann), Permission::FilesRead, &all));
@@ -190,7 +216,10 @@ fn a_deny_wins() {
     let (ming, mom) = (key(1), key(2));
     let (mut space, _) = Space::create(who(&ming), &ming, 0, 1);
     space
-        .write(&ming, 0, vec![
+        .write(
+            &ming,
+            0,
+            vec![
                 give(&mom, &WRITE, prefix("")),
                 Act::Give {
                     to: who(&mom),
@@ -235,7 +264,10 @@ fn writes_at_the_same_time_are_kept_side_by_side_and_the_order_does_not_matter()
 
     // A change after both versions settles it.
     let parents = file.versions.iter().map(|v| v.id).collect();
-    a.write(&ming, 0, vec![Act::Change {
+    a.write(
+        &ming,
+        0,
+        vec![Act::Change {
             file: notes,
             parents,
             name: "notes".into(),
@@ -294,7 +326,10 @@ fn two_managers_who_take_each_other_at_the_same_time_both_lose_and_the_owner_sta
     ];
     let (mut a, _) = Space::create(who(&ming), &ming, 0, 1);
     let e = a
-        .write(&ming, 0, vec![
+        .write(
+            &ming,
+            0,
+            vec![
                 give(&mom, &manage, prefix("")),
                 give(&dad, &manage, prefix("")),
             ],
@@ -364,7 +399,9 @@ fn a_grant_to_a_group_is_for_everyone_in_it() {
     assert!(!space.may(who(&dad), Permission::FilesRead, &photos));
     add(&mut space, &ming, who(&dad), family);
     assert!(space.may(who(&dad), Permission::FilesRead, &photos));
-    space.write(&ming, 0, vec![Act::Take { grant: to_mom }]).unwrap();
+    space
+        .write(&ming, 0, vec![Act::Take { grant: to_mom }])
+        .unwrap();
     assert!(!space.is_in(who(&mom), family));
     assert!(!space.may(who(&mom), Permission::FilesRead, &photos));
 }

@@ -414,9 +414,9 @@ impl View<'_> {
             .filter_map(|id| {
                 let mut heads: Vec<Version> = self.heads(id).into_iter().cloned().collect();
                 heads.sort_by_key(|v| v.id);
-                let gone = heads.iter().all(|v| {
-                    v.content.is_none() && !retention.keeps_deleted(v.time, time)
-                });
+                let gone = heads
+                    .iter()
+                    .all(|v| v.content.is_none() && !retention.keeps_deleted(v.time, time));
                 (!gone).then_some((id, heads))
             })
             .collect();
@@ -577,10 +577,7 @@ impl View<'_> {
                     if acts.len() != 1 {
                         return Err("a checkpoint with other acts".into());
                     }
-                    need(
-                        Permission::SpaceCheckpoint,
-                        &Target::Prefix(String::new()),
-                    )?;
+                    need(Permission::SpaceCheckpoint, &Target::Prefix(String::new()))?;
                     if self.summary(entry.header.time, retention).hash() != *state {
                         return Err("a checkpoint whose state is wrong".into());
                     }
@@ -704,7 +701,9 @@ impl Space {
             return Err(Error("not a checkpoint".into()));
         };
         if snapshot.summary.hash() != *state {
-            return Err(Error("the snapshot is not the one the checkpoint signs".into()));
+            return Err(Error(
+                "the snapshot is not the one the checkpoint signs".into(),
+            ));
         }
         let mut gone: BTreeSet<Hash> = checkpoint.header.parents().collect();
         gone.extend(snapshot.summary.logs.iter().map(|(_, h, _)| *h));
@@ -765,13 +764,7 @@ impl Space {
     pub fn logs(&self) -> BTreeMap<PublicKey, u64> {
         let mut logs: BTreeMap<PublicKey, u64> = self
             .base()
-            .map(|b| {
-                b.summary
-                    .logs
-                    .iter()
-                    .map(|(k, _, s)| (*k, s + 1))
-                    .collect()
-            })
+            .map(|b| b.summary.logs.iter().map(|(k, _, s)| (*k, s + 1)).collect())
             .unwrap_or_default();
         for k in self.known.values() {
             let n = logs.entry(k.entry.header.author).or_insert(0);

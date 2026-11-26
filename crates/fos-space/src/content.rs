@@ -186,7 +186,11 @@ mod tests {
         let before = store.0.len();
         store.0.extend(pb);
         // Only the changed chunk and the new list are new.
-        assert!(store.0.len() - before <= 3, "{} new pieces", store.0.len() - before);
+        assert!(
+            store.0.len() - before <= 3,
+            "{} new pieces",
+            store.0.len() - before
+        );
         assert_eq!(join(&cb, &store).unwrap(), b);
     }
 }

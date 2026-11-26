@@ -157,7 +157,12 @@ impl Node {
     /// # Errors
     ///
     /// When the space is not here, or the key may not do these acts.
-    pub fn write(&mut self, space: Hash, time: u64, acts: Vec<Act>) -> Result<(Entry, Step), Error> {
+    pub fn write(
+        &mut self,
+        space: Hash,
+        time: u64,
+        acts: Vec<Act>,
+    ) -> Result<(Entry, Step), Error> {
         let key = self.key.clone();
         self.write_as(space, &key, time, acts)
     }

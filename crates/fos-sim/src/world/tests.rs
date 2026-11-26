@@ -211,7 +211,10 @@ fn large_files_sync_in_chunks_and_a_new_version_sends_only_what_changed() {
         })
         .collect();
     let file = world.put(ming, space, "video.bin", &big).unwrap();
-    assert_eq!(world.read(mom, space, "video.bin"), std::slice::from_ref(&big));
+    assert_eq!(
+        world.read(mom, space, "video.bin"),
+        std::slice::from_ref(&big)
+    );
 
     let before = world.nodes[mom].contents.0.len();
     let mut edited = big.clone();
@@ -243,10 +246,16 @@ fn compaction_keeps_the_same_state_and_drops_the_entries() {
     assert!(world.compact(mom, space));
     assert_eq!(digest(&world, ming, space), before);
     assert_eq!(digest(&world, mom, space), before);
-    assert_eq!(world.space(ming, space).unwrap().len(), 1, "only the checkpoint");
+    assert_eq!(
+        world.space(ming, space).unwrap().len(),
+        1,
+        "only the checkpoint"
+    );
 
     // Work goes on after it.
-    world.change(mom, space, notes, "notes", Some(b"after")).unwrap();
+    world
+        .change(mom, space, notes, "notes", Some(b"after"))
+        .unwrap();
     assert_eq!(world.read(ming, space, "notes"), [b"after".to_vec()]);
 }
 
@@ -259,7 +268,9 @@ fn a_new_node_starts_from_the_snapshot() {
     world.put(ming, space, "b", b"b").unwrap();
 
     let box_ = world.add(5);
-    world.give(ming, space, box_, &[DataKeep, FilesRead], all()).unwrap();
+    world
+        .give(ming, space, box_, &[DataKeep, FilesRead], all())
+        .unwrap();
     world.connect(ming, box_);
     world.follow(box_, space);
     assert_eq!(world.read(box_, space, "a"), [b"a".to_vec()]);
@@ -273,7 +284,9 @@ fn a_change_made_offline_at_the_same_time_as_a_checkpoint_is_put_on_top_again() 
     let (mut world, ming, mom, space) = family();
     let notes = world.put(ming, space, "notes", b"v1").unwrap();
     world.disconnect(ming, mom);
-    world.change(mom, space, notes, "notes", Some(b"mom, offline")).unwrap();
+    world
+        .change(mom, space, notes, "notes", Some(b"mom, offline"))
+        .unwrap();
     world.put(mom, space, "new", b"made offline").unwrap();
     world.checkpoint(ming, space).unwrap();
     world.compact(ming, space);
