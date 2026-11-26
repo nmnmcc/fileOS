@@ -21,8 +21,10 @@ pub mod entry;
 pub mod space;
 pub mod sync;
 
-pub use entry::{Act, Content, Effect, Entry, Header, Id, Permission, Principal, Resource};
-pub use space::{File, Grant, Space, Version};
+pub use entry::{
+    Act, Content, Effect, Entry, Header, Id, Permission, Principal, Resource, Retention,
+};
+pub use space::{File, Given, Grant, Snapshot, Space, Summary, Version};
 pub use sync::{Contents, Event, Msg, Node, Step};
 
 #[cfg(test)]

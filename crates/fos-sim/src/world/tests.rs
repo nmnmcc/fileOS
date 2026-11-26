@@ -222,3 +222,117 @@ fn large_files_sync_in_chunks_and_a_new_version_sends_only_what_changed() {
     assert_eq!(world.read(mom, space, "video.bin"), [edited]);
     assert!(world.nodes[mom].contents.0.len() - before <= 3);
 }
+
+fn digest(world: &World, node: usize, space: Hash) -> Hash {
+    world.space(node, space).unwrap().digest()
+}
+
+#[test]
+fn compaction_keeps_the_same_state_and_drops_the_entries() {
+    let (mut world, ming, mom, space) = family();
+    let notes = world.put(ming, space, "notes", b"v1").unwrap();
+    for i in 0..20u8 {
+        world
+            .change(mom, space, notes, "notes", Some(&[i]))
+            .unwrap();
+    }
+    world.put(mom, space, "other", b"x").unwrap();
+    let before = digest(&world, ming, space);
+    world.checkpoint(ming, space).unwrap();
+    assert!(world.compact(ming, space));
+    assert!(world.compact(mom, space));
+    assert_eq!(digest(&world, ming, space), before);
+    assert_eq!(digest(&world, mom, space), before);
+    assert_eq!(world.space(ming, space).unwrap().len(), 1, "only the checkpoint");
+
+    // Work goes on after it.
+    world.change(mom, space, notes, "notes", Some(b"after")).unwrap();
+    assert_eq!(world.read(ming, space, "notes"), [b"after".to_vec()]);
+}
+
+#[test]
+fn a_new_node_starts_from_the_snapshot() {
+    let (mut world, ming, _mom, space) = family();
+    world.put(ming, space, "a", b"a").unwrap();
+    world.checkpoint(ming, space).unwrap();
+    world.compact(ming, space);
+    world.put(ming, space, "b", b"b").unwrap();
+
+    let box_ = world.add(5);
+    world.give(ming, space, box_, &[DataKeep, FilesRead], all()).unwrap();
+    world.connect(ming, box_);
+    world.follow(box_, space);
+    assert_eq!(world.read(box_, space, "a"), [b"a".to_vec()]);
+    assert_eq!(world.read(box_, space, "b"), [b"b".to_vec()]);
+    assert_eq!(digest(&world, box_, space), digest(&world, ming, space));
+    assert!(world.space(box_, space).unwrap().base().is_some());
+}
+
+#[test]
+fn a_change_made_offline_at_the_same_time_as_a_checkpoint_is_put_on_top_again() {
+    let (mut world, ming, mom, space) = family();
+    let notes = world.put(ming, space, "notes", b"v1").unwrap();
+    world.disconnect(ming, mom);
+    world.change(mom, space, notes, "notes", Some(b"mom, offline")).unwrap();
+    world.put(mom, space, "new", b"made offline").unwrap();
+    world.checkpoint(ming, space).unwrap();
+    world.compact(ming, space);
+
+    world.connect(ming, mom);
+    assert_eq!(world.read(ming, space, "notes"), [b"mom, offline".to_vec()]);
+    assert_eq!(world.read(ming, space, "new"), [b"made offline".to_vec()]);
+    assert_eq!(digest(&world, ming, space), digest(&world, mom, space));
+    assert!(
+        world
+            .events(mom)
+            .iter()
+            .any(|e| matches!(e, Event::Again { .. })),
+        "Mom is told"
+    );
+}
+
+#[test]
+fn a_node_that_was_away_long_gets_the_snapshot_and_keeps_its_work() {
+    let (mut world, ming, mom, space) = family();
+    world.disconnect(ming, mom);
+    world.put(mom, space, "from-mom", b"offline").unwrap();
+    for i in 0..3u8 {
+        world.put(ming, space, &format!("f{i}"), &[i]).unwrap();
+        world.checkpoint(ming, space).unwrap();
+        world.compact(ming, space);
+    }
+    world.connect(ming, mom);
+    assert_eq!(world.read(mom, space, "f2"), [vec![2]]);
+    assert_eq!(world.read(ming, space, "from-mom"), [b"offline".to_vec()]);
+    assert_eq!(digest(&world, ming, space), digest(&world, mom, space));
+}
+
+#[test]
+fn only_the_owner_or_a_holder_of_space_checkpoint_makes_checkpoints() {
+    let (mut world, ming, mom, space) = family();
+    world.checkpoint(mom, space).unwrap_err();
+    world
+        .give(ming, space, mom, &[Permission::SpaceCheckpoint], all())
+        .unwrap();
+    world.checkpoint(mom, space).unwrap();
+}
+
+#[test]
+fn old_versions_get_thinner_with_age() {
+    let (mut world, ming, _mom, space) = family();
+    let notes = world.put(ming, space, "notes", b"v").unwrap();
+    // A version every ten minutes for three days.
+    for i in 0..(3 * 24 * 6) {
+        world.wait(10 * 60 * 1000);
+        world
+            .change(ming, space, notes, "notes", Some(&u32::to_be_bytes(i)))
+            .unwrap();
+    }
+    let all_versions = world.space(ming, space).unwrap().history(notes).len();
+    world.checkpoint(ming, space).unwrap();
+    world.compact(ming, space);
+    let kept = world.space(ming, space).unwrap().history(notes).len();
+    assert!(all_versions > 400);
+    // About one an hour for a day, then one a day: about 24 + 3 + 1.
+    assert!((20..=40).contains(&kept), "{kept} versions kept");
+}

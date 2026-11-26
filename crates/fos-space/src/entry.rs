@@ -8,6 +8,8 @@
 //! the body by its hash, so a body can be deleted later and the chain of
 //! hashes stays good.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey, Signature, decode, encode};
 use serde::{Deserialize, Serialize};
 
@@ -127,6 +129,67 @@ pub enum Act {
     },
     /// Takes back a grant, and with it every grant that was given on from it.
     Take { grant: Id },
+    /// Makes the state in the past of this entry final, and signs its hash
+    /// (see `space::Summary`). Made by the owner, or by a principal with
+    /// `space.checkpoint` on the whole space. It is alone in its entry.
+    Checkpoint { state: Hash, retention: Retention },
+}
+
+const HOUR: u64 = 60 * 60 * 1000;
+const DAY: u64 = 24 * HOUR;
+const WEEK: u64 = 7 * DAY;
+
+/// How long old versions and deleted files are kept: thinner with age, as
+/// Time Machine and restic's `forget --keep-…` do. A checkpoint says which
+/// retention it uses, so every node keeps the same.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Retention {
+    /// Keep one version for each of the last this many hours.
+    pub hours: u32,
+    /// Then one for each of this many days.
+    pub days: u32,
+    /// Then one for each of this many weeks.
+    pub weeks: u32,
+    /// Keep deleted files (the bin) for this many days.
+    pub deleted_days: u32,
+}
+
+impl Default for Retention {
+    fn default() -> Self {
+        Self {
+            hours: 24,
+            days: 30,
+            weeks: 52,
+            deleted_days: 30,
+        }
+    }
+}
+
+impl Retention {
+    /// The versions to keep, of `versions` (each with its time), at `now`:
+    /// the newest in each hour, day and week that is still kept.
+    pub fn keep(&self, versions: &[(Id, u64)], now: u64) -> BTreeSet<Id> {
+        let mut keep = BTreeSet::new();
+        for (size, count) in [(HOUR, self.hours), (DAY, self.days), (WEEK, self.weeks)] {
+            let mut newest: BTreeMap<u64, (u64, Id)> = BTreeMap::new();
+            for (id, time) in versions {
+                if now.saturating_sub(*time) >= size * u64::from(count) {
+                    continue;
+                }
+                let slot = newest.entry(time / size).or_insert((*time, *id));
+                if (*time, *id) > *slot {
+                    *slot = (*time, *id);
+                }
+            }
+            keep.extend(newest.values().map(|(_, id)| *id));
+        }
+        keep
+    }
+
+    /// Says if a file deleted at `time` is still kept at `now`.
+    pub fn keeps_deleted(&self, time: u64, now: u64) -> bool {
+        now.saturating_sub(time) < DAY * u64::from(self.deleted_days)
+    }
 }
 
 /// The signed part of an entry.
@@ -141,6 +204,9 @@ pub struct Header {
     pub prev: Option<Hash>,
     /// Entries of other logs that this one comes after.
     pub deps: Vec<Hash>,
+    /// The time the author says it wrote this, in milliseconds since 1970.
+    /// Only for people and for retention; never for access.
+    pub time: u64,
     /// The hash of the body.
     pub body: Hash,
 }
@@ -168,6 +234,7 @@ impl Entry {
         seq: u64,
         prev: Option<Hash>,
         deps: Vec<Hash>,
+        time: u64,
         acts: &[Act],
         key: &SecretKey,
     ) -> Self {
@@ -178,6 +245,7 @@ impl Entry {
             seq,
             prev,
             deps,
+            time,
             body: Hash::of(&body),
         };
         let signature = key.sign(&encode(&header));

@@ -26,8 +26,8 @@ use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
 
 use crate::content;
-use crate::entry::{Act, Entry, Permission, Principal, Resource};
-use crate::space::Space;
+use crate::entry::{Act, Entry, Permission, Principal, Resource, Retention};
+use crate::space::{Snapshot, Space};
 
 /// A message between two nodes.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -40,6 +40,11 @@ pub enum Msg {
         space: Hash,
         entries: Vec<Entry>,
     },
+    /// The state at a checkpoint, for a node that lacks entries before it.
+    Snapshot {
+        space: Hash,
+        snapshot: Box<Snapshot>,
+    },
     WantContent(Hash),
     Content(Bytes),
 }
@@ -51,6 +56,9 @@ pub enum Event {
     Changed(Hash),
     /// Content came. The caller keeps it.
     Content(Vec<u8>),
+    /// Acts of this node made at the same time as a checkpoint had no
+    /// effect, and were written again on top. The person is told.
+    Again { space: Hash, entries: usize },
 }
 
 /// The output of one step.
@@ -121,10 +129,11 @@ impl Node {
             || space.may(who, Permission::FilesRead, &whole)
     }
 
-    /// Makes a space owned by this node's key.
-    pub fn create(&mut self) -> (Hash, Step) {
+    /// Makes a space owned by this node's key. `time` is now, in
+    /// milliseconds since 1970.
+    pub fn create(&mut self, time: u64) -> (Hash, Step) {
         self.nonce += 1;
-        let (space, _) = Space::create(Principal::Key(self.me()), &self.key, self.nonce);
+        let (space, _) = Space::create(Principal::Key(self.me()), &self.key, time, self.nonce);
         let id = space.id();
         self.spaces.insert(id, space);
         let mut step = Step::default();
@@ -148,9 +157,9 @@ impl Node {
     /// # Errors
     ///
     /// When the space is not here, or the key may not do these acts.
-    pub fn write(&mut self, space: Hash, acts: Vec<Act>) -> Result<(Entry, Step), Error> {
+    pub fn write(&mut self, space: Hash, time: u64, acts: Vec<Act>) -> Result<(Entry, Step), Error> {
         let key = self.key.clone();
-        self.write_as(space, &key, acts)
+        self.write_as(space, &key, time, acts)
     }
 
     /// Writes acts signed by `author`: this node or one of its apps. Gives
@@ -163,17 +172,79 @@ impl Node {
         &mut self,
         space: Hash,
         author: &SecretKey,
+        time: u64,
         acts: Vec<Act>,
     ) -> Result<(Entry, Step), Error> {
         let s = self
             .spaces
             .get_mut(&space)
             .ok_or_else(|| Error(format!("space {space} is not here")))?;
-        let entry = s.write(author, acts)?;
+        let entry = s.write(author, time, acts)?;
         let mut step = Step::default();
         step.events.push(Event::Changed(space));
         self.send_on(space, std::slice::from_ref(&entry), None, &mut step);
         Ok((entry, step))
+    }
+
+    /// Makes a checkpoint of a space, signed with this node's key. When to
+    /// make one is the caller's policy (for example once a day, on a node of
+    /// the owner).
+    ///
+    /// # Errors
+    ///
+    /// When the space is not here, or the key may not make checkpoints.
+    pub fn checkpoint(
+        &mut self,
+        space: Hash,
+        time: u64,
+        retention: Retention,
+    ) -> Result<Step, Error> {
+        let s = self
+            .spaces
+            .get_mut(&space)
+            .ok_or_else(|| Error(format!("space {space} is not here")))?;
+        let entry = s.checkpoint(&self.key, time, retention)?;
+        let mut step = Step::default();
+        step.events.push(Event::Changed(space));
+        self.send_on(space, &[entry], None, &mut step);
+        self.again(space, Vec::new(), &mut step);
+        Ok(step)
+    }
+
+    /// Drops the entries of a space before its newest checkpoint that every
+    /// entry here is ordered with. When to do it is the caller's policy.
+    /// Gives back false when there is nothing to drop.
+    pub fn compact(&mut self, space: Hash) -> (bool, Step) {
+        let mut step = Step::default();
+        let Some(s) = self.spaces.get_mut(&space) else {
+            return (false, step);
+        };
+        let stale = s.take_stale(self.key.public());
+        let done = s.compact();
+        self.again(space, stale, &mut step);
+        (done, step)
+    }
+
+    /// Writes again, on top, this node's acts that were made at the same
+    /// time as a checkpoint.
+    fn again(&mut self, space: Hash, mut stale: Vec<(u64, Vec<Act>)>, step: &mut Step) {
+        let me = self.key.public();
+        if let Some(s) = self.spaces.get_mut(&space) {
+            stale.extend(s.take_stale(me));
+        }
+        let mut written = 0;
+        for (time, acts) in stale {
+            if let Ok((_, more)) = self.write(space, time, acts) {
+                written += 1;
+                step.out.extend(more.out);
+            }
+        }
+        if written > 0 {
+            step.events.push(Event::Again {
+                space,
+                entries: written,
+            });
+        }
     }
 
     /// Sends new entries to every connected peer that may keep the space.
@@ -229,6 +300,17 @@ impl Node {
                         continue;
                     };
                     if Self::may_keep(s, from) {
+                        if s.needs_base(&logs)
+                            && let Some(snapshot) = s.base()
+                        {
+                            step.out.push((
+                                from,
+                                Msg::Snapshot {
+                                    space: id,
+                                    snapshot: Box::new(snapshot.clone()),
+                                },
+                            ));
+                        }
                         let entries = s.missing(&logs);
                         if !entries.is_empty() {
                             step.out.push((from, Msg::Entries { space: id, entries }));
@@ -253,6 +335,15 @@ impl Node {
                 if let Some(s) = self.spaces.get(&id)
                     && Self::may_keep(s, from)
                 {
+                    if let Some(snapshot) = s.base() {
+                        step.out.push((
+                            from,
+                            Msg::Snapshot {
+                                space: id,
+                                snapshot: Box::new(snapshot.clone()),
+                            },
+                        ));
+                    }
                     step.out.push((
                         from,
                         Msg::Entries {
@@ -264,6 +355,9 @@ impl Node {
             }
             Msg::Entries { space, entries } => {
                 self.take_entries(from, space, entries, contents, &mut step);
+            }
+            Msg::Snapshot { space, snapshot } => {
+                self.take_snapshot(from, space, *snapshot, contents, &mut step);
             }
             Msg::WantContent(hash) => {
                 let allowed = self.spaces.values().any(|s| {
@@ -294,6 +388,65 @@ impl Node {
             }
         }
         step
+    }
+
+    fn take_snapshot(
+        &mut self,
+        from: PublicKey,
+        space: Hash,
+        snapshot: Snapshot,
+        contents: &dyn Contents,
+        step: &mut Step,
+    ) {
+        if snapshot.genesis.hash() != space {
+            return;
+        }
+        let stale = if let Some(s) = self.spaces.get_mut(&space) {
+            match s.adopt(snapshot, self.key.public()) {
+                Ok(stale) => stale,
+                Err(_) => return,
+            }
+        } else {
+            if !self.wanted.contains(&space) {
+                return;
+            }
+            let Ok(s) = Space::from_snapshot(snapshot) else {
+                return;
+            };
+            self.wanted.remove(&space);
+            self.spaces.insert(space, s);
+            Vec::new()
+        };
+        step.events.push(Event::Changed(space));
+        self.ask_contents(from, space, contents, step);
+        self.again(space, stale, step);
+    }
+
+    /// Asks `from` for the content of `space` that is not here.
+    fn ask_contents(
+        &mut self,
+        from: PublicKey,
+        space: Hash,
+        contents: &dyn Contents,
+        step: &mut Step,
+    ) {
+        let Some(s) = self.spaces.get(&space) else {
+            return;
+        };
+        let mut wanted = Vec::new();
+        for c in s.contents() {
+            if let Some(hashes) = content::chunks(&c, contents) {
+                wanted.extend(hashes.into_iter().filter(|h| !contents.has(*h)));
+            } else {
+                self.lists.insert(c.hash);
+                wanted.push(c.hash);
+            }
+        }
+        for hash in wanted {
+            if self.asked.insert(hash) {
+                step.out.push((from, Msg::WantContent(hash)));
+            }
+        }
     }
 
     fn take_entries(
@@ -334,20 +487,8 @@ impl Node {
             .into_iter()
             .filter(|e| added.contains(&e.hash()))
             .collect();
-        let mut wanted = Vec::new();
-        for c in s.contents() {
-            if let Some(hashes) = content::chunks(&c, contents) {
-                wanted.extend(hashes.into_iter().filter(|h| !contents.has(*h)));
-            } else {
-                self.lists.insert(c.hash);
-                wanted.push(c.hash);
-            }
-        }
-        for hash in wanted {
-            if self.asked.insert(hash) {
-                step.out.push((from, Msg::WantContent(hash)));
-            }
-        }
+        self.ask_contents(from, space, contents, step);
         self.send_on(space, &new, Some(from), step);
+        self.again(space, Vec::new(), step);
     }
 }

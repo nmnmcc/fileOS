@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use fos_core::{Error, Hash, PublicKey, SecretKey};
 use fos_space::{
     Act, Content, Contents, Effect, Event, File, Id, Msg, Node, Permission, Principal, Resource,
-    Space, Step,
+    Retention, Space, Step,
 };
 
 /// Content in memory.
@@ -34,12 +34,16 @@ pub struct WorldNode {
     pub key: SecretKey,
     pub node: Node,
     pub contents: MemContents,
+    pub events: Vec<Event>,
 }
 
 /// Many nodes and the links between them.
 #[derive(Debug, Default)]
 pub struct World {
     pub nodes: Vec<WorldNode>,
+    /// The time now, in milliseconds since 1970. Every act moves it on by a
+    /// second; [`World::wait`] moves it on more.
+    pub time: u64,
     links: BTreeSet<(usize, usize)>,
     queue: VecDeque<(usize, PublicKey, Msg)>,
 }
@@ -52,8 +56,19 @@ impl World {
             node: Node::new(key.clone(), u64::from(n) << 32),
             key,
             contents: MemContents::default(),
+            events: Vec::new(),
         });
         self.nodes.len() - 1
+    }
+
+    /// Lets `ms` milliseconds go by.
+    pub fn wait(&mut self, ms: u64) {
+        self.time += ms;
+    }
+
+    fn tick(&mut self) -> u64 {
+        self.time += 1000;
+        self.time
     }
 
     pub fn key(&self, node: usize) -> PublicKey {
@@ -94,7 +109,8 @@ impl World {
 
     /// Makes a space owned by the node's key.
     pub fn create(&mut self, node: usize) -> Hash {
-        let (id, step) = self.nodes[node].node.create();
+        let time = self.tick();
+        let (id, step) = self.nodes[node].node.create(time);
         self.apply(node, step);
         self.run();
         id
@@ -112,7 +128,8 @@ impl World {
     ///
     /// When the node may not do them.
     pub fn write(&mut self, node: usize, space: Hash, acts: Vec<Act>) -> Result<Id, Error> {
-        let (entry, step) = self.nodes[node].node.write(space, acts)?;
+        let time = self.tick();
+        let (entry, step) = self.nodes[node].node.write(space, time, acts)?;
         self.apply(node, step);
         self.run();
         Ok(Id {
@@ -207,6 +224,34 @@ impl World {
         self.write(node, space, vec![Act::Take { grant }])
     }
 
+    /// Makes a checkpoint on a node, with the default retention.
+    ///
+    /// # Errors
+    ///
+    /// When the node may not make checkpoints.
+    pub fn checkpoint(&mut self, node: usize, space: Hash) -> Result<(), Error> {
+        let time = self.tick();
+        let step = self.nodes[node]
+            .node
+            .checkpoint(space, time, Retention::default())?;
+        self.apply(node, step);
+        self.run();
+        Ok(())
+    }
+
+    /// Compacts a space on a node. Gives back false when nothing was dropped.
+    pub fn compact(&mut self, node: usize, space: Hash) -> bool {
+        let (done, step) = self.nodes[node].node.compact(space);
+        self.apply(node, step);
+        self.run();
+        done
+    }
+
+    /// Every event of every node, in order.
+    pub fn events(&self, node: usize) -> &[Event] {
+        &self.nodes[node].events
+    }
+
     fn keep(&mut self, node: usize, bytes: &[u8]) -> Content {
         let (content, pieces) = fos_space::content::split(bytes);
         self.nodes[node].contents.0.extend(pieces);
@@ -240,9 +285,13 @@ impl World {
             self.queue.push_back((node, to, msg));
         }
         for event in step.events {
-            if let Event::Content(bytes) = event {
-                self.nodes[node].contents.0.insert(Hash::of(&bytes), bytes);
+            if let Event::Content(bytes) = &event {
+                self.nodes[node]
+                    .contents
+                    .0
+                    .insert(Hash::of(bytes), bytes.clone());
             }
+            self.nodes[node].events.push(event);
         }
     }
 

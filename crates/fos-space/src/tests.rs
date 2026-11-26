@@ -61,10 +61,10 @@ fn copy_backwards(space: &Space) -> Space {
 #[test]
 fn the_id_of_a_space_and_a_file_is_the_hash_of_the_entry_that_made_it() {
     let ming = key(1);
-    let (mut space, genesis) = Space::create(who(&ming), &ming, 7);
+    let (mut space, genesis) = Space::create(who(&ming), &ming, 0, 7);
     assert_eq!(space.id(), genesis.hash());
     let e = space
-        .write(&ming, vec![create("2026/cat.jpg", b"cat")])
+        .write(&ming, 0, vec![create("2026/cat.jpg", b"cat")])
         .unwrap();
     let files = space.find("2026/cat.jpg");
     assert_eq!(files.len(), 1);
@@ -74,29 +74,27 @@ fn the_id_of_a_space_and_a_file_is_the_hash_of_the_entry_that_made_it() {
 #[test]
 fn bad_entries_are_not_taken() {
     let ming = key(1);
-    let (mut space, _) = Space::create(who(&ming), &ming, 1);
-    let mut e = space.write(&ming, vec![create("a", b"a")]).unwrap();
+    let (mut space, _) = Space::create(who(&ming), &ming, 0, 1);
+    let mut e = space.write(&ming, 0, vec![create("a", b"a")]).unwrap();
     e.header.seq = 9;
     let mut other = Space::from_genesis(&space.entries()[0]).unwrap();
     other.insert(vec![e]).unwrap_err();
-    space.write(&ming, vec![create("/a", b"a")]).unwrap_err();
+    space.write(&ming, 0, vec![create("/a", b"a")]).unwrap_err();
     space
-        .write(&ming, vec![create("a/../b", b"a")])
+        .write(&ming, 0, vec![create("a/../b", b"a")])
         .unwrap_err();
 }
 
 #[test]
 fn a_rename_keeps_the_id_and_moves_out_of_a_prefix_grant() {
     let (ming, mom, chat) = (key(1), key(2), key(3));
-    let (mut space, _) = Space::create(who(&ming), &ming, 1);
+    let (mut space, _) = Space::create(who(&ming), &ming, 0, 1);
     let e = space
-        .write(&ming, vec![create("2026/cat.jpg", b"cat")])
+        .write(&ming, 0, vec![create("2026/cat.jpg", b"cat")])
         .unwrap();
     let cat = first(&e);
     space
-        .write(
-            &ming,
-            vec![
+        .write(&ming, 0, vec![
                 give(&mom, &[Permission::FilesRead], prefix("2026/")),
                 give(&chat, &[Permission::FilesRead], Resource::File(cat)),
             ],
@@ -106,9 +104,7 @@ fn a_rename_keeps_the_id_and_moves_out_of_a_prefix_grant() {
     assert!(space.may_read(who(&chat), cat));
 
     space
-        .write(
-            &ming,
-            vec![Act::Change {
+        .write(&ming, 0, vec![Act::Change {
                 file: cat,
                 parents: vec![cat],
                 name: "best/cat.jpg".into(),
@@ -135,11 +131,9 @@ fn a_rename_keeps_the_id_and_moves_out_of_a_prefix_grant() {
 #[test]
 fn grants_are_given_on_only_smaller() {
     let (ming, mom, ann) = (key(1), key(2), key(3));
-    let (mut space, _) = Space::create(who(&ming), &ming, 1);
+    let (mut space, _) = Space::create(who(&ming), &ming, 0, 1);
     space
-        .write(
-            &ming,
-            vec![give(
+        .write(&ming, 0, vec![give(
                 &mom,
                 &[Permission::FilesRead, Permission::AccessGive],
                 prefix("2026/"),
@@ -148,19 +142,15 @@ fn grants_are_given_on_only_smaller() {
         .unwrap();
     // Less: fine.
     space
-        .write(
-            &mom,
-            vec![give(&ann, &[Permission::FilesRead], prefix("2026/05/"))],
+        .write(&mom, 0, vec![give(&ann, &[Permission::FilesRead], prefix("2026/05/"))],
         )
         .unwrap();
     // A wider prefix, or a permission Mom does not have: not allowed.
     space
-        .write(&mom, vec![give(&ann, &[Permission::FilesRead], prefix(""))])
+        .write(&mom, 0, vec![give(&ann, &[Permission::FilesRead], prefix(""))])
         .unwrap_err();
     space
-        .write(
-            &mom,
-            vec![give(&ann, &[Permission::FilesChange], prefix("2026/"))],
+        .write(&mom, 0, vec![give(&ann, &[Permission::FilesChange], prefix("2026/"))],
         )
         .unwrap_err();
 }
@@ -168,11 +158,9 @@ fn grants_are_given_on_only_smaller() {
 #[test]
 fn taking_back_a_grant_takes_back_what_was_given_on_from_it() {
     let (ming, mom, ann) = (key(1), key(2), key(3));
-    let (mut space, _) = Space::create(who(&ming), &ming, 1);
+    let (mut space, _) = Space::create(who(&ming), &ming, 0, 1);
     let g = space
-        .write(
-            &ming,
-            vec![give(
+        .write(&ming, 0, vec![give(
                 &mom,
                 &[Permission::FilesRead, Permission::AccessGive],
                 prefix(""),
@@ -180,19 +168,19 @@ fn taking_back_a_grant_takes_back_what_was_given_on_from_it() {
         )
         .unwrap();
     space
-        .write(&mom, vec![give(&ann, &[Permission::FilesRead], prefix(""))])
+        .write(&mom, 0, vec![give(&ann, &[Permission::FilesRead], prefix(""))])
         .unwrap();
     let all = prefix("");
     assert!(space.may(who(&ann), Permission::FilesRead, &all));
     space
-        .write(&ming, vec![Act::Take { grant: first(&g) }])
+        .write(&ming, 0, vec![Act::Take { grant: first(&g) }])
         .unwrap();
     assert!(!space.may(who(&mom), Permission::FilesRead, &all));
     assert!(!space.may(who(&ann), Permission::FilesRead, &all));
     let anns = space
         .grants()
         .into_iter()
-        .find(|g| g.to == who(&ann))
+        .find(|g| g.given.to == who(&ann))
         .unwrap();
     assert!(!anns.in_effect, "the access page shows it as not in effect");
 }
@@ -200,11 +188,9 @@ fn taking_back_a_grant_takes_back_what_was_given_on_from_it() {
 #[test]
 fn a_deny_wins() {
     let (ming, mom) = (key(1), key(2));
-    let (mut space, _) = Space::create(who(&ming), &ming, 1);
+    let (mut space, _) = Space::create(who(&ming), &ming, 0, 1);
     space
-        .write(
-            &ming,
-            vec![
+        .write(&ming, 0, vec![
                 give(&mom, &WRITE, prefix("")),
                 Act::Give {
                     to: who(&mom),
@@ -215,19 +201,19 @@ fn a_deny_wins() {
             ],
         )
         .unwrap();
-    space.write(&mom, vec![create("2026/a", b"a")]).unwrap();
+    space.write(&mom, 0, vec![create("2026/a", b"a")]).unwrap();
     space
-        .write(&mom, vec![create("private/a", b"a")])
+        .write(&mom, 0, vec![create("private/a", b"a")])
         .unwrap_err();
 }
 
 #[test]
 fn writes_at_the_same_time_are_kept_side_by_side_and_the_order_does_not_matter() {
     let (ming, mom) = (key(1), key(2));
-    let (mut a, _) = Space::create(who(&ming), &ming, 1);
-    let e = a.write(&ming, vec![create("notes", b"v1")]).unwrap();
+    let (mut a, _) = Space::create(who(&ming), &ming, 0, 1);
+    let e = a.write(&ming, 0, vec![create("notes", b"v1")]).unwrap();
     let notes = first(&e);
-    a.write(&ming, vec![give(&mom, &WRITE, prefix(""))])
+    a.write(&ming, 0, vec![give(&mom, &WRITE, prefix(""))])
         .unwrap();
     let mut b = copy_backwards(&a);
 
@@ -237,8 +223,8 @@ fn writes_at_the_same_time_are_kept_side_by_side_and_the_order_does_not_matter()
         name: "notes".into(),
         content: Some(Content::of(bytes)),
     };
-    let x = a.write(&ming, vec![change(b"ming")]).unwrap();
-    let y = b.write(&mom, vec![change(b"mom")]).unwrap();
+    let x = a.write(&ming, 0, vec![change(b"ming")]).unwrap();
+    let y = b.write(&mom, 0, vec![change(b"mom")]).unwrap();
     a.insert(vec![y]).unwrap();
     b.insert(vec![x]).unwrap();
 
@@ -249,9 +235,7 @@ fn writes_at_the_same_time_are_kept_side_by_side_and_the_order_does_not_matter()
 
     // A change after both versions settles it.
     let parents = file.versions.iter().map(|v| v.id).collect();
-    a.write(
-        &ming,
-        vec![Act::Change {
+    a.write(&ming, 0, vec![Act::Change {
             file: notes,
             parents,
             name: "notes".into(),
@@ -265,17 +249,17 @@ fn writes_at_the_same_time_are_kept_side_by_side_and_the_order_does_not_matter()
 #[test]
 fn strong_removal_undoes_what_was_done_at_the_same_time() {
     let (ming, mom) = (key(1), key(2));
-    let (mut a, _) = Space::create(who(&ming), &ming, 1);
+    let (mut a, _) = Space::create(who(&ming), &ming, 0, 1);
     let g = a
-        .write(&ming, vec![give(&mom, &WRITE, prefix(""))])
+        .write(&ming, 0, vec![give(&mom, &WRITE, prefix(""))])
         .unwrap();
     let mut b = copy_backwards(&a);
 
     // Mom writes, offline, while Ming takes her access back.
-    let w = b.write(&mom, vec![create("from-mom", b"hi")]).unwrap();
+    let w = b.write(&mom, 0, vec![create("from-mom", b"hi")]).unwrap();
     assert_eq!(b.find("from-mom").len(), 1, "Mom reads her own write");
     let t = a
-        .write(&ming, vec![Act::Take { grant: first(&g) }])
+        .write(&ming, 0, vec![Act::Take { grant: first(&g) }])
         .unwrap();
 
     a.insert(vec![w.clone()]).unwrap();
@@ -288,14 +272,14 @@ fn strong_removal_undoes_what_was_done_at_the_same_time() {
 #[test]
 fn a_write_before_the_removal_stays() {
     let (ming, mom) = (key(1), key(2));
-    let (mut a, _) = Space::create(who(&ming), &ming, 1);
+    let (mut a, _) = Space::create(who(&ming), &ming, 0, 1);
     let g = a
-        .write(&ming, vec![give(&mom, &WRITE, prefix(""))])
+        .write(&ming, 0, vec![give(&mom, &WRITE, prefix(""))])
         .unwrap();
     let mut b = copy_backwards(&a);
-    let w = b.write(&mom, vec![create("from-mom", b"hi")]).unwrap();
+    let w = b.write(&mom, 0, vec![create("from-mom", b"hi")]).unwrap();
     a.insert(vec![w]).unwrap();
-    a.write(&ming, vec![Act::Take { grant: first(&g) }])
+    a.write(&ming, 0, vec![Act::Take { grant: first(&g) }])
         .unwrap();
     assert_eq!(a.find("from-mom").len(), 1);
 }
@@ -308,11 +292,9 @@ fn two_managers_who_take_each_other_at_the_same_time_both_lose_and_the_owner_sta
         Permission::AccessTake,
         Permission::FilesCreate,
     ];
-    let (mut a, _) = Space::create(who(&ming), &ming, 1);
+    let (mut a, _) = Space::create(who(&ming), &ming, 0, 1);
     let e = a
-        .write(
-            &ming,
-            vec![
+        .write(&ming, 0, vec![
                 give(&mom, &manage, prefix("")),
                 give(&dad, &manage, prefix("")),
             ],
@@ -326,8 +308,8 @@ fn two_managers_who_take_each_other_at_the_same_time_both_lose_and_the_owner_sta
         },
     );
     let mut b = copy_backwards(&a);
-    let x = a.write(&mom, vec![Act::Take { grant: to_dad }]).unwrap();
-    let y = b.write(&dad, vec![Act::Take { grant: to_mom }]).unwrap();
+    let x = a.write(&mom, 0, vec![Act::Take { grant: to_dad }]).unwrap();
+    let y = b.write(&dad, 0, vec![Act::Take { grant: to_mom }]).unwrap();
     a.insert(vec![y]).unwrap();
     b.insert(vec![x]).unwrap();
     assert_eq!(a.digest(), b.digest());
@@ -335,5 +317,5 @@ fn two_managers_who_take_each_other_at_the_same_time_both_lose_and_the_owner_sta
     assert!(!a.may(who(&mom), Permission::FilesCreate, &all));
     assert!(!a.may(who(&dad), Permission::FilesCreate, &all));
     assert!(a.may(who(&ming), Permission::FilesCreate, &all));
-    a.write(&ming, vec![create("still-here", b"")]).unwrap();
+    a.write(&ming, 0, vec![create("still-here", b"")]).unwrap();
 }
