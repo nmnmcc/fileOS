@@ -604,6 +604,7 @@ apps/            a second workspace, built for wasm32-unknown-unknown
   fos-app        the Rust SDK for apps and engines (MIT OR Apache-2.0)
   capability     the default engine
   photos         the photos app
+  chat           the chat app
 wit/
   fos.wit        the interfaces (MIT OR Apache-2.0)
 ```

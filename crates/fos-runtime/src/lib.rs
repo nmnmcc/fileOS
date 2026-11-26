@@ -30,7 +30,7 @@ use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 mod http;
 mod pack;
 
-pub use http::HttpApp;
+pub use http::{Answer, HttpApp};
 
 mod bindings {
     pub mod engine {

@@ -500,6 +500,7 @@ apps/            第二个 workspace，编译成 wasm32-unknown-unknown
   fos-app        App 和引擎的 Rust SDK（MIT OR Apache-2.0）
   capability     默认引擎
   photos         照片 App
+  chat           聊天 App
 wit/
   fos.wit        接口（MIT OR Apache-2.0）
 ```

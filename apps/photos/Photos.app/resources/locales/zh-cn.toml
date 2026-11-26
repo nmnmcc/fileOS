@@ -1,4 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 name = "照片"
-"reason.photos" = "照片会读取你的照片，获取尺寸，并在本节点上建立索引。"
+"reason.photos" = "照片会读取你的照片，获取尺寸并建立索引，显示这些照片，并把你上传的照片放进 /photos。"

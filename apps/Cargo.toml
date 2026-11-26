@@ -7,7 +7,7 @@
 
 [workspace]
 resolver = "3"
-members = ["fos-app", "capability", "photos"]
+members = ["fos-app", "capability", "photos", "chat"]
 
 [workspace.package]
 version = "0.1.0"
