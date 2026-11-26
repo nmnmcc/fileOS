@@ -2,18 +2,16 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-A file system that your computers and your friends' computers keep together.
+fileOS is a file system that a number of nodes keep together: your computers, and the computers of people you know.
 
 > [!NOTE]
 > A prototype. Formats will change.
 
 ## How it is made
 
-- **Kernel:** files that mean the same on every node. A folder is a signed log, and files are blobs named by their hash.
-- **Apps:** everything people use. WebAssembly, in a sandbox, with only the folders you give them.
-- **Kernel plugins:** change how the kernel works, never what apps see. Today: the rules for access (the engine).
-
-One rule: **do not break user space.**
+- **Kernel.** Every folder is a signed log of changes, put in order by one node. File contents are blobs named by their BLAKE3 hash. People, devices, nodes and apps are ed25519 keys. Nodes sync folders over libp2p.
+- **Apps.** WebAssembly components. Each app runs in a sandbox, has its own key and sees only the folders it is given.
+- **Kernel plugins.** WebAssembly components that do a part of the kernel's work. Today there is one: the engine, which says who may do what.
 
 ## Try it
 
