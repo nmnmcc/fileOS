@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+id = "chat"
+name = "Chat"
+kind = "app"
+version = "0.1.0"
+build = 1
+requires = "fos:app@0.1.0"
+main = "bin/app.wasm"
+
+[[permissions]]
+path = "/chat"
+access = "read-write"
+reason = "reason.chat"
+
+[[watch]]
+path = "/chat"

@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name = "Chat"
+"reason.chat" = "Chat keeps the messages of your rooms in /chat, which you can share with other people's nodes."

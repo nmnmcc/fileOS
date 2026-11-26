@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name = "聊天"
+"reason.chat" = "聊天把各个聊天室的消息保存在 /chat 中，你可以把它分享给别人的节点。"

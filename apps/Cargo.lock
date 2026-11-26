@@ -33,6 +33,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "chat"
+version = "0.1.0"
+dependencies = [
+ "fos-app",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -88,8 +88,17 @@ give to other people. Only the node that holds the signing key can add nodes
 
 An app comes as an `.app` file, such as `Photos.app`. Install one with
 `fos app install Photos.app`. When you install it, your node gives the app only
-the access that its manifest asks for. The photos app reads the photos in
-`/photos` and keeps an index on your node. The `fos` command is for the
-kernel only: what an app does, you see in the app.
+the access that its manifest asks for. `fos app install` prints the address
+of the app, such as `http://photos-…localhost:7341/`; open it in a browser.
+The `fos` command is for the kernel only: what an app does, you see in the
+app.
+
+Two apps come with fileOS:
+
+- **Photos** shows the photos in `/photos`, lets you upload more, and keeps an
+  index of their sizes.
+- **Chat** keeps rooms in `/chat`. Make the folder with
+  `fos folder new chat /chat`, share it with your friends' nodes, and each of
+  you talks through the chat app on your own node.
 
 To run a node, see the [administration manual](../admin/).

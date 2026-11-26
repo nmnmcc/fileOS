@@ -103,6 +103,7 @@ apps/             第二个 workspace，由 `apps` 编译成 wasm32-unknown-unkn
   fos-app         App 和引擎的 SDK（MIT OR Apache-2.0）
   capability      默认引擎
   photos          照片 App
+  chat            聊天 App
 wit/
   fos.wit         内核与组件之间的接口（MIT OR Apache-2.0）
 ```

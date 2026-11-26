@@ -23,6 +23,25 @@ const REQUEST_TIME: Duration = Duration::from_secs(30);
 /// the time limit works even when an app does not stop.
 const FUEL_SLICE: u64 = 1_000_000;
 
+/// A whole HTTP response, with all of its body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Answer {
+    pub status: u16,
+    /// The headers, with names in lowercase.
+    pub headers: Vec<(String, Vec<u8>)>,
+    pub body: Vec<u8>,
+}
+
+impl Answer {
+    /// The first header with this name, as text.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .and_then(|(_, v)| std::str::from_utf8(v).ok())
+    }
+}
+
 /// An app, ready to take HTTP requests for its origin.
 #[derive(Clone)]
 pub struct HttpApp {
@@ -60,6 +79,54 @@ impl Runtime {
 }
 
 impl HttpApp {
+    /// Gives one request, made of bytes, to the app, and gives back all of
+    /// its response. Tests use it, and so can a node that sends a request on
+    /// for another node.
+    ///
+    /// # Errors
+    ///
+    /// When the request is not valid, or as [`HttpApp::handle`].
+    pub async fn request(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Vec<u8>,
+    ) -> Result<Answer, Error> {
+        use http_body_util::BodyExt as _;
+        let mut request = hyper::Request::builder()
+            .method(method)
+            .uri(format!("http://{}.localhost{path}", self.id));
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let body = http_body_util::Full::new(Bytes::from(body)).map_err(
+            |never: std::convert::Infallible| -> wasmtime_wasi_http::Error { match never {} },
+        );
+        let request = request
+            .body(body)
+            .map_err(|e| Error(format!("not a good request: {e}")))?;
+        let response = self.handle(request).await?;
+        let status = response.status().as_u16();
+        let headers = response
+            .headers()
+            .iter()
+            .map(|(n, v)| (n.as_str().to_string(), v.as_bytes().to_vec()))
+            .collect();
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .map_err(|e| Error(format!("the app {} failed in its body: {e}", self.id)))?
+            .to_bytes()
+            .to_vec();
+        Ok(Answer {
+            status,
+            headers,
+            body,
+        })
+    }
+
     /// Gives one request to a new instance of the app, and gives back its
     /// response. Call it inside a Tokio runtime.
     ///

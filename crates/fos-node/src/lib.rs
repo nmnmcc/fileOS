@@ -26,7 +26,7 @@ use fos_fs::{Ability, Authz, Decision, Fork, Node as FsNode, Op, resolve};
 use fos_id::{Link, NodeCert, Op as DidOp, Service, State};
 use fos_runtime::{AppHost, AppInstance, Bundle, EngineInstance, FsError, Kind, Runtime};
 
-pub use fos_runtime::HttpApp;
+pub use fos_runtime::{Answer, HttpApp};
 use fos_store::Store;
 use fos_sync::{Blobs as _, Event, Replica, Step};
 use tokio::sync::mpsc;

@@ -55,7 +55,8 @@ To share `/photos` with another node: `fos folder grant /photos <its node key> a
 - [ ] **Apps**
   - [x] Apps come as `.app` files (a zip with no compression: the manifest, and the rest in `tar.zst`), and sync like any folder once installed
   - [x] Each app has its own key, gets only what its manifest asks for, and runs with limits on fuel and memory
-  - [x] The photos app: image sizes into an index on the node
+  - [x] The photos app: a gallery at its own origin, upload, and an index of image sizes
+  - [x] The chat app: rooms as streams in a folder that you share, at its own origin
   - [ ] Apps that answer HTTP (`handle-http`), extensions for file types, web interfaces
   - [ ] Files over WebDAV, a vault for Bitwarden clients, chat, contacts and calendars
 - [ ] **Network**

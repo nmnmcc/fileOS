@@ -55,7 +55,8 @@ fos node status
 - [ ] **App**
   - [x] App 以 `.app` 文件提供（本身不压缩的 zip：manifest，加上 `tar.zst` 里的其余文件），安装后像其他文件夹一样同步
   - [x] 每个 App 有自己的密钥，只得到 manifest 申请的权限，运行时有 fuel 和内存限制
-  - [x] 照片 App：把图片尺寸写入节点上的索引
+  - [x] 照片 App：在自己的 origin 上提供图库、上传，以及图片尺寸的索引
+  - [x] 聊天 App：聊天室是你所分享的文件夹里的流，在自己的 origin 上提供页面
   - [ ] 响应 HTTP 的 App（`handle-http`）、按文件类型的扩展、网页界面
   - [ ] 通过 WebDAV 访问文件、给 Bitwarden 客户端用的密码库、聊天、通讯录和日历
 - [ ] **网络**
