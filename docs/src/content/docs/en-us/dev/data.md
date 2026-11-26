@@ -73,28 +73,24 @@ unit of sync and access, like an S3 bucket, and it changes seldom.
 - Concurrent writes to the same file are kept as **versions side by side**.
   No winner is picked without the user knowing (see
   [Conflicts](#conflicts-what-people-and-developers-see)).
-- Appends to a stream never conflict. Concurrent records are put in causal
-  order, and records with no order between them are put in a fixed order.
+- A file whose content is a CRDT (see [What the kernel gives apps](#what-the-kernel-gives-apps))
+  is merged by the kernel, not kept as versions.
+- There are no streams and no key-value store: everything is a file. A stream
+  of records (a chat, a feed) is a directory with one small file for each
+  record, named so that names sort by time and never meet. Different files
+  never conflict.
 
 ## Access: by path prefix, with strong removal
 
-### Capabilities on path prefixes
+### Grants of exact permissions on path prefixes
 
-Access is given on a **path prefix** (an "area"), as in
-[Willow's Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html):
-"read and write under `/photos/2026/`". A grant can be given on to others,
-but only made smaller. Every node can check a write with no network.
-
-| Access | What it lets you do                                                       |
-| ------ | ------------------------------------------------------------------------- |
-| Read   | Read and get the keys to decrypt                                          |
-| Write  | Add entries under the prefix                                              |
-| Manage | Give and take back access under the prefix                                |
-| Relay  | Keep and pass on the ciphertext, with no keys: for always-on helper nodes |
-
-Relay comes from Ink & Switch's
-[Keyhive](https://www.inkandswitch.com/keyhive/notebook/). It lets a VPS or a
-friend's node keep your data safe without being able to read it.
+Access is a **grant** of exact permissions (such as `files.read` or
+`access.give`) on a path prefix (an "area", as in
+[Willow's Meadowcap](https://willowprotocol.org/specs/meadowcap/index.html)),
+to an app, a person or a device. A grant can be given on to others, but only
+made smaller. Every node can check a write with no network. There is no
+authorization engine: rules are made by apps that manage files. The whole
+model is in [Access: grants, permissions and sharing](../access/).
 
 ### When a removal and a write happen at the same time
 
@@ -113,8 +109,9 @@ identity has an **owner root key**: the rotation key with the highest
 priority in its [`did:fos`](../identity/) DID. It can never be removed, and it
 wins any conflict. Family and friends get access through groups, under it.
 
-The rule is a policy behind an interface, with this default, so that it can
-be changed.
+Strong removal is the one rule of the kernel, the same on every node.
+Different rules for a set of files come from the app that manages them (see
+[Access](../access/)).
 
 **Times are never used for access.** A clock that is wrong, or a node that
 lies about the time, must not be able to take or keep access.
@@ -171,26 +168,28 @@ settled by a fixed rule. These still happen:
 
 ### Defaults
 
-| Data                  | Default                                                                                             |
-| --------------------- | --------------------------------------------------------------------------------------------------- |
-| Whole files           | Keep all versions. Never pick a winner in secret. The system shows "N versions" and lets you choose |
-| Small fields of apps  | Last writer wins for each field, but the value that lost stays in the history and can come back     |
-| Documents (rich text) | A text CRDT (Fugue-based), with full history; drafts and review for written work                    |
-| Rules about meaning   | The authority path, or a fix that the user can see                                                  |
+| Data                  | Default                                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Whole files           | Keep all versions. Never pick a winner in secret. The system shows "N versions" and lets you choose           |
+| Data files of apps    | As for files; or a CRDT file (such as a map with last writer wins for each field) where the app wants merging |
+| Documents (rich text) | A text CRDT (Fugue-based), with full history; drafts and review for written work                              |
+| Rules about meaning   | The authority path, or a fix that the user can see                                                            |
 
 ### What the kernel gives apps
 
-- **Typed CRDT building blocks** in `wit/fos.wit`: registers (last writer wins,
-  and multi-value), maps, counters, text, movable lists and movable trees.
-  They are built on one library, [Loro](https://github.com/loro-dev/loro)
-  (MIT), which has movable lists and trees and can cut old history. Its cost
-  is to be measured before it is taken.
+- **Files whose content is a CRDT**, which the kernel merges: registers (last
+  writer wins, and multi-value), maps, counters, text, movable lists and
+  movable trees. A CRDT file is a kind of file, not a separate store. They are
+  built on one library, [Loro](https://github.com/loro-dev/loro) (MIT), which
+  has movable lists and trees and can cut old history. Its cost is to be
+  measured before it is taken.
 - **History that keeps everything** (inside the retention policy), so a write
   that "lost" can always be found.
 - **One conflict interface and one system view** of versions, not one for each
   app.
-- **A hook after merging**, where an app checks its rules and gives fixes or
-  warnings.
+- **Checks on writes** before a write is taken, and **watch events** after a
+  merge, where an app can fix what its rules do not allow (see
+  [Access](../access/#checks-on-writes)).
 - **The authority path**, as a policy that can be changed.
 
 ## Storage that does not grow without end
@@ -257,8 +256,9 @@ example once a day, when a device of the owner is online). A checkpoint says:
   this order: caches first, then thinner old versions, then no new data for
   others. Last, it tells the person. Content that the person has now is never
   deleted by the kernel.
-- An app says for all its data if it is to be kept or is a cache. Caches count
-  against the budget and can be deleted at any time.
+- An app's data to keep is files in the home folder; its derived data is cache
+  files on each node. Cache files count against the budget and can be deleted
+  at any time.
 
 ## Encryption
 
@@ -270,11 +270,11 @@ can read what you can read. Systems with CRDTs, such as Keyhive, give it up
 for this reason. Forward secrecy means something in three other places, and
 we keep it there:
 
-| Where                     | How                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Deleted or compacted data | **The key is destroyed** with the data, so copies anywhere are of no use                               |
-| Moving over the network   | libp2p's Noise already gives it                                                                        |
-| "Burn after reading" chat | A double ratchet for that stream, if the person wants it (new devices then cannot read older messages) |
+| Where                     | How                                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Deleted or compacted data | **The key is destroyed** with the data, so copies anywhere are of no use                                     |
+| Moving over the network   | libp2p's Noise already gives it                                                                              |
+| "Burn after reading" chat | A double ratchet for that conversation, if the person wants it (new devices then cannot read older messages) |
 
 ### Keys
 

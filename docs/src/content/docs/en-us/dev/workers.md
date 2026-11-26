@@ -39,24 +39,37 @@ An app does not run all the time. It wakes up for an event, does its work,
 and stops. This is the model of Cloudflare Workers and of the service workers
 of browsers.
 
-| Event      | When                                   | Interface                               |
-| ---------- | -------------------------------------- | --------------------------------------- |
-| `fetch`    | An HTTP request comes for its origin   | `wasi:http/incoming-handler` (standard) |
-| `change`   | A path it watches changes              | `fos:app/events`                        |
-| `schedule` | A time that it asked for comes         | to be added                             |
-| `message`  | Another app or node sends it a message | later                                   |
+**There are only two kinds of event**, because everything is a file:
+
+| Event   | When                                   | Interface                               |
+| ------- | -------------------------------------- | --------------------------------------- |
+| `fetch` | An HTTP request comes for its origin   | `wasi:http/incoming-handler` (standard) |
+| `watch` | A file or directory it watches changes | `fos:app/events`                        |
+
+Every other "event" is a watch on files:
+
+| What the app waits for | What it watches                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------ |
+| Changes to data        | The files or directories                                                                         |
+| Grants coming or going | `/granted/` in its view (see [Access](../access/))                                               |
+| Messages               | Its inbox directory: a message is a file that the sender writes there, with `files.create` on it |
+| A time                 | A file of the kernel that changes at that time, such as `/clock/every-hour`                      |
+
+So subscribing is only `files.watch` on a path, and the person sees and gives
+it as any other permission.
 
 - **A new instance for each event**, with limits on fuel, memory and time. An
   app that is not working takes no memory.
-- **The manifest says which events the app takes**: which paths, which times.
-  When it is installed, the person sees when it can wake up and what it can
-  touch.
 - **The interface of an app (`ui/`) is given by the kernel**, as files named by
   their hash, which browsers can keep for a long time. No app runs for these
   requests, so most requests run no WebAssembly.
-- **An app keeps its data in synced storage** (`kv`, which merges, and its
-  files). A `cache` on each node is only for speed: it can be deleted at any
-  time. See [Data](../data/).
+- **An app's data is files** (see [Data](../data/)):
+  - data to keep is under its private root (really `/appdata/<app>/`), synced,
+    merged, with versions;
+  - derived data (indexes, thumbnails) is cache files on each node, which the
+    kernel may delete at any time;
+  - data that many people edit at the same time is a file whose content is a
+    CRDT, which the kernel merges.
 
 ## Where an event is handled
 
@@ -104,20 +117,20 @@ synced, so it is handled once and every node gets the result.
 
 ## What changes from today
 
-| Part             | Today                                                   | New                                              |
-| ---------------- | ------------------------------------------------------- | ------------------------------------------------ |
-| Where apps are   | The root folder of a node; each device installs its own | The home folder of the identity; synced          |
-| Address          | By node: `photos-<hash>.localhost`                      | By identity: `photos.localhost` on every device  |
-| How apps run     | One instance kept for events; HTTP per request          | A worker: a new instance for each event          |
-| Where events run | The node that gets the event                            | The list of nodes the person sets, with fallback |
-| App state        | `kv` on one node only                                   | `kv` that syncs and merges; `cache` on each node |
-| App keys         | From the node key                                       | From the shared app seed of the identity         |
+| Part             | Today                                                   | New                                                            |
+| ---------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
+| Where apps are   | The root folder of a node; each device installs its own | The home folder of the identity; synced                        |
+| Address          | By node: `photos-<hash>.localhost`                      | By identity: `photos.localhost` on every device                |
+| How apps run     | One instance kept for events; HTTP per request          | A worker: a new instance for each event                        |
+| Where events run | The node that gets the event                            | The list of nodes the person sets, with fallback               |
+| App state        | `kv` on one node only                                   | Files: synced in the home folder, and cache files on each node |
+| App keys         | From the node key                                       | From the shared app seed of the identity                       |
 
 ## Order of work
 
 1. Workers: a new instance for each event, the kernel gives `ui/`, the manifest
    lists events.
-2. The home folder: apps and `kv` move into it; `kv` syncs; `cache` is added;
+2. The home folder: apps and their data (files, in place of `kv`) move into it; cache files are added;
    the shared app seed.
 3. Lists of nodes for each event, with fallback and heartbeats.
 4. Addresses `<app>.localhost`, and sending requests between nodes.

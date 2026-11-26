@@ -63,6 +63,11 @@ const topics = [
         "Data: sync, conflicts, storage and keys",
         "数据：同步、冲突、存储与密钥",
       ),
+      page(
+        "dev/access",
+        "Access: grants, permissions and sharing",
+        "访问：授权、权限与分享",
+      ),
       page("dev/workers", "Apps as workers", "App 作为 Worker"),
       page("dev/app-data", "Data in apps: good patterns", "App 数据的最佳实践"),
       page("dev/apps", "Writing apps and engines", "编写 App 和引擎"),
