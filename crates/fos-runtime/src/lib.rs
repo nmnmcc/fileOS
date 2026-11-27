@@ -342,19 +342,20 @@ impl Runtime {
     /// When the bundle is not an app, or its component does not start.
     pub fn app(&self, bundle: &Bundle, host: Arc<dyn AppHost>) -> Result<AppInstance, Error> {
         let component = self.component(bundle, Kind::App)?;
-        let mut store = Store::new(&self.engine, AppCtx::new(&bundle.manifest.id, host));
-        store.limiter(|ctx| &mut ctx.limits);
-        store.set_fuel(APP_FUEL).map_err(wasm_error)?;
         let mut linker = Linker::new(&self.engine);
         add_fos_to_linker(&mut linker)?;
         wasmtime_wasi_http::p2::add_to_linker_sync(&mut linker).map_err(wasm_error)?;
-        let bindings =
-            bindings::app::App::instantiate(&mut store, &component, &linker).map_err(wasm_error)?;
-        Ok(AppInstance {
+        let pre =
+            bindings::app::AppPre::new(linker.instantiate_pre(&component).map_err(wasm_error)?)
+                .map_err(wasm_error)?;
+        let app = AppInstance {
             manifest: bundle.manifest.clone(),
-            store,
-            bindings,
-        })
+            host,
+            pre,
+        };
+        // Start it once now, so a broken app is found at install.
+        app.instance()?;
+        Ok(app)
     }
 }
 
@@ -539,10 +540,15 @@ impl wit_log::Host for AppCtx {
 }
 
 /// A running app.
+/// An app, ready for events.
+///
+/// It is a worker: each event gets a new instance, with its own limits, and
+/// nothing stays in memory between events. Data that must stay goes into
+/// files, or into the app's cache.
 pub struct AppInstance {
     manifest: Manifest,
-    store: Store<AppCtx>,
-    bindings: bindings::app::App,
+    host: Arc<dyn AppHost>,
+    pre: bindings::app::AppPre<AppCtx>,
 }
 
 impl std::fmt::Debug for AppInstance {
@@ -574,11 +580,22 @@ impl AppInstance {
     ///
     /// When the app traps or runs out of fuel or memory.
     pub fn on_change(&mut self, path: &str) -> Result<(), Error> {
-        self.store.set_fuel(APP_FUEL).map_err(wasm_error)?;
-        self.bindings
-            .fos_app_events()
-            .call_on_change(&mut self.store, path)
+        let (mut store, app) = self.instance()?;
+        app.fos_app_events()
+            .call_on_change(&mut store, path)
             .map_err(wasm_error)
+    }
+
+    /// A new instance, with its own store and limits.
+    fn instance(&self) -> Result<(Store<AppCtx>, bindings::app::App), Error> {
+        let mut store = Store::new(
+            self.pre.engine(),
+            AppCtx::new(&self.manifest.id, Arc::clone(&self.host)),
+        );
+        store.limiter(|ctx| &mut ctx.limits);
+        store.set_fuel(APP_FUEL).map_err(wasm_error)?;
+        let app = self.pre.instantiate(&mut store).map_err(wasm_error)?;
+        Ok((store, app))
     }
 }
 

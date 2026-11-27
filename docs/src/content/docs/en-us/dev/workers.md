@@ -3,10 +3,11 @@ title: "Apps as workers"
 description: Apps belong to an identity and sync with it, are found by the identity, and run as event-driven workers on the nodes that people choose.
 ---
 
-:::note[Status: design]
-Nothing on this page is built yet. Today an app is installed on one node,
-has an ID that comes from that node, and serves HTTP itself (see
-[HTTP and the browser](../http/)).
+:::note[Status: built in part]
+Built: a new instance for each event and each HTTP request. Not built yet:
+apps that belong to the identity and sync, `wasi:filesystem`, watch options,
+schedules, and lists of nodes for each event. Today an app is installed on
+one node, and its ID comes from that node.
 :::
 
 ## Apps belong to the identity, not to a node
