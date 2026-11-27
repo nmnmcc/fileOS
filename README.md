@@ -65,8 +65,9 @@ To share `/photos` with another node: `fileos space grant /photos <its node key>
   - [x] Apps answer HTTP at their own origin, `<app-id>.localhost`, with `wasi:http`
   - [x] The photos app: a gallery, upload, and an index of image sizes
   - [x] The chat app: rooms with one file for each message, in a space that you share
+  - [x] Apps are workers: a new instance for each event and each request
   - [x] Schedules in the manifest: the kernel sends a request to the app's own handler
-  - [ ] Apps as workers, `wasi:filesystem`, watch options, schedules
+  - [ ] `wasi:filesystem`, watch options, events on the nodes that people pick
 - [ ] **Network and keys**
   - [x] libp2p: TCP, Noise, Yamux, mDNS, relays, hole punching, AutoNAT
   - [x] Encryption: keys that follow prefixes, HPKE (RFC 9180), new keys when access is taken back, keys destroyed on delete

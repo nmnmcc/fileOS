@@ -179,7 +179,8 @@ component of the `app` world in `wit/fileos.wit`:
 
 Rules for apps:
 
-- Every instance has limits on memory and fuel.
+- Apps are **workers**: each event and each request gets a new instance,
+  with limits on memory and fuel, and nothing stays in memory between them.
 - **Apps work together only through files.** One app writes; another app
   watches. There is no other way for apps to talk.
 - Our own apps and other people's apps use the same interface and the same
@@ -278,7 +279,9 @@ Dependencies go down only. Apps depend only on `fileos-app`.
 | People as principals (an identity acts for its devices)           | Yes                                          |
 | Views for apps, private app data, grants given at run time        | Yes                                          |
 | The picker, sharing between apps                                  | No                                           |
-| Apps as workers, watch options, `wasi:filesystem`, schedules      | No                                           |
+| Apps as workers: a new instance for each event                    | Yes                                          |
+| Schedules: a request from the kernel to the app                   | Yes                                          |
+| Watch options, `wasi:filesystem`, lists of nodes                  | No                                           |
 | Sign-in for people (OAuth with PKCE and DPoP)                     | No                                           |
 
 ## Costs and open questions
@@ -297,5 +300,5 @@ Dependencies go down only. Apps depend only on `fileos-app`.
 
 1. HPKE keys that each device changes from time to time.
 2. The picker (an app asks for a file), sharing between apps.
-3. Apps as workers: a new instance for each event, watch options, schedules.
+3. Watch options, `wasi:filesystem`, and lists of nodes for each event.
 4. Sign-in for people at the gateway.
