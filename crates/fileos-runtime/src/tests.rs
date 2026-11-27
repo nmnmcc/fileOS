@@ -145,3 +145,40 @@ fn schedule_times_are_read() {
     s("5x").seconds().unwrap_err();
     s("h").seconds().unwrap_err();
 }
+
+#[test]
+fn watch_options_pick_the_changes() {
+    assert!(glob("*.jpg", "a.jpg"));
+    assert!(glob("a?c*", "abcdef"));
+    assert!(!glob("*.jpg", "a.png"));
+    assert!(glob("*", ""));
+    let w = |recursive, filter: &[&str], kinds: &[ChangeKind]| Watch {
+        path: "/photos".into(),
+        recursive,
+        filter: filter.iter().map(|f| (*f).to_string()).collect(),
+        kinds: kinds.to_vec(),
+    };
+    let all = w(true, &[], &[]);
+    assert!(all.wants("/photos/2026/a.jpg", ChangeKind::Made));
+    assert!(all.wants("/photos", ChangeKind::Changed));
+    assert!(!all.wants("/photosx/a.jpg", ChangeKind::Made));
+    let flat = w(false, &[], &[]);
+    assert!(flat.wants("/photos/a.jpg", ChangeKind::Made));
+    assert!(!flat.wants("/photos/2026/a.jpg", ChangeKind::Made));
+    let jpg = w(
+        true,
+        &["*.jpg", "*.png"],
+        &[ChangeKind::Made, ChangeKind::Deleted],
+    );
+    assert!(jpg.wants("/photos/a.png", ChangeKind::Deleted));
+    assert!(!jpg.wants("/photos/a.png", ChangeKind::Changed));
+    assert!(!jpg.wants("/photos/notes.txt", ChangeKind::Made));
+    let root = Watch {
+        path: "/".into(),
+        recursive: false,
+        filter: Vec::new(),
+        kinds: Vec::new(),
+    };
+    assert!(root.wants("/a", ChangeKind::Made));
+    assert!(!root.wants("/a/b", ChangeKind::Made));
+}

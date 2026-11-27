@@ -108,6 +108,9 @@ reason = "reason.photos"  # resources/locales/ 里的键
 
 [[watch]]                 # on-change 会通知的路径
 path = "/photos"
+filter = ["*.jpg", "*.png"] # 可选：要通知的名字
+kinds = ["made", "changed", "deleted"] # 可选
+recursive = true          # 可选：也包括它下面的路径（默认）
 
 [[schedule]]              # 内核每天发送一次 POST /.well-known/fileos/schedule/reindex，
 name = "reindex"          # 带 fileos-event: schedule 头

@@ -71,6 +71,18 @@ CouchDB's `_changes` and Kubernetes' watch):
 | `batch`     | How many changes, or how long to wait, before one call                                                 |
 | `since`     | Go on from a position given before                                                                     |
 
+Built today, in `[[watch]]` in the manifest: `recursive` (on when not
+given), `kinds` and `filter` (patterns with `*` and `?`, on the last part of
+the name). The others need a new call into the app, and come later.
+
+```toml
+[[watch]]
+path      = "/photos"
+recursive = true
+filter    = ["*.jpg", "*.png"]
+kinds     = ["made", "deleted"]
+```
+
 Each call gets a batch of changes and a new position. When the call ends
 well, the position moves on; when it fails, the same batch comes again (at
 least once).

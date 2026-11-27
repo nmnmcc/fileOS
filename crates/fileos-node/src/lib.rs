@@ -28,7 +28,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use fileos_core::{Error, Hash, PublicKey, SecretKey};
 use fileos_id::{Link, NodeCert, Op as DidOp, Service, State};
-use fileos_runtime::{AppHost, AppInstance, Bundle, FsError, Kind, Runtime};
+use fileos_runtime::{AppHost, AppInstance, Bundle, ChangeKind, FsError, Kind, Runtime};
 use fileos_space::{
     Act, Content, Contents as _, Effect, Event, File, Id, Permission, Resource, Retention, Space,
     Step,
@@ -71,6 +71,9 @@ pub struct ViewMount {
 /// compacts it. A policy, with a default.
 const CHECKPOINT_AFTER: usize = 1000;
 
+/// Node paths that changed, and how, for the apps that watch them.
+type Changed = Mutex<VecDeque<(String, ChangeKind)>>;
+
 /// One node. Cheap to clone; all clones are the same node.
 #[derive(Clone)]
 pub struct Node {
@@ -89,7 +92,7 @@ struct Shared {
     /// The apps that give HTTP, by app ID: the name of their origin.
     http: Mutex<BTreeMap<String, HttpApp>>,
     /// Node paths that changed, for the apps that watch them.
-    changed: Mutex<VecDeque<String>>,
+    changed: Changed,
     /// The schedules of each app, by app ID.
     schedules: Mutex<BTreeMap<String, Vec<fileos_runtime::Schedule>>>,
     /// True once `start_schedules` ran: apps started later get their
@@ -113,7 +116,7 @@ struct Inner {
     /// For each space: the newest versions of each name, as apps last heard.
     seen: BTreeMap<Hash, BTreeMap<String, Vec<Id>>>,
     /// Node paths that wait for content before apps hear about them.
-    waiting: BTreeMap<Hash, Vec<String>>,
+    waiting: BTreeMap<Hash, Vec<(String, ChangeKind)>>,
     /// The last messages from apps and the kernel, newest last.
     logs: VecDeque<String>,
     /// The rotation key of the identity, when this node holds it.
@@ -645,7 +648,7 @@ impl Node {
                 existing.extend(inner.files_under(&watch.path));
             }
         }
-        lock(&self.shared.changed).extend(existing);
+        lock(&self.shared.changed).extend(existing.into_iter().map(|p| (p, ChangeKind::Made)));
         self.pump();
         Ok(Installed {
             key: app_key.public(),
@@ -683,7 +686,7 @@ impl Node {
         // The app hears of the files that are there already.
         let existing = inner.files_under(path);
         drop(inner);
-        lock(&self.shared.changed).extend(existing);
+        lock(&self.shared.changed).extend(existing.into_iter().map(|p| (p, ChangeKind::Made)));
         self.pump();
         Ok(format!("/{name}"))
     }
@@ -1115,7 +1118,7 @@ pub fn parse_grant(text: &str) -> Result<Id, Error> {
 
 fn pump(shared: &Shared) {
     loop {
-        let Some(path) = lock(&shared.changed).pop_front() else {
+        let Some((path, kind)) = lock(&shared.changed).pop_front() else {
             return;
         };
         // When the apps are busy, this is a write made by an app while it was
@@ -1124,7 +1127,7 @@ fn pump(shared: &Shared) {
             Ok(apps) => apps,
             Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
             Err(std::sync::TryLockError::WouldBlock) => {
-                lock(&shared.changed).push_front(path);
+                lock(&shared.changed).push_front((path, kind));
                 return;
             }
         };
@@ -1137,7 +1140,7 @@ fn pump(shared: &Shared) {
                 .collect()
         };
         for (app, paths) in apps.iter_mut().zip(seen) {
-            let paths: Vec<String> = paths.into_iter().filter(|p| app.watches(p)).collect();
+            let paths: Vec<String> = paths.into_iter().filter(|p| app.wants(p, kind)).collect();
             for path in &paths {
                 if let Err(e) = app.on_change(path) {
                     tracing::warn!("app {} failed on {path}: {e}", app.manifest().id);
@@ -1200,12 +1203,7 @@ impl Inner {
         }
     }
 
-    fn mount(
-        &mut self,
-        space: Hash,
-        at: &str,
-        changed: &Mutex<VecDeque<String>>,
-    ) -> Result<(), Error> {
+    fn mount(&mut self, space: Hash, at: &str, changed: &Changed) -> Result<(), Error> {
         let at = clean(at);
         if at.is_empty() || self.mounts().iter().any(|(m, _)| *m == at) {
             return Err(Error(format!("something is mounted at /{at} already")));
@@ -1233,7 +1231,7 @@ impl Inner {
         author: Option<&SecretKey>,
         space: Hash,
         acts: Vec<Act>,
-        changed: &Mutex<VecDeque<String>>,
+        changed: &Changed,
     ) -> Result<Id, Error> {
         let author = author.cloned().unwrap_or_else(|| self.key.clone());
         let (entry, step) = self.node.write_as(space, &author, now(), acts)?;
@@ -1258,7 +1256,7 @@ impl Inner {
         author: Option<&SecretKey>,
         path: &str,
         data: &[u8],
-        changed: &Mutex<VecDeque<String>>,
+        changed: &Changed,
     ) -> Result<(), Error> {
         let (space, name) = self.resolve(path);
         self.put_name(author, space, &name, data, changed)
@@ -1270,7 +1268,7 @@ impl Inner {
         space: Hash,
         name: &str,
         data: &[u8],
-        changed: &Mutex<VecDeque<String>>,
+        changed: &Changed,
     ) -> Result<(), Error> {
         let content = self.keep(data)?;
         let s = self
@@ -1297,7 +1295,7 @@ impl Inner {
         author: Option<&SecretKey>,
         path: &str,
         data: &[u8],
-        changed: &Mutex<VecDeque<String>>,
+        changed: &Changed,
     ) -> Result<(), Error> {
         let who = author.map_or_else(|| self.key.public(), SecretKey::public);
         let mut bytes = match self.read(who, path) {
@@ -1313,7 +1311,7 @@ impl Inner {
         &mut self,
         author: Option<&SecretKey>,
         path: &str,
-        changed: &Mutex<VecDeque<String>>,
+        changed: &Changed,
     ) -> Result<(), Error> {
         let at = clean(path);
         if author.is_none() && self.mounts().iter().any(|(m, _)| *m == at) {
@@ -1329,7 +1327,7 @@ impl Inner {
         author: Option<&SecretKey>,
         space: Hash,
         name: &str,
-        changed: &Mutex<VecDeque<String>>,
+        changed: &Changed,
     ) -> Result<(), Error> {
         let s = self
             .node
@@ -1365,7 +1363,7 @@ impl Inner {
         path: &str,
         to: Principal,
         permissions: &[Permission],
-        changed: &Mutex<VecDeque<String>>,
+        changed: &Changed,
     ) -> Result<Id, Error> {
         let (space, name) = self.resolve(path);
         let s = self
@@ -1386,7 +1384,7 @@ impl Inner {
         )
     }
 
-    fn checkpoint(&mut self, space: Hash, changed: &Mutex<VecDeque<String>>) -> Result<(), Error> {
+    fn checkpoint(&mut self, space: Hash, changed: &Changed) -> Result<(), Error> {
         let step = self.node.checkpoint(space, now(), Retention::default())?;
         self.process(step, changed)?;
         let (_, step) = self.node.compact(space);
@@ -1574,7 +1572,7 @@ impl Inner {
         path: &str,
         permissions: &[Permission],
         name: &str,
-        changed: &Mutex<VecDeque<String>>,
+        changed: &Changed,
     ) -> Result<(), Error> {
         let key = self.app_key(app).public();
         let (space, prefix) = self.resolve(path);
@@ -1591,12 +1589,7 @@ impl Inner {
     }
 
     /// Takes a mount away from the view of an app, and takes back its grant.
-    fn take_app(
-        &mut self,
-        app: &str,
-        name: &str,
-        changed: &Mutex<VecDeque<String>>,
-    ) -> Result<(), Error> {
+    fn take_app(&mut self, app: &str, name: &str, changed: &Changed) -> Result<(), Error> {
         let v = self
             .views(app)
             .into_iter()
@@ -1700,7 +1693,7 @@ impl Inner {
 
     /// Finds the names in a space whose newest versions changed since apps
     /// last heard, and notes their node paths (or waits for their content).
-    fn note(&mut self, space: Hash, changed: &Mutex<VecDeque<String>>) {
+    fn note(&mut self, space: Hash, changed: &Changed) {
         let Some(s) = self.node.space(space) else {
             return;
         };
@@ -1723,7 +1716,18 @@ impl Inner {
             .collect();
         let mut ready = Vec::new();
         for name in names {
-            let at = self.node_paths(space, name);
+            let kind = if !now.contains_key(name) {
+                ChangeKind::Deleted
+            } else if before.contains_key(name) {
+                ChangeKind::Changed
+            } else {
+                ChangeKind::Made
+            };
+            let at: Vec<(String, ChangeKind)> = self
+                .node_paths(space, name)
+                .into_iter()
+                .map(|p| (p, kind))
+                .collect();
             match contents.get(name).copied().flatten() {
                 Some(c) if !fileos_space::content::complete(&c, &self.store) => {
                     self.waiting.entry(c.hash).or_default().extend(at);
@@ -1735,7 +1739,7 @@ impl Inner {
     }
 
     /// Keeps what a step made, sends its messages, and notes changed paths.
-    fn process(&mut self, step: Step, changed: &Mutex<VecDeque<String>>) -> Result<(), Error> {
+    fn process(&mut self, step: Step, changed: &Changed) -> Result<(), Error> {
         if let Some(net) = &self.net {
             for (to, msg) in step.out {
                 let _ = net.send(fileos_net::Command::Send {
@@ -1793,7 +1797,7 @@ impl Inner {
 
     /// The default policy: a node makes a checkpoint of a space it owns when
     /// the space has many entries, and every node compacts when it can.
-    fn maybe_checkpoint(&mut self, space: Hash, changed: &Mutex<VecDeque<String>>) {
+    fn maybe_checkpoint(&mut self, space: Hash, changed: &Changed) {
         let Some(s) = self.node.space(space) else {
             return;
         };
@@ -1901,7 +1905,7 @@ impl Inner {
         did: &str,
         signing: &SecretKey,
         node: PublicKey,
-        changed: &Mutex<VecDeque<String>>,
+        changed: &Changed,
     ) -> Result<(), Error> {
         let cert = NodeCert::sign(did, signing, node);
         let path = format!("{IDENTITY_AT}{}", fileos_id::node_path(node));
@@ -1982,7 +1986,7 @@ impl Inner {
 
     /// When this node is a node of its identity, tells the kernel, so that a
     /// grant to the identity is a grant to this node too.
-    fn update_proof(&mut self, changed: &Mutex<VecDeque<String>>) -> Result<(), Error> {
+    fn update_proof(&mut self, changed: &Changed) -> Result<(), Error> {
         let Some(space) = self.identity_space() else {
             return Ok(());
         };
@@ -2028,7 +2032,7 @@ struct Host {
 }
 
 impl Host {
-    fn with<T>(&self, f: impl FnOnce(&mut Inner, &Mutex<VecDeque<String>>) -> T) -> Option<T> {
+    fn with<T>(&self, f: impl FnOnce(&mut Inner, &Changed) -> T) -> Option<T> {
         let shared = self.shared.upgrade()?;
         let out = f(&mut lock(&shared.inner), &shared.changed);
         // Apps hear of what an app wrote.

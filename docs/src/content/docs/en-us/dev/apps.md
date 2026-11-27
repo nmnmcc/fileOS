@@ -134,6 +134,9 @@ reason = "reason.photos"  # a key in resources/locales/
 
 [[watch]]                 # the paths that on-change is called for
 path = "/photos"
+filter = ["*.jpg", "*.png"] # optional: names to hear of
+kinds = ["made", "changed", "deleted"] # optional
+recursive = true          # optional: also paths under it (the default)
 
 [[schedule]]              # the kernel sends POST /.well-known/fileos/schedule/reindex
 name = "reindex"          # with fileos-event: schedule, once a day

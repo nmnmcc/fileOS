@@ -15,6 +15,7 @@ reason = "reason.photos"
 
 [[watch]]
 path = "/photos"
+filter = ["*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"]
 
 # Once a day, index every photo again, in case a change was missed.
 [[schedule]]
