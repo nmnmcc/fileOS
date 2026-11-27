@@ -603,8 +603,8 @@ fn a_deleted_file_cannot_be_opened_once_its_keys_are_dropped() {
     world
         .change(ming, space, secret, "secret.txt", None)
         .unwrap();
-    // Access to the space changes, so there is a new epoch; and time goes by,
-    // so the bin empties at the next checkpoint.
+    // Time goes by: the bin empties and the epoch is old, so the next
+    // checkpoint starts a new epoch and drops the old keys.
     let other = world.add(9);
     let grant = world.give(ming, space, other, &[FilesRead], all()).unwrap();
     world.take(ming, space, grant).unwrap();
@@ -623,4 +623,64 @@ fn a_deleted_file_cannot_be_opened_once_its_keys_are_dropped() {
         );
         assert_eq!(n.node.open(space, secret, &old, &n.contents), None);
     }
+}
+
+#[test]
+fn keys_go_to_the_newest_recipient_key_and_old_secrets_are_destroyed() {
+    let (mut world, ming, mom, space) = family();
+    let secret = world.put(ming, space, "secret", b"burn this").unwrap();
+    assert_eq!(world.read(mom, space, "secret"), [b"burn this".to_vec()]);
+    // Someone keeps a copy of every entry and every piece.
+    let archive = world.space(ming, space).unwrap().entries();
+    let pieces = world.nodes[ming].contents.0.clone();
+    let old = world
+        .space(ming, space)
+        .unwrap()
+        .file(secret)
+        .unwrap()
+        .versions[0]
+        .clone();
+    let first = world.nodes[mom].node.recipients()[0].1;
+
+    // The file is deleted; time goes by, so the epoch changes and the bin
+    // empties. Mom's device changes its recipient key two times.
+    world.change(ming, space, secret, "secret", None).unwrap();
+    world.wait(31 * 24 * 60 * 60 * 1000);
+    world.put(ming, space, "later", b"new").unwrap();
+    world.rotate(mom);
+    world.rotate(mom);
+    world.checkpoint(ming, space).unwrap();
+    world.compact(ming, space);
+    world.compact(mom, space);
+    assert_eq!(world.read(mom, space, "later"), [b"new".to_vec()]);
+    let kept = world.nodes[mom].node.recipients();
+    assert_eq!(kept.len(), 2, "only the newest and the one before");
+    assert!(
+        kept.iter().all(|(_, k)| *k != first),
+        "the first secret is gone"
+    );
+
+    // Later, Mom's device is stolen: its key and the secrets it still has.
+    // With the copy kept from before, the deleted file stays closed.
+    let stolen: Vec<fos_space::crypto::Recipient> = kept
+        .iter()
+        .map(|(_, k)| fos_space::crypto::Recipient::from_secret(*k))
+        .collect();
+    let mut copy = fos_space::Space::from_genesis(&archive[0]).unwrap();
+    copy.insert(archive[1..].to_vec()).unwrap();
+    let mom_key = world.nodes[mom].key.clone();
+    let ring = copy.keyring_with(&[&mom_key], &stolen);
+    assert_eq!(copy.data_keys(&ring, secret, &old), Vec::<[u8; 32]>::new());
+    // With the secret that was destroyed, it would open: so the change of
+    // keys is what keeps it closed.
+    let ring = copy.keyring_with(
+        &[&mom_key],
+        &[fos_space::crypto::Recipient::from_secret(first)],
+    );
+    let keys = copy.data_keys(&ring, secret, &old);
+    let store = MemContents(pieces);
+    assert!(
+        keys.iter()
+            .any(|k| fos_space::content::open(&old.content.unwrap(), k, &store).is_some())
+    );
 }

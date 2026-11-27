@@ -7,6 +7,7 @@
 //! ```text
 //! node.key                the seed of the node key (32 bytes)
 //! identity-*.key          the keys of an identity, on the node that holds them
+//! recipients.key          the secrets this node gets keys with (the newest two)
 //! home                    the ID of the home space of the node
 //! blobs/<hash>            content: chunks and lists of chunks, by their hash
 //! spaces/<id>.log         the entries of each space, one after the other
@@ -131,6 +132,43 @@ impl Store {
             )));
         }
         write_atomic(&self.dir.join(format!("identity-{usage}.key")), &key.seed())
+    }
+
+    /// The recipient secrets of this node, with the time each was made.
+    ///
+    /// # Errors
+    ///
+    /// When the file is there but cannot be read, or is broken.
+    pub fn recipients(&self) -> Result<Vec<(u64, [u8; 32])>, Error> {
+        let path = self.dir.join("recipients.key");
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(io_error(&path, &e)),
+        };
+        let kept: Vec<(u64, Bytes)> = decode(&bytes)?;
+        kept.into_iter()
+            .map(|(t, k)| {
+                let k: [u8; 32] = k.0.try_into().map_err(|bytes: Vec<u8>| {
+                    Error(format!(
+                        "recipients.key has a secret of {} bytes, not 32",
+                        bytes.len()
+                    ))
+                })?;
+                Ok((t, k))
+            })
+            .collect()
+    }
+
+    /// Keeps the recipient secrets of this node, in place of the ones before:
+    /// a secret that is not given again is destroyed.
+    ///
+    /// # Errors
+    ///
+    /// When the file cannot be written.
+    pub fn set_recipients(&self, kept: &[(u64, [u8; 32])]) -> Result<(), Error> {
+        let kept: Vec<(u64, Bytes)> = kept.iter().map(|(t, k)| (*t, Bytes(k.to_vec()))).collect();
+        write_atomic(&self.dir.join("recipients.key"), &encode(&kept))
     }
 
     /// The token that a local client gives to the gateway. It is made the first time.
