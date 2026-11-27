@@ -178,7 +178,7 @@ check    # 格式、Clippy、测试、Rustdoc、依赖、WASM、Python、MSRV
 budget   # 编译时间预算
 ```
 
-工作区在 `Cargo.toml` 中声明最低 Rust 版本。Nix 使用该版本检查锁定依赖下的所有原生目标。
+工作区在 `Cargo.toml` 中声明最低 Rust 版本。Nix 使用该版本检查锁定依赖下的所有原生目标。CI 将它放在独立任务中，与其他检查并行执行。CI 会为 `check` 缓存 Rust 依赖，`budget` 则每次都从空的构建目录开始。
 
 `apps` 会把 App 编译到 `target/apps/`。`fileos-runtime` 和 `fileos-node` 的测试要用到它们，所以先运行 `apps`，再运行 `cargo test`。`check` 会自动做这一步。
 
@@ -200,7 +200,7 @@ uv run scripts/budget.py
 3. 向 `main` 发起 PR，GitHub 会自动请求代码所有者审查。
 4. `ci` 检查通过、所有评论都已解决后即可合并。只用 “Squash and merge”：每个 PR 在 `main` 上对应一个提交，第一行是 PR 标题。合并后自动删除分支。
 
-只有 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 中的所有任务（`check`、`budget`、`artifacts`，PR 还有 `dco`）都通过，`ci` 才会通过。修改了 `docs/` 的 PR 还会试构建文档站点；合并到 `main` 后，站点发布到 <https://docs.fileos.app/>。
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 中的 `check`、`msrv`、`budget`、`artifacts`（PR 还有 `dco`）都通过后，`ci` 才会通过。修改了 `docs/` 的 PR 还会试构建文档站点；合并到 `main` 后，站点发布到 <https://docs.fileos.app/>。
 
 Dependabot 会为依赖更新开 PR：GitHub Actions 每周一次，Cargo、npm 和 uv 每月一次。这些 PR 走同样的检查。主版本升级按新增依赖的标准审查（见“依赖政策”）。
 
@@ -236,4 +236,6 @@ knope prepare-release
 
 Knope 根据变更文件算出新版本号，写入 `Cargo.toml` 和 `apps/Cargo.toml`，把变更文件写进 `CHANGELOG.md` 中新版本的小节，然后删除这些文件。随后 [`scripts/release_pr.py`](scripts/release_pr.py) 建立分支 `release/v<版本>`，提交一个 commit 并开 PR。
 
-该 PR 合并后，[Release 工作流](.github/workflows/release.yml) 发现 `Cargo.toml` 中的版本还没有对应标签，于是构建发布文件（包含 `fileos` 和各个 `.app` 文件夹的 `fileos-<版本>-linux-x86_64.tar.gz`、文档和 `SHA256SUMS`）并执行 `knope release`。Knope 创建标签 `v<版本>` 和 GitHub Release，发布说明取自 `CHANGELOG.md` 中该版本的小节。
+`main` 上的检查通过后，CI 会调用 [Release 工作流](.github/workflows/release.yml)。如果 `Cargo.toml` 中的版本还没有对应标签，Release 会取用本次 CI 生成的文件，为 `fileos-<版本>-linux-x86_64.tar.gz`（包含 `fileos` 和各个 `.app` 文件夹）和文档归档生成 `SHA256SUMS`。然后 `knope release` 创建标签 `v<版本>` 和 GitHub Release，发布说明取自 `CHANGELOG.md`。
+
+如需手动运行，在 `main` 上启动 CI 工作流并启用 `release` 选项。
