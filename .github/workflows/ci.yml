@@ -10,6 +10,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: Publish a new release after CI passes on main
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -29,7 +34,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/devenv
-      - run: devenv shell -- check
+      - name: Find the Rust tools in devenv
+        run: |
+          devenv shell -- bash -e <<'BASH'
+          dirname "$(command -v rustc)" >> "$GITHUB_PATH"
+          BASH
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-bin: false
+          key: ${{ hashFiles('devenv.lock', 'devenv.nix', 'devenv.yaml') }}
+          workspaces: |
+            .
+            apps
+      - run: devenv shell -- check --group standard
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/devenv
+      - run: devenv shell -- check --group msrv
 
   # Fails if a build goes over its compile-time budget (scripts/budget.py).
   budget:
@@ -44,25 +68,47 @@ jobs:
         with:
           name: cargo-timings
           path: target/cargo-timings/cargo-timing.html
+          overwrite: true
 
   # Release artifacts, built in the Nix sandbox in the same way as a local `devenv build`.
   artifacts:
     name: artifacts
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      fos: ${{ steps.fos.outputs.artifact-id }}
+      docs: ${{ steps.docs.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/devenv
       - run: devenv shell -- artifacts
+      - name: Pack the release files
+        id: package
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          name="fos-$version-linux-x86_64"
+          mkdir "$name" release
+          cp -rP artifacts/fos artifacts/apps LICENSE PLUGIN-EXCEPTION.md README.md CHANGELOG.md "$name/"
+          tar -czf "release/$name.tar.gz" "$name"
+          tar -czf "release/fileos-docs-$version.tar.gz" -C artifacts docs
       - uses: actions/upload-artifact@v7
+        id: fos
         with:
           name: fos-linux-x86_64
-          path: |
-            artifacts/fos
-            artifacts/apps
+          path: release/fos-${{ steps.package.outputs.version }}-linux-x86_64.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
       - uses: actions/upload-artifact@v7
+        id: docs
         with:
           name: docs
-          path: artifacts/docs
+          path: release/fileos-docs-${{ steps.package.outputs.version }}.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
 
   # Every commit in a pull request has a sign-off (CONTRIBUTING.md).
   dco:
@@ -76,14 +122,24 @@ jobs:
       - uses: ./.github/actions/devenv
       - run: devenv shell -- dco "origin/${{ github.base_ref }}" HEAD
 
-  # The only check that the branch rules need. It is green when every job above
-  # is green or was not needed, so jobs may be added or renamed here with no
-  # change to the rules.
+  # The branch rules need this check. It passes when the checks it needs pass
+  # or are skipped.
   ci:
     name: ci
     if: always()
-    needs: [check, budget, artifacts, dco]
+    needs: [check, msrv, budget, artifacts, dco]
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          echo '${{ toJSON(needs) }}' | jq -e 'all(.[]; .result == "success" or .result == "skipped")'
+      - env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<< "$JOB_RESULTS"
+
+  release:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.release)
+    needs: [ci, artifacts]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.artifacts.outputs.version }}
+      artifact-ids: ${{ needs.artifacts.outputs.fos }},${{ needs.artifacts.outputs.docs }}
