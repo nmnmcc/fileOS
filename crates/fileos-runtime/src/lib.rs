@@ -569,6 +569,8 @@ impl wit_log::Host for AppCtx {
     }
 }
 
+type OnChange<'path> = TypedFunc<(&'path str,), ()>;
+
 /// A running app.
 /// An app, ready for events.
 ///
@@ -616,7 +618,7 @@ impl AppInstance {
     }
 
     /// A new instance, with its own store and limits.
-    fn instance<'path>(&self) -> Result<(Store<AppCtx>, TypedFunc<(&'path str,), ()>), Error> {
+    fn instance<'path>(&self) -> Result<(Store<AppCtx>, OnChange<'path>), Error> {
         let mut store = Store::new(
             self.pre.engine(),
             AppCtx::new(&self.manifest.id, Arc::clone(&self.host)),
