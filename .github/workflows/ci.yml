@@ -130,8 +130,9 @@ jobs:
     needs: [check, msrv, budget, artifacts, dco]
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          echo '${{ toJSON(needs) }}' | jq -e 'all(.[]; .result == "success" or .result == "skipped")'
+      - env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<< "$JOB_RESULTS"
 
   release:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.release)
