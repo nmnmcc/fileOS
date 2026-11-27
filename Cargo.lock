@@ -1151,6 +1151,7 @@ name = "fos-sim"
 version = "0.1.0"
 dependencies = [
  "fos-core",
+ "fos-id",
  "fos-space",
 ]
 
@@ -1159,6 +1160,7 @@ name = "fos-space"
 version = "0.1.0"
 dependencies = [
  "fos-core",
+ "fos-id",
  "serde",
 ]
 

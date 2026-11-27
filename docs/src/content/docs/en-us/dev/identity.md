@@ -104,6 +104,15 @@ signing key makes a new identity space, and the operation names it.
 `fos identity remove-node <node key>` deletes the certificate and takes back
 the node's grant on the identity space.
 
+### A grant to a person
+
+`fos space grant /family did:fos:… read-write` gives the permissions to the
+person, so to every node of their identity, also to nodes added later. Each
+node shows its certificate when it connects; a node that has the space writes
+a vouch for it (see [The model](../access/#principals)). To take a lost device
+away from every space at once, the identity gets a new signing key, and gives
+new certificates to the nodes it keeps.
+
 ### Identity links
 
 A person gives their identity as a DID URL with hints:

@@ -126,7 +126,8 @@ enum SpaceCommand {
     New { at: String },
     /// Mount a space from other nodes at a path.
     Mount { id: String, at: String },
-    /// Give a key permissions on a path: on the file there, or on every
+    /// Give a node key, or a person (`did:fos:…`, for all their nodes),
+    /// permissions on a path: on the file there, or on every
     /// name under it. PERMISSIONS are exact names (files.read, access.give,
     /// and so on) or templates (read, read-write, manage, relay), with
     /// commas. Prints the ID of the grant.

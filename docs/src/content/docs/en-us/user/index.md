@@ -82,6 +82,11 @@ You can also give exact permissions, such as `files.read,files.create`. A
 grant on a path that is a file follows that file when it is renamed; a grant
 on a directory is on every name under it.
 
+To share with a person and all their devices, give the access to their
+identity in place of a node key:
+`fos space grant /family did:fos:… read-write`. Each of their nodes, also
+ones they add later, then gets the space.
+
 `fos space grants /family` lists the grants. `fos space take /family <grant ID>`
 takes one back, and with it what was given on from it. What someone did at
 the same time as you took their access back has no effect.

@@ -30,14 +30,15 @@ use fos_core::{Error, Hash, PublicKey, SecretKey};
 use fos_id::{Link, NodeCert, Op as DidOp, Service, State};
 use fos_runtime::{AppHost, AppInstance, Bundle, FsError, Kind, Runtime};
 use fos_space::{
-    Act, Content, Contents as _, Effect, Event, File, Id, Permission, Principal, Resource,
-    Retention, Space, Step,
+    Act, Content, Contents as _, Effect, Event, File, Id, Permission, Resource, Retention, Space,
+    Step,
 };
 use fos_store::Store;
 use tokio::sync::mpsc;
 
 pub use fos_net::Config as NetConfig;
 pub use fos_runtime::{Answer, HttpApp};
+pub use fos_space::Principal;
 
 /// Where the identity space is mounted in the home space.
 pub const IDENTITY_AT: &str = "/identity";
@@ -364,6 +365,7 @@ impl Node {
         for id in inner.node.spaces().map(Space::id).collect::<Vec<_>>() {
             inner.note(id, &Mutex::new(VecDeque::new()));
         }
+        inner.update_proof(&Mutex::new(VecDeque::new()))?;
         let node = Node {
             shared: Arc::new(Shared {
                 inner: Mutex::new(inner),
@@ -480,13 +482,24 @@ impl Node {
         to: PublicKey,
         permissions: &[Permission],
     ) -> Result<Id, Error> {
-        let result = self.inner().grant(
-            None,
-            path,
-            Principal::Key(to),
-            permissions,
-            &self.shared.changed,
-        );
+        self.grant_to(path, Principal::Key(to), permissions)
+    }
+
+    /// Gives a principal permissions on `path`, as [`Node::grant`] does. With
+    /// [`Principal::Identity`], every node of that person gets them.
+    ///
+    /// # Errors
+    ///
+    /// When the node may not give them.
+    pub fn grant_to(
+        &self,
+        path: &str,
+        to: Principal,
+        permissions: &[Permission],
+    ) -> Result<Id, Error> {
+        let result = self
+            .inner()
+            .grant(None, path, to, permissions, &self.shared.changed);
         self.pump();
         result
     }
@@ -521,7 +534,7 @@ impl Node {
                     "{} {:?} -> {:?} {:?} on {:?}{}",
                     grant_text(g_.id),
                     g_.effect,
-                    g_.to,
+                    principal_text(g_.to),
                     g_.permissions,
                     g_.on,
                     if g.in_effect { "" } else { " (not in effect)" }
@@ -881,6 +894,28 @@ impl Node {
     pub fn pump(&self) {
         pump(&self.shared);
     }
+}
+
+/// A principal as people write it: a key, `did:fos:…`, or `group:<id>`.
+fn principal_text(p: Principal) -> String {
+    match p {
+        Principal::Key(k) => k.to_string(),
+        Principal::Identity(d) => fos_id::did_of(d),
+        Principal::Group(id) => format!("group:{}", grant_text(id)),
+    }
+}
+
+/// Reads a principal: a node or app key in hex, or a `did:fos` DID for a
+/// person and all their nodes.
+///
+/// # Errors
+///
+/// When the text is neither.
+pub fn parse_principal(text: &str) -> Result<Principal, Error> {
+    if text.starts_with("did:") {
+        return fos_id::did_hash(text).map(Principal::Identity);
+    }
+    text.parse().map(Principal::Key)
 }
 
 /// A grant ID as text: the hash of its entry and its index.
@@ -1366,6 +1401,9 @@ impl Inner {
                     self.save(space)?;
                     self.note(space, changed);
                     self.maybe_checkpoint(space, changed);
+                    if self.identity_space() == Some(space) {
+                        self.update_proof(changed)?;
+                    }
                 }
                 Event::Content(data) => {
                     let hash = Hash::of(&data);
@@ -1389,6 +1427,8 @@ impl Inner {
                         let paths = self.waiting.remove(&h).unwrap_or_default();
                         lock(changed).extend(paths);
                     }
+                    // The certificate of this node may be what just came.
+                    self.update_proof(changed)?;
                 }
                 Event::Again { space, entries } => {
                     self.log(format!(
@@ -1586,6 +1626,33 @@ impl Inner {
             also_known_as: state.also_known_as,
             nodes,
         })
+    }
+
+    /// When this node is a node of its identity, tells the kernel, so that a
+    /// grant to the identity is a grant to this node too.
+    fn update_proof(&mut self, changed: &Mutex<VecDeque<String>>) -> Result<(), Error> {
+        let Some(space) = self.identity_space() else {
+            return Ok(());
+        };
+        let me = self.key.public().to_string();
+        let ops: Vec<fos_core::Bytes> = self
+            .files_in(space, fos_id::OPS)
+            .into_iter()
+            .map(|(_, bytes)| fos_core::Bytes(bytes))
+            .collect();
+        let Some(cert) = self
+            .files_in(space, fos_id::NODES)
+            .into_iter()
+            .find(|(name, _)| *name == me)
+            .map(|(_, bytes)| fos_core::Bytes(bytes))
+        else {
+            return Ok(());
+        };
+        match self.node.set_identity(ops, cert) {
+            Ok(step) => self.process(step, changed),
+            // Not a good certificate (yet, or any more): nothing to show.
+            Err(_) => Ok(()),
+        }
     }
 
     fn app_key(&self, app: &str) -> SecretKey {

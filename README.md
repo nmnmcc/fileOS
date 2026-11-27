@@ -70,7 +70,7 @@ To share `/photos` with another node: `fos space grant /photos <its node key> re
 - [ ] **Identity**
   - [x] One identity for a person: a DID (`did:fos`, the `did:plc` method with no directory), apart from the keys of their nodes
   - [x] Rotation keys and a signing key; node certificates in an identity space
-  - [ ] An identity acting for all its devices
+  - [x] An identity acting for all its devices: a grant to a `did:fos` is a grant to each of its nodes
   - [ ] Domain names as other names of an identity (as AT Protocol handles)
   - [ ] Finding all the nodes of an identity through rendezvous nodes
 - [x] **Running a node**

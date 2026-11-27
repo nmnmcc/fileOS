@@ -29,8 +29,12 @@ pub enum Principal {
     /// A key: a device, a node or an app. It signs entries.
     Key(PublicKey),
     /// A group, by the act that made it. It has no key: its members act for
-    /// it. A person with many devices is a group of their device keys.
+    /// it.
     Group(Id),
+    /// A person: a `did:fos` identity, by the hash of the first operation of
+    /// its DID log. Its nodes act for it, once a `Vouch` in the space shows
+    /// that they are its nodes.
+    Identity(Hash),
 }
 
 /// An exact permission. Templates such as "Read and write" are lists of
@@ -141,6 +145,10 @@ pub enum Act {
     /// Makes a group. Its ID is the place of this act. The owner never
     /// changes, and may be a group (owned by a group, and so on).
     Group { owner: Principal },
+    /// Shows that a node is a node of an identity: the operations of the DID
+    /// log, and a node certificate signed by the signing key of the identity.
+    /// Every node checks it with nothing else, so anyone may write it.
+    Vouch { ops: Vec<Bytes>, cert: Bytes },
     /// Makes the state in the past of this entry final, and signs its hash
     /// (see `space::Summary`). Made by the owner, or by a principal with
     /// `space.checkpoint` on the whole space. It is alone in its entry.

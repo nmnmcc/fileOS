@@ -43,7 +43,7 @@ use std::path::PathBuf;
 
 use bytes::Bytes;
 use fos_core::Error;
-use fos_node::{Node, parse_grant, parse_permissions};
+use fos_node::{Node, parse_grant, parse_permissions, parse_principal};
 use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt as _, Full};
 use hyper::body::Incoming;
@@ -337,8 +337,8 @@ fn route(
         return match *method {
             Method::GET => ok(node.grants(at).into_iter().map(|l| l + "\n").collect()),
             Method::POST => {
-                let to = arg("to")?.parse()?;
-                let id = node.grant(at, to, &parse_permissions(&arg("permissions")?)?)?;
+                let to = parse_principal(&arg("to")?)?;
+                let id = node.grant_to(at, to, &parse_permissions(&arg("permissions")?)?)?;
                 ok(format!("{}:{}\n", id.entry, id.index))
             }
             Method::DELETE => node

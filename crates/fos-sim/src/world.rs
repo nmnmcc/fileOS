@@ -107,6 +107,49 @@ impl World {
         self.nodes[b].node.disconnected(ka);
     }
 
+    /// Makes a node a node of an identity: `ops` is the DID log, and `cert`
+    /// the node certificate.
+    ///
+    /// # Errors
+    ///
+    /// When the certificate is not good for the node.
+    pub fn set_identity(
+        &mut self,
+        node: usize,
+        ops: Vec<fos_core::Bytes>,
+        cert: fos_core::Bytes,
+    ) -> Result<(), Error> {
+        let step = self.nodes[node].node.set_identity(ops, cert)?;
+        self.apply(node, step);
+        self.run();
+        Ok(())
+    }
+
+    /// Gives a principal (a key, a group or an identity) permissions.
+    ///
+    /// # Errors
+    ///
+    /// When the node may not give them.
+    pub fn give_to(
+        &mut self,
+        node: usize,
+        space: Hash,
+        to: Principal,
+        permissions: &[Permission],
+        on: Resource,
+    ) -> Result<Id, Error> {
+        self.write(
+            node,
+            space,
+            vec![Act::Give {
+                to,
+                effect: Effect::Allow,
+                permissions: permissions.to_vec(),
+                on,
+            }],
+        )
+    }
+
     /// Makes a space owned by the node's key.
     pub fn create(&mut self, node: usize) -> Hash {
         let time = self.tick();
