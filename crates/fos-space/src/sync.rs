@@ -104,6 +104,10 @@ pub struct Node {
     identity: Option<Proof>,
     /// What connected peers showed about their identities.
     proofs: BTreeMap<PublicKey, Proof>,
+    /// The vouches and unvouches this node has tried to write, by (space,
+    /// node, hash of the certificate or revocation), so each is tried once
+    /// and writing one never starts writing it again.
+    tried: BTreeSet<(Hash, PublicKey, Hash)>,
     /// Node revocations this node knows: (the identity, the node, the bytes).
     revocations: Vec<(Hash, PublicKey, Bytes)>,
     /// The newest time this node has seen, for what it writes when a
@@ -126,6 +130,7 @@ impl Node {
             identity: None,
             proofs: BTreeMap::new(),
             revocations: Vec::new(),
+            tried: BTreeSet::new(),
             time: 0,
         }
     }
@@ -258,18 +263,22 @@ impl Node {
     /// Writes the `Unvouch`es that the spaces here still lack.
     fn unvouch_all(&mut self, step: &mut Step) {
         let time = self.last_time();
-        let todo: Vec<(Hash, Bytes)> = self
+        let todo: Vec<(Hash, PublicKey, Bytes)> = self
             .revocations
             .iter()
             .flat_map(|(did, node, bytes)| {
                 self.spaces
                     .values()
                     .filter(|s| s.is_node_of(*node, *did))
-                    .map(|s| (s.id(), bytes.clone()))
+                    .filter(|s| !self.tried.contains(&(s.id(), *node, Hash::of(&bytes.0))))
+                    .map(|s| (s.id(), *node, bytes.clone()))
                     .collect::<Vec<_>>()
             })
             .collect();
-        for (space, bytes) in todo {
+        for (space, node, bytes) in todo {
+            if !self.tried.insert((space, node, Hash::of(&bytes.0))) {
+                continue;
+            }
             let act = Act::Unvouch { revocation: bytes };
             if let Ok((_, more)) = self.write(space, time, vec![act]) {
                 step.out.extend(more.out);
@@ -303,6 +312,9 @@ impl Node {
             .map(Space::id)
             .collect();
         for space in spaces {
+            if !self.tried.insert((space, node, Hash::of(&cert.0))) {
+                continue;
+            }
             let act = Act::Vouch {
                 ops: ops.to_vec(),
                 cert: cert.clone(),
@@ -394,6 +406,9 @@ impl Node {
             && let Some((did, ops, cert)) = &self.identity
             && s.identities().contains(did)
             && !s.is_node_of(author.public(), *did)
+            && self
+                .tried
+                .insert((space, author.public(), Hash::of(&cert.0)))
         {
             new.push(s.write(
                 author,
