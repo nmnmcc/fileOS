@@ -53,12 +53,6 @@ pub const FOLDER_SERVICE: &str = "fileos_identity";
 /// The type of the service that names the identity folder.
 pub const FOLDER_SERVICE_TYPE: &str = "FileOSIdentityFolder";
 
-const DID_PREFIX: &str = "did:fileos:";
-const LEGACY_DID_PREFIX: &str = "did:fos:";
-const LEGACY_SIGNING_METHOD: &str = "fos";
-const LEGACY_FOLDER_SERVICE: &str = "fos_identity";
-const LEGACY_FOLDER_SERVICE_TYPE: &str = "FosIdentityFolder";
-
 /// The most rotation keys an operation may have, as in `did:plc`.
 pub const MAX_ROTATION_KEYS: usize = 5;
 
@@ -147,11 +141,6 @@ fn unbase32(text: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn did_suffix(did: &str) -> Option<&str> {
-    did.strip_prefix(DID_PREFIX)
-        .or_else(|| did.strip_prefix(LEGACY_DID_PREFIX))
-}
-
 /// The hash of the first operation of `did`: the part of the DID after
 /// `did:fileos:`.
 ///
@@ -160,15 +149,17 @@ fn did_suffix(did: &str) -> Option<&str> {
 /// When the text is not a `did:fileos` DID.
 pub fn did_hash(did: &str) -> Result<Hash, Error> {
     let bad = || Error(format!("not a did:fileos DID: {did:?}"));
-    let suffix = did_suffix(did).ok_or_else(bad)?;
-    let bytes = unbase32(suffix).ok_or_else(bad)?;
+    let bytes = did
+        .strip_prefix("did:fileos:")
+        .and_then(unbase32)
+        .ok_or_else(bad)?;
     let hash = Hash::try_from(bytes.as_slice()).ok().ok_or_else(bad)?;
-    (base32(&hash.0) == suffix).then_some(hash).ok_or_else(bad)
+    (did_of(hash) == did).then_some(hash).ok_or_else(bad)
 }
 
 /// The DID whose first operation has the hash `hash`.
 pub fn did_of(hash: Hash) -> String {
-    format!("{DID_PREFIX}{}", base32(&hash.0))
+    format!("did:fileos:{}", base32(&hash.0))
 }
 
 // Operations
@@ -210,24 +201,15 @@ impl State {
 
     /// The signing key of the identity in fileOS, if it has one.
     pub fn signing_key(&self) -> Option<PublicKey> {
-        let key = self
-            .verification_methods
-            .get(SIGNING_METHOD)
-            .or_else(|| self.verification_methods.get(LEGACY_SIGNING_METHOD))?;
-        parse_did_key(key).ok()
+        parse_did_key(self.verification_methods.get(SIGNING_METHOD)?).ok()
     }
 
     /// The ID of the identity folder, if the state names one.
     pub fn folder(&self) -> Option<Hash> {
-        let (service, kind) = if let Some(service) = self.services.get(FOLDER_SERVICE) {
-            (service, FOLDER_SERVICE_TYPE)
-        } else {
-            (
-                self.services.get(LEGACY_FOLDER_SERVICE)?,
-                LEGACY_FOLDER_SERVICE_TYPE,
-            )
-        };
-        (service.kind == kind).then_some(())?;
+        let service = self.services.get(FOLDER_SERVICE)?;
+        if service.kind != FOLDER_SERVICE_TYPE {
+            return None;
+        }
         service.endpoint.parse().ok()
     }
 
@@ -274,8 +256,7 @@ pub struct Op {
 /// What an operation signs. The first part keeps the signature from being
 /// used as a signature of anything else.
 fn op_message(change: &Change, prev: Option<Hash>, key: PublicKey) -> Vec<u8> {
-    // Keep the signed bytes the same so old logs still verify.
-    encode(&("did:fos operation", change, prev, key))
+    encode(&("did:fileos operation", change, prev, key))
 }
 
 impl Op {
@@ -314,13 +295,6 @@ impl Op {
 
     /// The DID that this operation makes, if it is a first operation.
     pub fn did(&self) -> String {
-        // Keep the spelling used in the certificates of existing identities.
-        if matches!(&self.change, Change::Update(state)
-            if !state.verification_methods.contains_key(SIGNING_METHOD)
-                && state.verification_methods.contains_key(LEGACY_SIGNING_METHOD))
-        {
-            return format!("{LEGACY_DID_PREFIX}{}", base32(&self.hash().0));
-        }
         did_of(self.hash())
     }
 
@@ -386,10 +360,9 @@ pub fn dids(ops: &[Op]) -> Vec<String> {
 ///
 /// When no valid first operation makes `did`.
 pub fn resolve(did: &str, ops: &[Op]) -> Result<Resolved, Error> {
-    let hash = did_hash(did)?;
     let genesis = ops
         .iter()
-        .find(|op| op.prev.is_none() && op.hash() == hash && valid_genesis(op))
+        .find(|op| op.did() == did && valid_genesis(op))
         .ok_or_else(|| Error(format!("no valid first operation for {did}")))?;
     let mut children: BTreeMap<Hash, Vec<&Op>> = BTreeMap::new();
     for op in ops {
@@ -571,8 +544,9 @@ impl FromStr for Link {
 
     fn from_str(text: &str) -> Result<Self, Error> {
         let (did, query) = text.split_once('?').unwrap_or((text, ""));
-        let id =
-            did_suffix(did).ok_or_else(|| Error(format!("not a did:fileos link: {text:?}")))?;
+        let id = did
+            .strip_prefix("did:fileos:")
+            .ok_or_else(|| Error(format!("not a did:fileos link: {text:?}")))?;
         if id.is_empty() || !id.bytes().all(|b| BASE32.contains(&b)) {
             return Err(Error(format!("not a did:fileos link: {text:?}")));
         }
@@ -603,49 +577,6 @@ mod tests {
             verification_methods: [(SIGNING_METHOD.to_string(), did_key(signing.public()))].into(),
             also_known_as: Vec::new(),
             services: BTreeMap::new(),
-        }
-    }
-
-    #[test]
-    fn old_dids_and_signed_logs_still_work() {
-        let rotation = key(1);
-        let signing = key(2);
-        let folder = Hash::of(b"identity folder");
-        let old_state = State {
-            rotation_keys: vec![did_key(rotation.public())],
-            verification_methods: [("fos".into(), did_key(signing.public()))].into(),
-            services: [(
-                "fos_identity".into(),
-                Service {
-                    kind: "FosIdentityFolder".into(),
-                    endpoint: folder.to_string(),
-                },
-            )]
-            .into(),
-            ..State::default()
-        };
-        let change = Change::Update(old_state);
-        let key = rotation.public();
-        let prev = None::<Hash>;
-        let sig = rotation.sign(&encode(&("did:fos operation", &change, prev, key)));
-        let ops = [Op {
-            change,
-            prev,
-            key,
-            sig,
-        }];
-        let did = did_of(ops[0].hash());
-        let old_did = did.replacen("did:fileos:", "did:fos:", 1);
-        assert_eq!(ops[0].did(), old_did);
-        let link: Link = format!("{old_did}?r=/ip4/127.0.0.1/tcp/7341")
-            .parse()
-            .unwrap();
-        assert_eq!(link.did, old_did);
-        for name in [did, old_did] {
-            assert_eq!(did_hash(&name).unwrap(), ops[0].hash());
-            let state = resolve(&name, &ops).unwrap().state.unwrap();
-            assert_eq!(state.signing_key(), Some(signing.public()));
-            assert_eq!(state.folder(), Some(folder));
         }
     }
 

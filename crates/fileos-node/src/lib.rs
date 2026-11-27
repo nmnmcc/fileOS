@@ -1026,7 +1026,15 @@ impl Node {
             .http_app(app)
             .filter(|_| known)
             .ok_or_else(|| Error(format!("the app {app} has no schedule {name:?}")))?;
-        http.run_schedule(name).await
+        let answer = http
+            .request(
+                "POST",
+                &format!("{}{name}", fileos_runtime::SCHEDULE_PATH),
+                &[("fileos-event", "schedule")],
+                Vec::new(),
+            )
+            .await?;
+        Ok(answer.status)
     }
 
     /// Starts the timers of the schedules of every app. Call it once, inside
@@ -1963,15 +1971,13 @@ impl Inner {
                 link: None,
             });
         };
-        let did_hash = fileos_id::did_hash(&did).ok()?;
-        let did = fileos_id::did_of(did_hash);
         let signing = state.signing_key();
         let nodes = self
             .files_in(space, fileos_id::NODES)
             .into_iter()
             .filter_map(|(name, bytes)| {
                 let cert = NodeCert::from_bytes(&bytes).ok()?;
-                (fileos_id::did_hash(&cert.did).is_ok_and(|hash| hash == did_hash)
+                (cert.did == did
                     && signing.is_some_and(|key| cert.verify(key))
                     && cert.node.to_string() == name)
                     .then_some(cert.node)

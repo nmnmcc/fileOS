@@ -192,9 +192,6 @@ enum AppCommand {
 }
 
 fn default_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("FOS_DIR") {
-        return PathBuf::from(dir);
-    }
     std::env::var_os("HOME").map_or_else(
         || PathBuf::from(".fileos"),
         |home| PathBuf::from(home).join(".fileos"),

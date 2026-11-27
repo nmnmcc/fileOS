@@ -14,10 +14,7 @@ use wasmtime_wasi_http::p2::bindings::ProxyPre;
 use wasmtime_wasi_http::p2::bindings::http::types::Scheme;
 use wasmtime_wasi_http::p2::body::HyperOutgoingBody;
 
-use crate::{
-    APP_FUEL, AppCtx, AppHost, Bundle, Kind, LEGACY_WIT_VERSION, Runtime, SCHEDULE_PATH,
-    add_app_to_linker, wasm_error,
-};
+use crate::{APP_FUEL, AppCtx, AppHost, Bundle, Kind, Runtime, add_fileos_to_linker, wasm_error};
 
 /// The most time one request may take.
 const REQUEST_TIME: Duration = Duration::from_secs(30);
@@ -51,7 +48,6 @@ pub struct HttpApp {
     id: String,
     host: Arc<dyn AppHost>,
     pre: ProxyPre<AppCtx>,
-    legacy_interface: bool,
 }
 
 impl std::fmt::Debug for HttpApp {
@@ -70,7 +66,7 @@ impl Runtime {
     pub fn http_app(&self, bundle: &Bundle, host: Arc<dyn AppHost>) -> Result<HttpApp, Error> {
         let component = self.component(bundle, Kind::App)?;
         let mut linker = Linker::new(&self.engine);
-        add_app_to_linker(&mut linker, &bundle.manifest)?;
+        add_fileos_to_linker(&mut linker)?;
         wasmtime_wasi_http::p2::add_to_linker_async(&mut linker).map_err(wasm_error)?;
         let pre = ProxyPre::new(linker.instantiate_pre(&component).map_err(wasm_error)?)
             .map_err(wasm_error)?;
@@ -78,34 +74,11 @@ impl Runtime {
             id: bundle.manifest.id.clone(),
             host,
             pre,
-            legacy_interface: bundle.manifest.requires == LEGACY_WIT_VERSION,
         })
     }
 }
 
 impl HttpApp {
-    /// Sends a schedule event to the app and gives the HTTP status.
-    ///
-    /// # Errors
-    ///
-    /// When the request is not valid, or as [`Self::handle`].
-    pub async fn run_schedule(&self, name: &str) -> Result<u16, Error> {
-        let (path, header) = if self.legacy_interface {
-            ("/.well-known/fos/schedule/", "fos-event")
-        } else {
-            (SCHEDULE_PATH, "fileos-event")
-        };
-        let answer = self
-            .request(
-                "POST",
-                &format!("{path}{name}"),
-                &[(header, "schedule")],
-                Vec::new(),
-            )
-            .await?;
-        Ok(answer.status)
-    }
-
     /// Gives one request, made of bytes, to the app, and gives back all of
     /// its response. Tests use it, and so can a node that sends a request on
     /// for another node.

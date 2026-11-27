@@ -90,9 +90,7 @@ pub fn target(host: &str) -> Option<Target> {
     };
     let name = name.trim_end_matches('.');
     match name {
-        "fileos.localhost" | "fos.localhost" | "localhost" | "127.0.0.1" | "::1" => {
-            Some(Target::Kernel)
-        }
+        "fileos.localhost" | "localhost" | "127.0.0.1" | "::1" => Some(Target::Kernel),
         _ => {
             let label = name.strip_suffix(".localhost")?;
             let good = !label.is_empty()
@@ -239,19 +237,12 @@ async fn serve(
 /// The headers that only the kernel may give an app. The kernel signs
 /// people in, so an app gets no cookies or credentials, and no person that
 /// the kernel did not say.
-const KERNEL_HEADERS: [&str; 6] = [
-    "cookie",
-    "authorization",
-    "fileos-user",
-    "fileos-event",
-    "fos-user",
-    "fos-event",
-];
+const KERNEL_HEADERS: [&str; 4] = ["cookie", "authorization", "fileos-user", "fileos-event"];
 
 /// Says if a path of an app is for the kernel only, such as the requests
 /// for schedules. Requests from outside never reach these paths.
 pub fn kernel_only(path: &str) -> bool {
-    path.starts_with("/.well-known/fileos/") || path.starts_with("/.well-known/fos/")
+    path.starts_with("/.well-known/fileos/")
 }
 
 /// A request for an app.
@@ -450,7 +441,6 @@ mod tests {
     #[test]
     fn schedule_paths_are_for_the_kernel_only() {
         assert!(kernel_only("/.well-known/fileos/schedule/reindex"));
-        assert!(kernel_only("/.well-known/fos/schedule/reindex"));
         assert!(!kernel_only("/.well-known/other"));
         assert!(!kernel_only("/photos"));
     }
@@ -460,7 +450,6 @@ mod tests {
         for host in [
             "fileos.localhost",
             "fileos.localhost:7341",
-            "fos.localhost:7341",
             "localhost:7341",
             "127.0.0.1:7341",
             "[::1]:7341",

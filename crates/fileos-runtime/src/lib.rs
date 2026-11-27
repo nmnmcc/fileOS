@@ -19,9 +19,7 @@ use std::sync::Arc;
 
 use fileos_core::{Error, Hash};
 use serde::Deserialize;
-use wasmtime::component::{
-    Component, ComponentExportIndex, HasSelf, InstancePre, Linker, ResourceTable, TypedFunc,
-};
+use wasmtime::component::{Component, HasSelf, Linker, ResourceTable};
 use wasmtime::{Config, Store, StoreLimits, StoreLimitsBuilder};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
@@ -210,18 +208,6 @@ pub struct Manifest {
 
 /// The WIT version this runtime gives.
 pub const WIT_VERSION: &str = "fileos:app@0.1.0";
-const LEGACY_WIT_VERSION: &str = "fos:app@0.1.0";
-
-impl Manifest {
-    fn wit_interface(&self, name: &str) -> String {
-        let namespace = if self.requires == LEGACY_WIT_VERSION {
-            "fos"
-        } else {
-            "fileos"
-        };
-        format!("{namespace}:app/{name}@0.1.0")
-    }
-}
 
 /// An `.app` folder: its manifest and its files, by path.
 #[derive(Clone, Debug)]
@@ -244,7 +230,7 @@ impl Bundle {
             .map_err(|e| Error(format!("manifest.toml is not UTF-8: {e}")))?;
         let manifest: Manifest =
             toml::from_str(text).map_err(|e| Error(format!("manifest.toml: {e}")))?;
-        if !matches!(manifest.requires.as_str(), WIT_VERSION | LEGACY_WIT_VERSION) {
+        if manifest.requires != WIT_VERSION {
             return Err(Error(format!(
                 "{} needs {}, but this runtime gives {WIT_VERSION}",
                 manifest.id, manifest.requires
@@ -357,21 +343,17 @@ impl Runtime {
     pub fn app(&self, bundle: &Bundle, host: Arc<dyn AppHost>) -> Result<AppInstance, Error> {
         let component = self.component(bundle, Kind::App)?;
         let mut linker = Linker::new(&self.engine);
-        add_app_to_linker(&mut linker, &bundle.manifest)?;
+        add_fileos_to_linker(&mut linker)?;
         wasmtime_wasi_http::p2::add_to_linker_sync(&mut linker).map_err(wasm_error)?;
-        let events = bundle.manifest.wit_interface("events");
-        let on_change = component
-            .get_export_index(None, &events)
-            .and_then(|events| component.get_export_index(Some(&events), "on-change"))
-            .ok_or_else(|| Error(format!("{events} needs an on-change export")))?;
-        let pre = linker.instantiate_pre(&component).map_err(wasm_error)?;
+        let pre =
+            bindings::app::AppPre::new(linker.instantiate_pre(&component).map_err(wasm_error)?)
+                .map_err(wasm_error)?;
         let app = AppInstance {
             manifest: bundle.manifest.clone(),
             host,
             pre,
-            on_change,
         };
-        // Start the app once now, so a broken app is found here.
+        // Start it once now, so a broken app is found at install.
         app.instance()?;
         Ok(app)
     }
@@ -495,23 +477,11 @@ impl WasiHttpView for AppCtx {
 }
 
 /// Adds the fileOS interfaces of the `app` world to a linker.
-fn add_app_to_linker(linker: &mut Linker<AppCtx>, manifest: &Manifest) -> Result<(), Error> {
-    // The old and new names give apps the same host calls and grant checks.
-    let mut fs = linker
-        .instance(&manifest.wit_interface("fs"))
-        .map_err(wasm_error)?;
-    wit_fs::add_to_linker_instance::<AppCtx, HasSelf<AppCtx>>(&mut fs, |c| c)
-        .map_err(wasm_error)?;
-    let mut kv = linker
-        .instance(&manifest.wit_interface("kv"))
-        .map_err(wasm_error)?;
-    wit_kv::add_to_linker_instance::<AppCtx, HasSelf<AppCtx>>(&mut kv, |c| c)
-        .map_err(wasm_error)?;
-    let mut log = linker
-        .instance(&manifest.wit_interface("log"))
-        .map_err(wasm_error)?;
-    wit_log::add_to_linker_instance::<AppCtx, HasSelf<AppCtx>>(&mut log, |c| c)
-        .map_err(wasm_error)?;
+fn add_fileos_to_linker(linker: &mut Linker<AppCtx>) -> Result<(), Error> {
+    use bindings::app::fileos::app;
+    app::fs::add_to_linker::<AppCtx, HasSelf<AppCtx>>(linker, |c| c).map_err(wasm_error)?;
+    app::kv::add_to_linker::<AppCtx, HasSelf<AppCtx>>(linker, |c| c).map_err(wasm_error)?;
+    app::log::add_to_linker::<AppCtx, HasSelf<AppCtx>>(linker, |c| c).map_err(wasm_error)?;
     Ok(())
 }
 
@@ -569,8 +539,6 @@ impl wit_log::Host for AppCtx {
     }
 }
 
-type OnChange<'path> = TypedFunc<(&'path str,), ()>;
-
 /// A running app.
 /// An app, ready for events.
 ///
@@ -580,8 +548,7 @@ type OnChange<'path> = TypedFunc<(&'path str,), ()>;
 pub struct AppInstance {
     manifest: Manifest,
     host: Arc<dyn AppHost>,
-    pre: InstancePre<AppCtx>,
-    on_change: ComponentExportIndex,
+    pre: bindings::app::AppPre<AppCtx>,
 }
 
 impl std::fmt::Debug for AppInstance {
@@ -613,25 +580,22 @@ impl AppInstance {
     ///
     /// When the app traps or runs out of fuel or memory.
     pub fn on_change(&mut self, path: &str) -> Result<(), Error> {
-        let (mut store, on_change) = self.instance()?;
-        on_change.call(&mut store, (path,)).map_err(wasm_error)
+        let (mut store, app) = self.instance()?;
+        app.fileos_app_events()
+            .call_on_change(&mut store, path)
+            .map_err(wasm_error)
     }
 
     /// A new instance, with its own store and limits.
-    fn instance<'path>(&self) -> Result<(Store<AppCtx>, OnChange<'path>), Error> {
+    fn instance(&self) -> Result<(Store<AppCtx>, bindings::app::App), Error> {
         let mut store = Store::new(
             self.pre.engine(),
             AppCtx::new(&self.manifest.id, Arc::clone(&self.host)),
         );
         store.limiter(|ctx| &mut ctx.limits);
         store.set_fuel(APP_FUEL).map_err(wasm_error)?;
-        let instance = self.pre.instantiate(&mut store).map_err(wasm_error)?;
-        wasmtime_wasi_http::p2::bindings::sync::Proxy::new(&mut store, &instance)
-            .map_err(wasm_error)?;
-        let on_change = instance
-            .get_typed_func(&mut store, self.on_change)
-            .map_err(wasm_error)?;
-        Ok((store, on_change))
+        let app = self.pre.instantiate(&mut store).map_err(wasm_error)?;
+        Ok((store, app))
     }
 }
 
