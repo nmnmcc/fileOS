@@ -67,6 +67,10 @@ pub struct ViewMount {
     pub grant: Option<Id>,
 }
 
+/// A node makes a new recipient key after this time (a policy, with a
+/// default: 30 days).
+const RECIPIENT_MAX_AGE: u64 = 30 * 24 * 60 * 60 * 1000;
+
 /// After this many entries, a node makes a checkpoint of a space it owns and
 /// compacts it. A policy, with a default.
 const CHECKPOINT_AFTER: usize = 1000;
@@ -368,6 +372,7 @@ impl Node {
         if let Some(signing) = &signing_key {
             node.add_key(signing.clone());
         }
+        node.set_recipients(store.recipients()?);
         let mut saved = BTreeMap::new();
         for space in store.load_spaces()? {
             let hashes = space.entries().iter().map(fos_space::Entry::hash).collect();
@@ -398,6 +403,7 @@ impl Node {
             inner.note(id, &Mutex::new(VecDeque::new()));
         }
         inner.update_proof(&Mutex::new(VecDeque::new()))?;
+        inner.rotate_if_due(&Mutex::new(VecDeque::new()))?;
         let node = Node {
             shared: Arc::new(Shared {
                 inner: Mutex::new(inner),
@@ -1773,6 +1779,7 @@ impl Inner {
         for event in step.events {
             match event {
                 Event::Changed(space) => {
+                    self.rotate_if_due(changed)?;
                     self.save(space)?;
                     self.note(space, changed);
                     self.maybe_checkpoint(space, changed);
@@ -1814,6 +1821,24 @@ impl Inner {
             }
         }
         Ok(())
+    }
+
+    /// The default policy: a node makes a new recipient key (the key it gets
+    /// keys with) when it has none or the newest is older than
+    /// [`RECIPIENT_MAX_AGE`], keeps it on disk first, and keeps only the one
+    /// before it, so the older secrets are destroyed.
+    fn rotate_if_due(&mut self, changed: &Changed) -> Result<(), Error> {
+        let now = now();
+        let due = self
+            .node
+            .recipient_made()
+            .is_none_or(|made| now.saturating_sub(made) >= RECIPIENT_MAX_AGE);
+        if !due {
+            return Ok(());
+        }
+        let step = self.node.rotate_recipient(now);
+        self.store.set_recipients(&self.node.recipients())?;
+        self.process(step, changed)
     }
 
     /// The default policy: a node makes a checkpoint of a space it owns when
