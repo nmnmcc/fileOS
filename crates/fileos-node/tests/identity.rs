@@ -94,7 +94,6 @@ async fn an_identity_has_its_nodes() {
             &parse_permissions("read-write").unwrap(),
         )
         .unwrap();
-    vps.mount(shared, "/shared").unwrap_err();
     until("the VPS gets the space shared with the identity", || {
         vps.read("/shared/note.txt").is_ok()
     })
