@@ -63,6 +63,7 @@ To share `/photos` with another node: `fos space grant /photos <its node key> re
   - [x] Apps answer HTTP at their own origin, `<app-id>.localhost`, with `wasi:http`
   - [x] The photos app: a gallery, upload, and an index of image sizes
   - [x] The chat app: rooms with one file for each message, in a space that you share
+  - [x] Schedules in the manifest: the kernel sends a request to the app's own handler
   - [ ] Apps as workers, `wasi:filesystem`, watch options, schedules
 - [ ] **Network and keys**
   - [x] libp2p: TCP, Noise, Yamux, mDNS, relays, hole punching, AutoNAT

@@ -38,6 +38,11 @@ fn route(req: &Request) -> Response {
         ("GET", "/style.css") => Response::new(200, "text/css; charset=utf-8", STYLE),
         ("GET", "/app.js") => Response::new(200, "text/javascript; charset=utf-8", SCRIPT),
         ("GET", "/photo") => photo(query),
+        ("POST", "/.well-known/fos/schedule/reindex")
+            if req.header("fos-event") == Some("schedule") =>
+        {
+            reindex()
+        }
         ("PUT", upload) => match upload.strip_prefix("/upload/") {
             Some(name) if valid_name(name) => match fs::write(&format!("{ROOT}/{name}"), &req.body)
             {
@@ -52,6 +57,18 @@ fn route(req: &Request) -> Response {
         ("GET", _) => Response::text(404, "not found\n"),
         _ => Response::text(405, "only GET and PUT\n"),
     }
+}
+
+/// Indexes every photo again, from the files. The kernel asks for this once
+/// a day (see the manifest).
+fn reindex() -> Response {
+    let mut count = 0;
+    for name in fs::list_dir(ROOT).unwrap_or_default() {
+        let path = format!("{ROOT}/{name}");
+        index(&path);
+        count += 1;
+    }
+    Response::text(200, format!("indexed {count} files\n"))
 }
 
 /// All the photos that the index has, with their size.
@@ -184,23 +201,29 @@ fn escape(text: &str) -> String {
 
 impl Guest for Photos {
     fn on_change(path: String) {
-        let extension = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
-        if !matches!(extension.as_deref(), Some("jpg" | "jpeg" | "png")) {
-            return;
-        }
-        let key = format!("photo:{path}");
-        match fs::read(&path) {
-            Ok(bytes) => match image_size(&bytes) {
-                Some((w, h)) => {
-                    kv::set(&key, format!("{w}x{h}").as_bytes());
-                    log::info(&format!("indexed {path}: {w}x{h}"));
-                }
-                None => log::info(&format!("{path} is not an image this app can read")),
-            },
-            // The file was deleted.
-            Err(fs::Error::NotFound) => kv::delete(&key),
-            Err(e) => log::info(&format!("cannot read {path}: {e:?}")),
-        }
+        index(&path);
+    }
+}
+
+/// Keeps the size of the photo at `path` in the index, or takes it out when
+/// the file is gone.
+fn index(path: &str) {
+    let extension = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
+    if !matches!(extension.as_deref(), Some("jpg" | "jpeg" | "png")) {
+        return;
+    }
+    let key = format!("photo:{path}");
+    match fs::read(path) {
+        Ok(bytes) => match image_size(&bytes) {
+            Some((w, h)) => {
+                kv::set(&key, format!("{w}x{h}").as_bytes());
+                log::info(&format!("indexed {path}: {w}x{h}"));
+            }
+            None => log::info(&format!("{path} is not an image this app can read")),
+        },
+        // The file was deleted.
+        Err(fs::Error::NotFound) => kv::delete(&key),
+        Err(e) => log::info(&format!("cannot read {path}: {e:?}")),
     }
 }
 

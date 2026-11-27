@@ -63,6 +63,7 @@ fos node status
   - [x] App 通过 `wasi:http` 在自己的 origin（`<app-id>.localhost`）上响应 HTTP
   - [x] 照片 App：图库、上传，以及图片尺寸的索引
   - [x] 聊天 App：聊天室中每条消息一个文件，放在你所分享的空间里
+  - [x] manifest 中的定时任务：内核向 App 自己的处理函数发送请求
   - [ ] App 作为 Worker、`wasi:filesystem`、监听选项、定时任务
 - [ ] **网络和密钥**
   - [x] libp2p：TCP、Noise、Yamux、mDNS、中继、打洞、AutoNAT

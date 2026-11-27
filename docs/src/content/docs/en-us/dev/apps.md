@@ -134,6 +134,10 @@ reason = "reason.photos"  # a key in resources/locales/
 
 [[watch]]                 # the paths that on-change is called for
 path = "/photos"
+
+[[schedule]]              # the kernel sends POST /.well-known/fos/schedule/reindex
+name = "reindex"          # with fos-event: schedule, once a day
+every = "1d"
 ```
 
 To give the app to others, pack the folder into an `.app` file:

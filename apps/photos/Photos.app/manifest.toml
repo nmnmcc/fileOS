@@ -15,3 +15,8 @@ reason = "reason.photos"
 
 [[watch]]
 path = "/photos"
+
+# Once a day, index every photo again, in case a change was missed.
+[[schedule]]
+name = "reindex"
+every = "1d"

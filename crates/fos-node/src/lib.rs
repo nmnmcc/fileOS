@@ -90,6 +90,11 @@ struct Shared {
     http: Mutex<BTreeMap<String, HttpApp>>,
     /// Node paths that changed, for the apps that watch them.
     changed: Mutex<VecDeque<String>>,
+    /// The schedules of each app, by app ID.
+    schedules: Mutex<BTreeMap<String, Vec<fos_runtime::Schedule>>>,
+    /// True once `start_schedules` ran: apps started later get their
+    /// timers at once.
+    scheduling: std::sync::atomic::AtomicBool,
     runtime: Runtime,
     key: PublicKey,
 }
@@ -393,6 +398,8 @@ impl Node {
                 apps: Mutex::new(Vec::new()),
                 http: Mutex::new(BTreeMap::new()),
                 changed: Mutex::new(VecDeque::new()),
+                schedules: Mutex::new(BTreeMap::new()),
+                scheduling: std::sync::atomic::AtomicBool::new(false),
                 runtime: Runtime::new()?,
                 key: key.public(),
             }),
@@ -981,7 +988,83 @@ impl Node {
         let app = self.shared.runtime.app(bundle, host)?;
         lock(&self.shared.apps).push(app);
         lock(&self.shared.http).insert(id.clone(), http);
+        lock(&self.shared.schedules).insert(id.clone(), bundle.manifest.schedule.clone());
+        if self
+            .shared
+            .scheduling
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            for schedule in &bundle.manifest.schedule {
+                self.spawn_schedule(&id, schedule);
+            }
+        }
         Ok(id)
+    }
+
+    /// Runs one schedule of an app now: sends `POST
+    /// /.well-known/fos/schedule/<name>` with `fos-event: schedule` to the
+    /// app. Gives the status of its answer.
+    ///
+    /// # Errors
+    ///
+    /// When there is no such app or schedule, or the app fails.
+    pub async fn run_schedule(&self, app: &str, name: &str) -> Result<u16, Error> {
+        let known = lock(&self.shared.schedules)
+            .get(app)
+            .is_some_and(|list| list.iter().any(|s| s.name == name));
+        let http = self
+            .http_app(app)
+            .filter(|_| known)
+            .ok_or_else(|| Error(format!("the app {app} has no schedule {name:?}")))?;
+        let answer = http
+            .request(
+                "POST",
+                &format!("{}{name}", fos_runtime::SCHEDULE_PATH),
+                &[("fos-event", "schedule")],
+                Vec::new(),
+            )
+            .await?;
+        Ok(answer.status)
+    }
+
+    /// Starts the timers of the schedules of every app. Call it once, inside
+    /// a Tokio runtime. A schedule runs first one period after the start;
+    /// times missed while the node was off are not made up, as with cron.
+    pub fn start_schedules(&self) {
+        self.shared
+            .scheduling
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let all: Vec<(String, fos_runtime::Schedule)> = lock(&self.shared.schedules)
+            .iter()
+            .flat_map(|(id, list)| list.iter().map(|s| (id.clone(), s.clone())))
+            .collect();
+        for (id, schedule) in all {
+            self.spawn_schedule(&id, &schedule);
+        }
+    }
+
+    fn spawn_schedule(&self, id: &str, schedule: &fos_runtime::Schedule) {
+        let Ok(seconds) = schedule.seconds() else {
+            return;
+        };
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let node = self.clone();
+        let (id, name) = (id.to_string(), schedule.name.clone());
+        handle.spawn(async move {
+            let period = std::time::Duration::from_secs(seconds);
+            let mut timer = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+            timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                timer.tick().await;
+                match node.run_schedule(&id, &name).await {
+                    Ok(status) if status < 400 => {}
+                    Ok(status) => tracing::warn!("schedule {name} of {id}: status {status}"),
+                    Err(e) => tracing::warn!("schedule {name} of {id}: {e}"),
+                }
+            }
+        });
     }
 
     /// Tells the apps about changed paths, until there are no more.

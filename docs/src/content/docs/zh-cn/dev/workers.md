@@ -61,6 +61,18 @@ App 使用 WASI 0.2 标准的 `wasi:filesystem`，WASI 的预打开目录就是�
 - **写入会产生一个新版本**，和浏览器 File System Access API 的 `createWritable` 一样：App 可以在任意位置写入，没有改动的块和旧版本共享；文件关闭或同步时，新版本立即整体取代旧版本。在那之前，别人看到的仍然是旧版本。
 - fileOS 只增加 WASI 没有的部分：watch、旧版本、冲突的多个版本，以及申请链接。
 
+### 定时任务
+
+App 在 manifest 中列出它的定时任务，就像 Cloudflare 的 Cron Triggers：
+
+```toml
+[[schedule]]
+name  = "reindex"
+every = "1d"        # s、m、h 或 d；最短一分钟
+```
+
+到了这些时间，内核向 App 自己的 `wasi:http` 处理函数发送 `POST /.well-known/fos/schedule/<name>`，并带上 `fos-event: schedule` 头。所以定时任务不需要在 App 接口里加任何东西。外部的请求永远到不了 `/.well-known/fos/` 下的路径，网关也会删掉它们的 `fos-event` 头。定时任务在节点启动一个周期后第一次运行；节点关闭期间错过的时间不会补上，和 cron 一样。目前每个节点运行它自己的 App 的定时任务。
+
 ### 用文件作为回应
 
 和 nginx 的 `X-Accel-Redirect`（X-Sendfile）一样：要用一个文件回应请求时，App 告诉内核是哪个文件。内核以流的方式发送它，并处理 `Range`、`ETag` 和条件请求。App 不用把大文件读进内存，`Range` 也只在内核里实现一次，和提供 `ui/` 用的是同一段代码。
