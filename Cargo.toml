@@ -16,15 +16,15 @@ publish = false
 # Every external dependency must be added here, with `default-features = false`,
 # after review (see "Dependency policy" in CONTRIBUTING.md).
 [workspace.dependencies]
-fos-core = { path = "crates/fos-core", version = "0.1.0" }
-fos-id = { path = "crates/fos-id", version = "0.1.0" }
-fos-space = { path = "crates/fos-space", version = "0.1.0" }
-fos-store = { path = "crates/fos-store", version = "0.1.0" }
-fos-runtime = { path = "crates/fos-runtime", version = "0.1.0" }
-fos-net = { path = "crates/fos-net", version = "0.1.0" }
-fos-gateway = { path = "crates/fos-gateway", version = "0.1.0" }
-fos-node = { path = "crates/fos-node", version = "0.1.0" }
-fos-app = { path = "apps/fos-app", version = "0.1.0" }
+fileos-core = { path = "crates/fileos-core", version = "0.1.0" }
+fileos-id = { path = "crates/fileos-id", version = "0.1.0" }
+fileos-space = { path = "crates/fileos-space", version = "0.1.0" }
+fileos-store = { path = "crates/fileos-store", version = "0.1.0" }
+fileos-runtime = { path = "crates/fileos-runtime", version = "0.1.0" }
+fileos-net = { path = "crates/fileos-net", version = "0.1.0" }
+fileos-gateway = { path = "crates/fileos-gateway", version = "0.1.0" }
+fileos-node = { path = "crates/fileos-node", version = "0.1.0" }
+fileos-app = { path = "apps/fileos-app", version = "0.1.0" }
 
 # The Wasm app SDK uses WIT. Native code uses Wasmtime on the host side.
 wit-bindgen = { version = "0.63.0", default-features = false, features = [
@@ -58,6 +58,17 @@ toml = { version = "1.2.3", default-features = false, features = [
 # already built.
 bs58 = { version = "0.5.1", default-features = false, features = ["alloc"] }
 getrandom = { version = "0.3.4", default-features = false, features = ["std"] }
+# Encryption of content and keys. HPKE (RFC 9180) sends keys to each device;
+# it uses x25519-dalek, curve25519-dalek, hkdf and sha2, which libp2p already
+# builds. XChaCha20-Poly1305 encrypts chunks and wraps keys.
+hpke = { version = "0.15.2", default-features = false, features = [
+  "alloc",
+  "x25519",
+  "chacha",
+] }
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = [
+  "alloc",
+] }
 
 # .app files: a zip with no compression (rawzip has no dependencies), a tar
 # (tar), and zstd in plain Rust, with no C (ruzstd).

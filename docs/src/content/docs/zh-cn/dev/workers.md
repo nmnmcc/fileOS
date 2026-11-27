@@ -3,8 +3,8 @@ title: "App 作为 Worker"
 description: App 属于身份并随身份同步，按身份寻址，作为事件驱动的 Worker 在用户选择的节点上运行。
 ---
 
-:::note[状态：设计]
-本页的内容都还没有实现。目前 App 安装在某一个节点上，ID 来自这个节点，并且自己提供 HTTP 服务（见 [HTTP 与浏览器](../http/)）。
+:::note[状态：部分已实现]
+已实现：每个事件、每个 HTTP 请求一个新实例。还没有实现：属于身份并同步的 App、`wasi:filesystem`、监听选项、定时任务，以及每个事件的节点列表。目前 App 安装在某一个节点上，ID 来自这个节点。
 :::
 
 ## App 属于身份，而不是节点
@@ -27,8 +27,8 @@ App 不会一直运行。它被一个事件唤醒，完成工作，然后停止�
 | 事件       | 什么时候                         | 接口                                 |
 | ---------- | -------------------------------- | ------------------------------------ |
 | `fetch`    | 有发给它的 origin 的 HTTP 请求   | `wasi:http/incoming-handler`（标准） |
-| `watch`    | 它监听的文件或前缀发生变化       | `fos:app/events`                     |
-| `schedule` | manifest 中写明的时间，类似 cron | `fos:app/events`                     |
+| `watch`    | 它监听的文件或前缀发生变化       | `fileos:app/events`                  |
+| `schedule` | manifest 中写明的时间，类似 cron | `fileos:app/events`                  |
 
 时间不是数据，所以它不是文件：`schedule` 写在 manifest 里，就像 Cloudflare 的 Cron Triggers。其他所有 “事件” 都是对文件的监听：
 
@@ -51,6 +51,16 @@ App 不会一直运行。它被一个事件唤醒，完成工作，然后停止�
 | `batch`     | 攒多少个变化、或等多久，再调用一次                                                                       |
 | `since`     | 从之前给出的位置继续                                                                                     |
 
+目前已在 manifest 的 `[[watch]]` 中实现：`recursive`（不写时为开）、`kinds` 和 `filter`（用 `*` 和 `?` 的模式，匹配名字的最后一部分）。其余选项需要一个新的 App 调用，以后再做。
+
+```toml
+[[watch]]
+path      = "/photos"
+recursive = true
+filter    = ["*.jpg", "*.png"]
+kinds     = ["made", "deleted"]
+```
+
 每次调用收到一批变化和一个新的位置。调用成功结束，位置就向前推进；失败了，同一批变化会再送一次（至少一次）。
 
 ### 文件：`wasi:filesystem`
@@ -60,6 +70,18 @@ App 使用 WASI 0.2 标准的 `wasi:filesystem`，WASI 的预打开目录就是�
 - 按位置读和流式读，就是 WASI 的调用（`read`、`read-via-stream`），建立在 HTTP 也在用的 `wasi:io` 之上。
 - **写入会产生一个新版本**，和浏览器 File System Access API 的 `createWritable` 一样：App 可以在任意位置写入，没有改动的块和旧版本共享；文件关闭或同步时，新版本立即整体取代旧版本。在那之前，别人看到的仍然是旧版本。
 - fileOS 只增加 WASI 没有的部分：watch、旧版本、冲突的多个版本，以及申请链接。
+
+### 定时任务
+
+App 在 manifest 中列出它的定时任务，就像 Cloudflare 的 Cron Triggers：
+
+```toml
+[[schedule]]
+name  = "reindex"
+every = "1d"        # s、m、h 或 d；最短一分钟
+```
+
+到了这些时间，内核向 App 自己的 `wasi:http` 处理函数发送 `POST /.well-known/fileos/schedule/<name>`，并带上 `fileos-event: schedule` 头。所以定时任务不需要在 App 接口里加任何东西。外部的请求永远到不了 `/.well-known/fileos/` 下的路径，网关也会删掉它们的 `fileos-event` 头。定时任务在节点启动一个周期后第一次运行；节点关闭期间错过的时间不会补上，和 cron 一样。目前每个节点运行它自己的 App 的定时任务。
 
 ### 用文件作为回应
 

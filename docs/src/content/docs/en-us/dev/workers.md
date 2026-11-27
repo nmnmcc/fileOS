@@ -3,10 +3,11 @@ title: "Apps as workers"
 description: Apps belong to an identity and sync with it, are found by the identity, and run as event-driven workers on the nodes that people choose.
 ---
 
-:::note[Status: design]
-Nothing on this page is built yet. Today an app is installed on one node,
-has an ID that comes from that node, and serves HTTP itself (see
-[HTTP and the browser](../http/)).
+:::note[Status: built in part]
+Built: a new instance for each event and each HTTP request. Not built yet:
+apps that belong to the identity and sync, `wasi:filesystem`, watch options,
+schedules, and lists of nodes for each event. Today an app is installed on
+one node, and its ID comes from that node.
 :::
 
 ## Apps belong to the identity, not to a node
@@ -44,8 +45,8 @@ of browsers.
 | Event      | When                                       | Interface                               |
 | ---------- | ------------------------------------------ | --------------------------------------- |
 | `fetch`    | An HTTP request comes for its origin       | `wasi:http/incoming-handler` (standard) |
-| `watch`    | A file or a prefix it watches changes      | `fos:app/events`                        |
-| `schedule` | A time given in the manifest, as cron does | `fos:app/events`                        |
+| `watch`    | A file or a prefix it watches changes      | `fileos:app/events`                     |
+| `schedule` | A time given in the manifest, as cron does | `fileos:app/events`                     |
 
 Time is not data, so it is not a file: a `schedule` is listed in the manifest,
 as Cloudflare's Cron Triggers are. Every other "event" is a watch on files:
@@ -71,6 +72,18 @@ CouchDB's `_changes` and Kubernetes' watch):
 | `batch`     | How many changes, or how long to wait, before one call                                                 |
 | `since`     | Go on from a position given before                                                                     |
 
+Built today, in `[[watch]]` in the manifest: `recursive` (on when not
+given), `kinds` and `filter` (patterns with `*` and `?`, on the last part of
+the name). The others need a new call into the app, and come later.
+
+```toml
+[[watch]]
+path      = "/photos"
+recursive = true
+filter    = ["*.jpg", "*.png"]
+kinds     = ["made", "deleted"]
+```
+
 Each call gets a batch of changes and a new position. When the call ends
 well, the position moves on; when it fails, the same batch comes again (at
 least once).
@@ -89,6 +102,24 @@ directories as their view (see [The model](../access/#what-an-app-sees)).
   the old version until then.
 - fileOS adds only what WASI does not have: watch, old versions, the versions
   of a conflict, and asking for links.
+
+### Schedules
+
+An app lists its schedules in its manifest, as Cloudflare's Cron Triggers:
+
+```toml
+[[schedule]]
+name  = "reindex"
+every = "1d"        # s, m, h or d; at least one minute
+```
+
+At those times the kernel sends `POST /.well-known/fileos/schedule/<name>`,
+with the header `fileos-event: schedule`, to the app's own `wasi:http` handler.
+So a schedule needs nothing new in the app interface. Requests from outside
+never reach paths under `/.well-known/fileos/`, and the gateway takes
+`fileos-event` away from them. A schedule runs first one period after the node
+starts; times missed while the node was off are not made up, as with cron.
+Today each node runs the schedules of its own apps.
 
 ### Sending a file as the answer
 

@@ -12,11 +12,11 @@
 
 use std::fmt::Write as _;
 
-use fos_app::app::exports::fos::app::events::Guest;
-use fos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
-use fos_app::app::fos::app::{fs, kv, log};
-use fos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
-use fos_app::http::{Request, Response};
+use fileos_app::app::exports::fileos::app::events::Guest;
+use fileos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
+use fileos_app::app::fileos::app::{access, fs, kv, log};
+use fileos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
+use fileos_app::http::{Request, Response};
 
 struct Photos;
 
@@ -24,7 +24,7 @@ struct Photos;
 /// themselves, and upload.
 impl Http for Photos {
     fn handle(request: IncomingRequest, response_out: ResponseOutparam) {
-        fos_app::http::serve(request, response_out, route);
+        fileos_app::http::serve(request, response_out, route);
     }
 }
 
@@ -38,6 +38,30 @@ fn route(req: &Request) -> Response {
         ("GET", "/style.css") => Response::new(200, "text/css; charset=utf-8", STYLE),
         ("GET", "/app.js") => Response::new(200, "text/javascript; charset=utf-8", SCRIPT),
         ("GET", "/photo") => photo(query),
+        // Asks the person, through the kernel's picker, for a folder of
+        // photos to show. The answer comes as a mount under /granted.
+        // Offers one photo to another app that the person picks.
+        ("POST", "/share") => {
+            let path = query
+                .split('&')
+                .find_map(|p| p.strip_prefix("path="))
+                .map_or_else(String::new, percent_decode);
+            match access::share(&path) {
+                Ok(id) => Response::text(202, format!("offered: {id}\n")),
+                Err(e) => Response::text(403, format!("cannot share: {e}\n")),
+            }
+        }
+        ("POST", "/import") => {
+            match access::ask("Show the photos in a folder that you pick", "read") {
+                Ok(id) => Response::text(202, format!("asked: {id}\n")),
+                Err(e) => Response::text(403, format!("cannot ask: {e}\n")),
+            }
+        }
+        ("POST", "/.well-known/fileos/schedule/reindex")
+            if req.header("fileos-event") == Some("schedule") =>
+        {
+            reindex()
+        }
         ("PUT", upload) => match upload.strip_prefix("/upload/") {
             Some(name) if valid_name(name) => match fs::write(&format!("{ROOT}/{name}"), &req.body)
             {
@@ -52,6 +76,18 @@ fn route(req: &Request) -> Response {
         ("GET", _) => Response::text(404, "not found\n"),
         _ => Response::text(405, "only GET and PUT\n"),
     }
+}
+
+/// Indexes every photo again, from the files. The kernel asks for this once
+/// a day (see the manifest).
+fn reindex() -> Response {
+    let mut count = 0;
+    for name in fs::list_dir(ROOT).unwrap_or_default() {
+        let path = format!("{ROOT}/{name}");
+        index(&path);
+        count += 1;
+    }
+    Response::text(200, format!("indexed {count} files\n"))
 }
 
 /// All the photos that the index has, with their size.
@@ -90,13 +126,16 @@ fn photo(query: &str) -> Response {
         .split('&')
         .find_map(|p| p.strip_prefix("path="))
         .map_or_else(String::new, percent_decode);
-    let inside = path.strip_prefix("/photos/").is_some_and(|rest| {
-        !rest
-            .split('/')
-            .any(|part| part.is_empty() || part == "." || part == "..")
-    });
+    let inside = path
+        .strip_prefix("/photos/")
+        .or_else(|| path.strip_prefix("/granted/"))
+        .is_some_and(|rest| {
+            !rest
+                .split('/')
+                .any(|part| part.is_empty() || part == "." || part == "..")
+        });
     if !inside {
-        return Response::text(400, "only photos under /photos\n");
+        return Response::text(400, "only photos under /photos or /granted\n");
     }
     let content_type = if path.to_ascii_lowercase().ends_with(".png") {
         "image/png"
@@ -184,27 +223,33 @@ fn escape(text: &str) -> String {
 
 impl Guest for Photos {
     fn on_change(path: String) {
-        let extension = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
-        if !matches!(extension.as_deref(), Some("jpg" | "jpeg" | "png")) {
-            return;
-        }
-        let key = format!("photo:{path}");
-        match fs::read(&path) {
-            Ok(bytes) => match image_size(&bytes) {
-                Some((w, h)) => {
-                    kv::set(&key, format!("{w}x{h}").as_bytes());
-                    log::info(&format!("indexed {path}: {w}x{h}"));
-                }
-                None => log::info(&format!("{path} is not an image this app can read")),
-            },
-            // The file was deleted.
-            Err(fs::Error::NotFound) => kv::delete(&key),
-            Err(e) => log::info(&format!("cannot read {path}: {e:?}")),
-        }
+        index(&path);
     }
 }
 
-fos_app::app::export_app!(Photos);
+/// Keeps the size of the photo at `path` in the index, or takes it out when
+/// the file is gone.
+fn index(path: &str) {
+    let extension = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
+    if !matches!(extension.as_deref(), Some("jpg" | "jpeg" | "png")) {
+        return;
+    }
+    let key = format!("photo:{path}");
+    match fs::read(path) {
+        Ok(bytes) => match image_size(&bytes) {
+            Some((w, h)) => {
+                kv::set(&key, format!("{w}x{h}").as_bytes());
+                log::info(&format!("indexed {path}: {w}x{h}"));
+            }
+            None => log::info(&format!("{path} is not an image this app can read")),
+        },
+        // The file was deleted.
+        Err(fs::Error::NotFound) => kv::delete(&key),
+        Err(e) => log::info(&format!("cannot read {path}: {e:?}")),
+    }
+}
+
+fileos_app::app::export_app!(Photos);
 
 /// The width and height of a PNG or JPEG image, from its header.
 #[must_use]

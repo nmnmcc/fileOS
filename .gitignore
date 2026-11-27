@@ -1,4 +1,5 @@
 /target
+/apps/target
 
 # devenv and direnv
 .devenv*

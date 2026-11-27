@@ -4,10 +4,10 @@ description: How data is kept and synced with no ordering node, how conflicts ar
 ---
 
 :::note[Status: built in part]
-Most of this page is built, in `fos-space`, and the node runs on it: the
-data model, conflicts, strong removal, content in chunks, checkpoints and
-retention. Not built yet: [encryption](#encryption), bookmarks, the authority
-path, budgets, and CRDT files. [Building it](#building-it-a-new-kernel) says
+Most of this page is built, in `fileos-space`, and the node runs on it: the
+data model, conflicts, strong removal, content in chunks, checkpoints,
+retention and [encryption](#encryption). Not built yet: bookmarks, the
+authority path, budgets and CRDT files. [Building it](#building-it-a-new-kernel) says
 what is done.
 :::
 
@@ -110,7 +110,7 @@ calls **strong removal**:
 Strong removal has one bad case: two managers who remove each other at the
 same time are both removed, and the group may have no manager. So every
 identity has an **owner root key**: the rotation key with the highest
-priority in its [`did:fos`](../identity/) DID. It can never be removed, and it
+priority in its [`did:fileos`](../identity/) DID. It can never be removed, and it
 wins any conflict. Family and friends get access through groups, under it.
 
 Strong removal is the one rule of the kernel, the same on every node.
@@ -137,7 +137,7 @@ We take the way of [Cloudflare D1's Sessions API](https://developers.cloudflare.
 - **Stickiness:** a session stays on one node, usually the node on your
   device. That node puts its own writes into its view at once, so you see
   them.
-- **Bookmarks:** each answer has a `Fos-Bookmark` header: the heads of the
+- **Bookmarks:** each answer has a `FileOS-Bookmark` header: the heads of the
   graph that the answer was made from. The app sends it back with its next
   request. A node that has not yet seen those entries waits for them, or
   sends the request to a node that has.
@@ -181,7 +181,7 @@ settled by a fixed rule. These still happen:
 
 ### What people see: a simple page and an advanced page
 
-The kernel's interface (`fos.localhost`) shows conflicts and rollbacks in the
+The kernel's interface (`fileos.localhost`) shows conflicts and rollbacks in the
 same way for every app and file:
 
 - **The simple page** says what to do: for versions side by side, "keep mine",
@@ -272,7 +272,7 @@ data is right, it only takes more space for a time. A checkpoint says:
 
 ### A budget that people can see
 
-- `fos node status` says where the space goes: content, old versions,
+- `fileos node status` says where the space goes: content, old versions,
   metadata, caches, and data kept for others.
 - People can set a budget. When it is nearly full, the kernel makes room in
   this order: caches first, then thinner old versions, then no new data for
@@ -314,16 +314,34 @@ the way of Cryptree (Grolimund and others) and Tahoe-LAFS:
 3. **A read grant gives the key of what it is on.** Mom, with a grant on
    `2026/`, gets the key of `2026/`; an app with a grant on one file gets the
    data key of that file only.
-4. **When a read grant is taken back,** only the keys of the part that it
-   reached are changed (and the data keys under it wrapped again; the data is
-   not encrypted again). The new keys go to everyone who still has a read grant
-   on that part: this is post-compromise security, and it is also done from
-   time to time.
-5. **Delete means destroy the key** (crypto-shredding). When a file is deleted,
-   leaves the retention policy, or is compacted at a checkpoint, its data keys
-   are destroyed. Copies of the ciphertext on friends' nodes and in backups are
-   then only bytes. We cannot make a friend's node delete your data; this
-   makes it not matter.
+4. **When a device loses access** (a take-back, a device taken away from an
+   identity, a new signing key, a member taken out of a group), the space
+   gets a new **epoch**: a new
+   random root key, from which all prefix keys come. The data keys of the
+   files that are there now are wrapped again under it (the data is not
+   encrypted again), and a new version of a file gets a new data key. The
+   new keys go to everyone who still has a read grant: this is
+   post-compromise security. Today the whole space changes epoch; changing
+   only the part that the grant reached can come later.
+5. **Delete means destroy the key** (crypto-shredding). A checkpoint keeps
+   only the sealed keys that the files it keeps still need. When a file is
+   deleted and the bin empties, or an old version leaves the retention
+   policy, its data key and the keys of old epochs that nothing uses are
+   dropped with it. Copies of the ciphertext on friends' nodes and in backups
+   are then only bytes. We cannot make a friend's node delete your data;
+   this makes it not matter.
+
+Who may give access to a part may give its keys. A device that may read a
+part may also give its keys to another device that may read it, such as
+another node of the same person; this leaks nothing, and so a person's nodes
+pass keys to each other when the owner is offline.
+
+Which device has which key is in the open: every node can see it, and the
+owner's node uses it to send the keys that readers do not have yet. The keys
+are not. **Not encrypted:** the names of files, their sizes, and who wrote
+what and when; a node that keeps a space checks every entry, so it must see
+them. A node that only keeps a space (`data.keep`) gets no keys and sees only
+ciphertext.
 
 ### Giving out keys: HPKE
 
@@ -335,10 +353,18 @@ on it.
   writes use one of them by a fixed rule. No ordering node is needed.
 - The cost is one HPKE message for each device. A family space of 10 people
   with 3 devices each is 30 messages, for a change that seldom happens.
-- **Weak point:** a device gets keys with its own HPKE key. If that key
-  is stolen later, and someone kept the encrypted keys, they can open
-  them. So **each device changes its HPKE key from time to time and destroys
-  the old one.**
+- **Each device has a recipient key**, an X25519 key that it uses only to
+  get keys, and shows it in each space it may read (`Act::Recipient`). Keys
+  are sealed to the newest recipient key of a device, never to its ed25519
+  key: that key cannot be changed, so whoever stole it later could open
+  every key ever sealed to it.
+- **A device changes its recipient key every 30 days** (a policy) and keeps
+  only the one before it, so older secrets are destroyed. Other nodes seal
+  the keys again to the new one.
+- **Each epoch lasts at most 30 days** (a policy), the time deleted files
+  stay in the bin. So keys of deleted data, and keys sealed to old
+  recipient keys, stop being of use: a deleted file cannot be opened
+  anywhere, even from copies, about 60 days at most after it was deleted.
 
 We looked at three group key agreements:
 
@@ -360,24 +386,25 @@ The design on this page, [The model](../access/) and [Apps as workers](../worker
 is too far from the prototype to change it a step at a time, and a state
 between the two would mean nothing. So the kernel is written again:
 
-- **Kept:** `fos-core` (formats), `fos-id` (`did:fos`), the simulation in
-  `fos-sim` as the way to test, `.app` files, the gateway, and the `wasi:http`
+- **Kept:** `fileos-core` (formats), `fileos-id` (`did:fileos`), the simulation in
+  `fileos-sim` as the way to test, `.app` files, the gateway, and the `wasi:http`
   runtime.
 - **New:** signed logs in a causal graph, spaces with flat names, files with
   fixed IDs, grants and views, strong removal, checks on writes, chunks,
   checkpoints, keys that follow prefixes, `wasi:filesystem` for apps, and watch.
-- **Order:** first the data model in `fos-sim`, starting from the first test,
+- **Order:** first the data model in `fileos-sim`, starting from the first test,
   "a node reads its own write while it is offline"; then storage, network and
-  the runtime; last, the old `fos-fs`, `fos-sync` and engine are taken away.
-- **Done:** the data model is in the crate `fos-space` (sans-IO, portable),
-  with tests in `fos-sim`: signed logs in a causal graph, spaces with flat
+  the runtime; last, the old `fileos-fs`, `fileos-sync` and engine are taken away.
+- **Done:** the data model is in the crate `fileos-space` (sans-IO, portable),
+  with tests in `fileos-sim`: signed logs in a causal graph, spaces with flat
   names, files with fixed IDs and versions side by side, grants with strong
   removal, groups (owned by keys or by groups, and in groups), content in
   chunks cut where the content says, checkpoints with compaction, snapshots
   and retention, and sync between nodes. The store, the network, the node and
-  the runtime use it, and the old `fos-fs`, `fos-sync` and engine are gone.
-  Next: keys that follow prefixes, then checks on writes, views and
-  `wasi:filesystem`.
+  the runtime use it, and the old `fileos-fs`, `fileos-sync` and engine are gone.
+  Encryption is built too: keys that follow prefixes, data keys wrapped
+  under them, HPKE, new epochs when access is taken back, and keys dropped
+  at checkpoints. Next: checks on writes, views and `wasi:filesystem`.
 
 ## Still open
 

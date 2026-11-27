@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "fileos-store"
+description = "fileOS on disk: the node key, blobs, folder logs and local key-value stores"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+fileos-core.workspace = true
+fileos-space.workspace = true
+getrandom.workspace = true
+
+tempfile.workspace = true
+
+[lints]
+workspace = true

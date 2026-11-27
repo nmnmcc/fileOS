@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 name = "照片"
+"reason.import" = "照片会请你选一个文件夹，用来显示其中的照片。它只能读取这些照片。"
 "reason.photos" = "照片会读取你的照片，获取尺寸并建立索引，显示这些照片，并把你上传的照片放进 /photos。"

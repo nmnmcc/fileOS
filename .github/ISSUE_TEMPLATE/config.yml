@@ -6,5 +6,5 @@ contact_links:
     url: https://github.com/nmnmcc/fileOS/security/advisories/new
     about: Send it privately, not in an open issue. See SECURITY.md.
   - name: Documentation
-    url: https://hs.nmnm.cc/
+    url: https://docs.fileos.app/
     about: Books for users, for people who run a node, and for developers.

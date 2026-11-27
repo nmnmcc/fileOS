@@ -5,10 +5,10 @@ description: Seven ideas (content, files, spaces, principals, grants, views and 
 
 :::note[Status: built in part]
 Built: content, files, spaces, principals (keys and groups) and grants, with
-strong removal, and people as principals (in `fos-space`). Not built yet: views,
-asking at run time, sharing between apps, checks on writes, and the `watch`
-options and `schedule` events. Today an app gets the paths of its manifest
-when it is installed.
+strong removal, and people as principals (in `fileos-space`); views for apps,
+with private data and grants given at run time from the command line. Not
+built yet: the picker (an app asking for a file), sharing between apps,
+checks on writes, and the `watch` options and `schedule` events.
 :::
 
 ## The test for making things one
@@ -46,7 +46,7 @@ record). There is no key-value store and no stream type.
 
 - A file has a **fixed ID**: the hash of the log entry that made it, with its
   place in that entry (one entry can make many files). So the ID proves
-  itself, as the ID of a space and a `did:fos` do. A rename does not change it.
+  itself, as the ID of a space and a `did:fileos` do. A rename does not change it.
 - A file has **versions**. When two devices change it at the same time, the
   versions are kept side by side, and nobody's change is lost in secret.
 - A file whose content is a **CRDT** (made on [Loro](https://github.com/loro-dev/loro))
@@ -75,7 +75,7 @@ kept apart. Inside, all principals share one model:
 
 | Principal | Its authority                                                                         |
 | --------- | ------------------------------------------------------------------------------------- |
-| A person  | Its own rotation keys: a [`did:fos`](../identity/) DID, which proves itself           |
+| A person  | Its own rotation keys: a [`did:fileos`](../identity/) DID, which proves itself        |
 | A device  | Its node key, with a certificate from its person                                      |
 | A group   | Its owner, which is a person or another group; the chain ends at a person             |
 | An app    | It belongs to a person, and acts with a key from a seed that the person's nodes share |
@@ -90,8 +90,10 @@ shows that it is one of the person's nodes: the operations of the DID log and
 the node's certificate, signed by the signing key of the identity. A vouch
 proves itself, so anyone may write it. When a node connects, it shows its
 proof, and a node that has a space naming that person writes the vouch, so
-the new node gets the space. A new signing key ends every certificate of the
-old one (for example after a phone is lost).
+the new node gets the space. To take one device back, the identity signs a
+**revocation**; nodes write it into each space as an unvouch, and the old
+certificate never counts again there. A new signing key ends every
+certificate of the old one at once.
 
 **Ownership is recursive.** Every space has exactly one owner, a person or a
 group. Every group has exactly one owner and has members. The chain ends at a
@@ -216,6 +218,13 @@ space. The same file can be `/photos/2026/cat.jpg` for Ming,
 - There are no system categories such as "the photo library".
 - The person can take back a whole grant or single permissions at any time.
 
+Built today: an app calls `fileos:app/access.ask(purpose, permissions)`, within
+the `[[asks]]` of its manifest. The request waits in the home space. The
+person sees it with `fileos app requests` and answers with
+`fileos app answer <id> <path>` (or `fileos app refuse <id>`). The app gets the
+path at `/granted/<handle>` and hears of it with `on-change`. A picker page
+at `fileos.localhost` comes with sign-in.
+
 ### Sharing between apps
 
 As with Android intents: an app says in its manifest what it takes
@@ -225,16 +234,24 @@ kernel gives the receiving app a grant from the sender's own (read only, one
 file, until it is taken back), mounts it, and sends the person to the receiving
 app's path, which is a normal `fetch` for it.
 
+Built today: an app calls `fileos:app/access.share(path)` on a file it has
+`share.send` on. The offer waits with the other requests; the person gives it
+to an app with `fileos app answer <id> <app>`. The receiving app must take that
+kind of file (`[[receives]]` with name patterns). It gets read access to that
+one file, by its ID, at `/granted/<handle>/<name>` in its view, and hears of
+it with `on-change`. Actions and types, and sending the person to the
+receiving app, come with the share sheet page.
+
 ### The command line
 
 The command line is a way in for the owner, as the picker is, and can see real
 names:
 
 ```
-fos app grant <app> <path> <permissions>      for example: fos app grant photos /photos/2026 files.read,files.create
-fos app grants [<app>]                        an app's grants, with every permission
-fos app revoke <app> <handle> [<permissions>] all of a grant, or only some permissions
-fos space grant <path> <principal> <template or permissions>
+fileos app grant <app> <path> <permissions>      for example: fileos app grant photos /photos/2026 files.read,files.create
+fileos app grants [<app>]                        an app's grants, with every permission
+fileos app revoke <app> <handle> [<permissions>] all of a grant, or only some permissions
+fileos space grant <path> <principal> <template or permissions>
 ```
 
 ## Events

@@ -3,7 +3,7 @@
 """Build the release artifacts with Nix and copy them into one directory.
 
 Builds both Nix outputs and the WebAssembly apps (scripts/apps.py). Then it
-runs `fos --version`, as a quick test that it starts.
+runs `fileos --version`, as a quick test that it starts.
 """
 
 import json
@@ -27,9 +27,9 @@ def main(
     ] = ROOT / "artifacts",
 ) -> None:
     """Build the release artifacts with Nix and copy them into TARGET."""
-    with console.status("devenv build outputs.fos outputs.docs"):
+    with console.status("devenv build outputs.fileos outputs.docs"):
         built = subprocess.run(
-            ["devenv", "build", "outputs.fos", "outputs.docs"],
+            ["devenv", "build", "outputs.fileos", "outputs.docs"],
             cwd=ROOT,
             check=True,
             capture_output=True,
@@ -42,17 +42,17 @@ def main(
 
     shutil.rmtree(target, ignore_errors=True)
     target.mkdir(parents=True)
-    fos = target / "fos"
-    shutil.copyfile(Path(outputs["outputs.fos"]) / "bin" / "fos", fos)
+    fileos = target / "fileos"
+    shutil.copyfile(Path(outputs["outputs.fileos"]) / "bin" / "fileos", fileos)
     shutil.copytree(outputs["outputs.docs"], target / "docs")
     # The engine and the apps that come with fileOS, as .app folders.
     subprocess.run([sys.executable, str(ROOT / "scripts" / "apps.py")], cwd=ROOT, check=True)
     shutil.copytree(ROOT / "target" / "apps", target / "apps")
     # Everything in the Nix store is read-only, so give the copies our own permissions.
     for path in [target, *target.rglob("*")]:
-        path.chmod(0o755 if path.is_dir() or path == fos else 0o644)
+        path.chmod(0o755 if path.is_dir() or path == fileos else 0o644)
 
-    subprocess.run([fos, "--version"], check=True)
+    subprocess.run([fileos, "--version"], check=True)
     console.print(f"[green]Artifacts in {target}[/green]")
 
 

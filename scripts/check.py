@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable
+from enum import StrEnum
 from pathlib import Path
 
 import typer
@@ -20,13 +21,13 @@ from rich.console import Console
 ROOT = Path(__file__).resolve().parent.parent
 
 WASM_TARGET = "wasm32-unknown-unknown"
-APPS = ["--package", "fos-app", "--package", "chat", "--package", "photos"]
+APPS = ["--package", "fileos-app", "--package", "chat", "--package", "photos"]
 
 
 def portable_check() -> list[str]:
     """`cargo check` for the browser, for every crate with `portable = true`.
 
-    The list comes from `[package.metadata.fos]` in each Cargo.toml, so it is
+    The list comes from `[package.metadata.fileos]` in each Cargo.toml, so it is
     never written down twice.
     """
     out = subprocess.run(
@@ -40,8 +41,8 @@ def portable_check() -> list[str]:
     command = ["cargo", "check", "--locked", "--target", WASM_TARGET]
     for package in packages:
         metadata = package.get("metadata")
-        fos = metadata.get("fos") if isinstance(metadata, dict) else None
-        if isinstance(fos, dict) and fos.get("portable") is True:
+        fileos = metadata.get("fileos") if isinstance(metadata, dict) else None
+        if isinstance(fileos, dict) and fileos.get("portable") is True:
             command += ["--package", str(package["name"])]
     return command
 
@@ -69,7 +70,7 @@ CHECKS: list[list[str] | Callable[[], list[str]]] = [
         "cargo",
         "check",
         "--package",
-        "fos-sim",
+        "fileos-sim",
         "--features",
         "test-util",
         "--all-targets",
@@ -86,10 +87,20 @@ CHECKS: list[list[str] | Callable[[], list[str]]] = [
 console = Console()
 
 
-def main() -> None:
+class Group(StrEnum):
+    ALL = "all"
+    STANDARD = "standard"
+    MSRV = "msrv"
+
+
+def main(group: Group = Group.ALL) -> None:
     """Run the checks CI runs. Stops at the first check that fails."""
-    checks: list[list[str] | Callable[[], list[str]]] = [*CHECKS]
-    if msrv_cargo := os.environ.get("HS_MSRV_CARGO"):
+    checks = [] if group is Group.MSRV else [*CHECKS]
+    msrv_cargo = os.environ.get("HS_MSRV_CARGO")
+    if group is Group.MSRV and not msrv_cargo:
+        console.print("[red]Set HS_MSRV_CARGO to the Cargo path for the oldest Rust version.[/red]")
+        raise typer.Exit(1)
+    if group is not Group.STANDARD and msrv_cargo:
         checks.append([msrv_cargo, "check", "--workspace", "--all-targets", "--locked"])
     for check in checks:
         command = check() if callable(check) else check
@@ -98,6 +109,11 @@ def main() -> None:
         env = os.environ.copy()
         if command[:2] == ["cargo", "doc"]:
             env["RUSTDOCFLAGS"] = f"{env.get('RUSTDOCFLAGS', '')} -D warnings".strip()
+        if msrv_cargo and command[0] == msrv_cargo:
+            env["RUSTC"] = str(Path(msrv_cargo).with_name("rustc"))
+            target = Path(env.get("CARGO_TARGET_DIR") or ROOT / "target")
+            env["CARGO_TARGET_DIR"] = str(target / "msrv")
+            subprocess.run([env["RUSTC"], "--version"], cwd=ROOT, env=env, check=True)
         if subprocess.run(command, check=False, cwd=ROOT, env=env).returncode != 0:
             console.print(f"\n[red]failed:[/red] {line}", highlight=False)
             raise typer.Exit(1)

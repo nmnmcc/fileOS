@@ -30,7 +30,7 @@ fileOS 只有一个基础，一切都建立在它之上。它最初的想法来�
 | 共享相册或网盘     | 一个空间，加上给家人的授权                   |
 | 聊天               | 一个目录，每条消息一个小文件                 |
 | 一群人             | 一个组：有成员的主体，由一个密钥或一个组拥有 |
-| 有多台设备的一个人 | 一个身份（`did:fos`）和它的节点              |
+| 有多台设备的一个人 | 一个身份（`did:fileos`）和它的节点           |
 | 备份或中继         | 对一个空间有 `data.keep` 的节点              |
 | 安装 App           | 把 App 放进一个挂载在 `/apps/<name>` 的空间  |
 | App 能做什么       | 给 App 密钥的授权，来自它 manifest 中的权限  |
@@ -40,16 +40,16 @@ fileOS 只有一个基础，一切都建立在它之上。它最初的想法来�
 ## 分层
 
 ```
-┌───────────────────────────────────────────────┐
-│ App（WASM）  photos chat …                    │
-├───────────────────────────────────────────────┤
-│ WIT：fos:app（fs、kv、log、events）+ wasi:http│
-├───────────────────────────────────────────────┤
-│ 内核：空间 · 授权 · 同步 · 检查点 ·           │
-│       App 运行时 · 网关                       │
-├───────────────────────────────────────────────┤
-│ wasmtime · libp2p · 磁盘                      │
-└───────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────┐
+│ App（WASM）  photos chat …                        │
+├───────────────────────────────────────────────────┤
+│ WIT：fileos:app（fs、kv、log、events）+ wasi:http │
+├───────────────────────────────────────────────────┤
+│ 内核：空间 · 授权 · 同步 · 检查点 ·               │
+│       App 运行时 · 网关                           │
+├───────────────────────────────────────────────────┤
+│ wasmtime · libp2p · 磁盘                          │
+└───────────────────────────────────────────────────┘
 ```
 
 内核对数据没有任何 “应该”。它不知道什么是照片、聊天或密码。在它必须做决定的地方（什么时候做检查点、保留哪些旧版本），它有一个可以替换的策略和一个默认值。
@@ -118,24 +118,24 @@ fileOS 只有一个基础，一切都建立在它之上。它最初的想法来�
 - 新记录发给每个已连接、可以保存这个空间的节点，再由它们继续转发。
 - 落后很多的节点可以从最近一次由所有者签名的快照开始。
 - 节点按哈希索取内容。如果请求失败或超时，节点可以重试。
-- 同步协议是 sans-IO 的。`fos-net` 把它接到 libp2p 上，`fos-sim` 把它接到内存中的模拟上。
+- 同步协议是 sans-IO 的。`fileos-net` 把它接到 libp2p 上，`fileos-sim` 把它接到内存中的模拟上。
 
 ## App 运行时：wasmtime
 
-我们使用 [wasmtime](https://wasmtime.dev)，不自己造。App 是 `wit/fos.wit` 中 `app` world 的一个组件：
+我们使用 [wasmtime](https://wasmtime.dev)，不自己造。App 是 `wit/fileos.wit` 中 `app` world 的一个组件：
 
-| 接口                     | 做什么                                               |
-| ------------------------ | ---------------------------------------------------- |
-| `fos:app/fs`             | 读、写、追加、列出路径，按授权检查                   |
-| `fos:app/kv`             | 只在本节点的缓存，用于可以重新生成的索引             |
-| `fos:app/log`            | 给人看的消息                                         |
-| `wasi:clocks/wall-clock` | 时间，用于按时间排序的名字                           |
-| `fos:app/events`（导出） | `on-change`：App 监听的路径变了                      |
-| `wasi:http`（导出）      | 发给 App 自己的 origin（`<app-id>.localhost`）的请求 |
+| 接口                        | 做什么                                               |
+| --------------------------- | ---------------------------------------------------- |
+| `fileos:app/fs`             | 读、写、追加、列出路径，按授权检查                   |
+| `fileos:app/kv`             | 只在本节点的缓存，用于可以重新生成的索引             |
+| `fileos:app/log`            | 给人看的消息                                         |
+| `wasi:clocks/wall-clock`    | 时间，用于按时间排序的名字                           |
+| `fileos:app/events`（导出） | `on-change`：App 监听的路径变了                      |
+| `wasi:http`（导出）         | 发给 App 自己的 origin（`<app-id>.localhost`）的请求 |
 
 App 的规则：
 
-- 每个实例都有内存和 fuel 的限制。
+- App 是 **Worker**：每个事件、每个请求都得到一个新实例，有内存和 fuel 的限制，两次之间内存里什么都不留。
 - **App 之间只通过文件协作。** 一个 App 写，另一个 App 监听。App 之间没有其他通信方式。
 - 我们自己的 App 和别人的 App 用同样的接口和同样的沙箱。
 
@@ -143,7 +143,7 @@ App 的下一步（worker、`wasi:filesystem`、监听选项、选择器）见 [
 
 ## App 包
 
-App 是一个文件夹，和 macOS 一样：`manifest.toml`、`bin/` 中的组件、`ui/` 中的网页界面，以及 `resources/`。需要作为一个文件传递时，`fos app pack` 生成一个 `.app` 文件：不压缩的 zip，manifest 原样放入，其余文件放在 `payload.tar.zst` 中。
+App 是一个文件夹，和 macOS 一样：`manifest.toml`、`bin/` 中的组件、`ui/` 中的网页界面，以及 `resources/`。需要作为一个文件传递时，`fileos app pack` 生成一个 `.app` 文件：不压缩的 zip，manifest 原样放入，其余文件放在 `payload.tar.zst` 中。
 
 ```toml
 id       = "photos"
@@ -151,7 +151,7 @@ name     = "Photos"
 kind     = "app"
 version  = "1.4.0"
 build    = 142
-requires = "fos:app@0.1.0"
+requires = "fileos:app@0.1.0"
 main     = "bin/app.wasm"
 
 [[permissions]]               # App 最多能得到的
@@ -167,7 +167,7 @@ path = "/photos"
 
 ## 网关
 
-网关是本机上的一个 HTTP 端口。节点之间的同步不经过它。它在 `fos.localhost` 提供内核 API，在每个 App 自己的 origin（`<app-id>.localhost`）提供这个 App 的请求。App 拿不到 Cookie，也从不接触密钥。见 [HTTP 与浏览器](../http/)。
+网关是本机上的一个 HTTP 端口。节点之间的同步不经过它。它在 `fileos.localhost` 提供内核 API，在每个 App 自己的 origin（`<app-id>.localhost`）提供这个 App 的请求。App 拿不到 Cookie，也从不接触密钥。见 [HTTP 与浏览器](../http/)。
 
 ## 日常功能都是 App
 
@@ -186,53 +186,55 @@ photos 和 chat 已经实现，其他的以后会有。它们和所有人的 App
 
 ```
 crates/
-  fos            程序本身；只把各部分连起来
-  fos-node       把内核组装成一个节点
-  fos-gateway    网关
-  fos-runtime    App 运行时（wasmtime）：.app 文件和 App
-  fos-net        libp2p
-  fos-store      磁盘：节点密钥、空间的日志和基础、内容
-  fos-space      空间：日志、文件、授权、检查点、同步（sans-IO，可移植）
-  fos-id         身份：did:fos、节点证书、链接（可移植）
-  fos-core       哈希、密钥、签名、CBOR（可移植）
-  fos-sim        多节点模拟，用于测试
+  fileos            程序本身；只把各部分连起来
+  fileos-node       把内核组装成一个节点
+  fileos-gateway    网关
+  fileos-runtime    App 运行时（wasmtime）：.app 文件和 App
+  fileos-net        libp2p
+  fileos-store      磁盘：节点密钥、空间的日志和基础、内容
+  fileos-space      空间：日志、文件、授权、检查点、同步（sans-IO，可移植）
+  fileos-id         身份：did:fileos、节点证书、链接（可移植）
+  fileos-core       哈希、密钥、签名、CBOR（可移植）
+  fileos-sim        多节点模拟，用于测试
 apps/
-  fos-app        App 的 Rust SDK（MIT OR Apache-2.0）
-  photos, chat   随 fileOS 提供的 App
-wit/fos.wit      App 接口
+  fileos-app        App 的 Rust SDK（MIT OR Apache-2.0）
+  photos, chat      随 fileOS 提供的 App
+wit/fileos.wit      App 接口
 ```
 
-依赖只向下。App 只依赖 `fos-app`。
+依赖只向下。App 只依赖 `fileos-app`。
 
 ## 已实现的部分
 
-| 部分                                               | 是否实现                               |
-| -------------------------------------------------- | -------------------------------------- |
-| 因果图中的签名日志，没有排序节点                   | 是（`fos-space`，在 `fos-sim` 中测试） |
-| ID 固定的文件、并排的版本、分块的内容              | 是                                     |
-| 授权：权限、前缀和文件、转授、收回、拒绝           | 是                                     |
-| 强移除                                             | 是                                     |
-| 组，由密钥或组拥有                                 | 是                                     |
-| 检查点、压缩、快照、保留策略                       | 是                                     |
-| 建立在新内核上的节点、存储、网络和网关             | 是                                     |
-| 身份：`did:fos`、节点证书、身份空间                | 是                                     |
-| 通过 `wasi:http` 的 App，以及 photos 和 chat       | 是                                     |
-| 加密：跟着前缀的密钥、HPKE、crypto-shredding       | 否                                     |
-| 人作为主体（一个身份代表它的所有设备）             | 是                                     |
-| App 的视图、选择器、App 之间的分享                 | 否                                     |
-| App 作为 Worker、监听选项、`wasi:filesystem`、定时 | 否                                     |
-| 用户登录（带 PKCE 和 DPoP 的 OAuth）               | 否                                     |
+| 部分                                         | 是否实现                                     |
+| -------------------------------------------- | -------------------------------------------- |
+| 因果图中的签名日志，没有排序节点             | 是（`fileos-space`，在 `fileos-sim` 中测试） |
+| ID 固定的文件、并排的版本、分块的内容        | 是                                           |
+| 授权：权限、前缀和文件、转授、收回、拒绝     | 是                                           |
+| 强移除                                       | 是                                           |
+| 组，由密钥或组拥有                           | 是                                           |
+| 检查点、压缩、快照、保留策略                 | 是                                           |
+| 建立在新内核上的节点、存储、网络和网关       | 是                                           |
+| 身份：`did:fileos`、节点证书、身份空间       | 是                                           |
+| 通过 `wasi:http` 的 App，以及 photos 和 chat | 是                                           |
+| 加密：跟着前缀的密钥、HPKE、crypto-shredding | 是                                           |
+| 人作为主体（一个身份代表它的所有设备）       | 是                                           |
+| App 的视图、App 私有数据、运行时授予的授权   | 是                                           |
+| 选择器、App 之间的分享                       | 否                                           |
+| App 作为 Worker：每个事件一个新实例          | 是                                           |
+| 定时任务：内核向 App 发送请求                | 是                                           |
+| 监听选项、`wasi:filesystem`、事件的节点列表  | 否                                           |
+| 用户登录（带 PKCE 和 DPoP 的 OAuth）         | 否                                           |
 
 ## 代价和未决问题
 
 1. **状态在每次变化后由全部记录重新算出。** 这样简单而正确，但大空间会慢；检查点让空间保持小，以后可以改成逐步计算。
-2. **数据在磁盘上还没有加密。** 有 `data.keep` 的节点能看到数据。下一步是跟着前缀的密钥（见[数据](../data/)）。
+2. **文件名和大小不加密。** 内容是加密的；文件名、大小以及谁写了什么是公开的，因为每个节点都要检查每一条记录。每台设备用一把每 30 天更换一次的接收密钥接收密钥（见[数据](../data/)）。
 3. **只读空间的一部分**（一个前缀或一个文件）还不能发给其他节点：一个节点要么保存整个空间，要么不保存。
 4. WASM 和内核在家用硬件上的速度还没有测量。
 
 ## 下一步
 
-1. 加密：跟着前缀的密钥、HPKE、crypto-shredding。
-2. App 的视图、选择器、App 之间的分享。
-3. App 作为 Worker：每个事件一个新实例、监听选项、定时任务。
-4. 网关的用户登录。
+1. 选择器（App 申请一个文件）、App 之间的分享。
+2. 监听选项、`wasi:filesystem`，以及每个事件的节点列表。
+3. 网关的用户登录。

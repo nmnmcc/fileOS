@@ -57,4 +57,4 @@ description: 给编写 fileOS App 的人：怎样把复杂的数据放进文件�
 
 ## SDK 提供的帮助
 
-`fos-app` SDK 要提供这些，免得每个 App 都重新实现一遍：按 ID 存取记录（生成新 ID、带 schema 版本、保留不认识的字段）、分数索引、Loro 文档，以及一个让缓存文件里的 SQLite 索引和文件保持同步的辅助工具。
+`fileos-app` SDK 要提供这些，免得每个 App 都重新实现一遍：按 ID 存取记录（生成新 ID、带 schema 版本、保留不认识的字段）、分数索引、Loro 文档，以及一个让缓存文件里的 SQLite 索引和文件保持同步的辅助工具。

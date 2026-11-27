@@ -12,34 +12,34 @@ fileOS is a prototype. Its data formats will change between versions.
 In the repository, with the devenv shell (it has every tool):
 
 ```sh
-cargo build --release -p fos   # the program: target/release/fos
+cargo build --release -p fileos   # the program: target/release/fileos
 apps                           # the apps: target/apps/*.app
 ```
 
-A release has the same files: the `fos` program and the `apps/` folder.
+A release has the same files: the `fileos` program and the `apps/` folder.
 
 ## Make a node
 
 ```sh
-fos node init
+fileos node init
 ```
 
 This makes the data directory (by default `~/.fileos`; change it with `--dir`
-or `FOS_DIR`), a key for the node, and its home space. Other spaces are
+or `FILEOS_DIR`), a key for the node, and its home space. Other spaces are
 mounted in the home space at paths such as `/photos`.
 
 ## Run it
 
 ```sh
-fos node run
+fileos node run
 ```
 
 This starts the network, the apps and the gateway. The gateway is the HTTP
 front of the node, on this machine only (`127.0.0.1` and `::1`, port 7341):
-`http://fos.localhost:7341/` is the kernel, and `http://<app-id>.localhost:7341/`
-is an app. The other `fos` commands use the kernel API, with the token in
-`gateway.token` in the data directory. `fos curl` runs curl with that token:
-for example, `fos curl /v0/status`.
+`http://fileos.localhost:7341/` is the kernel, and `http://<app-id>.localhost:7341/`
+is an app. The other `fileos` commands use the kernel API, with the token in
+`gateway.token` in the data directory. `fileos curl` runs curl with that token:
+for example, `fileos curl /v0/status`.
 
 | Option          | What it does                                                  |
 | --------------- | ------------------------------------------------------------- |
@@ -48,7 +48,7 @@ for example, `fos curl /v0/status`.
 | `--port PORT`   | The port of the gateway (default 7341; 0 is any free port)    |
 | `--no-mdns`     | Do not look for nodes on the home network                     |
 
-`fos node status` shows the node key, the addresses it listens on (with `/p2p/…`,
+`fileos node status` shows the node key, the addresses it listens on (with `/p2p/…`,
 ready to give to another node), the peers and the spaces.
 
 ## Connect two nodes
@@ -57,7 +57,7 @@ On the home network, nodes find each other with mDNS. In other places, give
 one node the address of the other:
 
 ```sh
-fos node connect /ip4/192.0.2.10/tcp/4001/p2p/12D3KooW…
+fileos node connect /ip4/192.0.2.10/tcp/4001/p2p/12D3KooW…
 ```
 
 The network is [libp2p](https://libp2p.io): TCP with Noise and Yamux, relays
@@ -86,16 +86,16 @@ When the node starts, it reads every log again and checks every entry.
 A node makes a checkpoint of a space it owns after 1000 entries, and then
 drops the entries before it. Old versions get thinner with age: one an hour
 for a day, one a day for 30 days, one a week for a year. Deleted files are
-kept for 30 days. `fos space checkpoint <path>` makes one now.
+kept for 30 days. `fileos space checkpoint <path>` makes one now.
 
 ## When something is wrong
 
 - **A space does not come.** Check that the nodes are connected
-  (`fos node status` lists the peers), and that the owner of the space gave your
-  node key a grant to keep it (`fos space grant /photos <key> read`).
+  (`fileos node status` lists the peers), and that the owner of the space gave your
+  node key a grant to keep it (`fileos space grant /photos <key> read`).
 - **Writes are not on the other node.** A node writes at any time, also
   offline, and sends its writes when it is connected again.
-- **"entries have no effect" in `fos node status`.** Some entries were not
+- **"entries have no effect" in `fileos node status`.** Some entries were not
   allowed: for example, they were made at the same time as access was taken
-  back. `fos space grants <path>` shows the grants.
-- **More detail.** Run the node with `RUST_LOG=debug fos node run`.
+  back. `fileos space grants <path>` shows the grants.
+- **More detail.** Run the node with `RUST_LOG=debug fileos node run`.

@@ -81,6 +81,14 @@ skip = [
   { crate = "wit-parser@0.262.0", reason = "wit-bindgen 0.63; Wasmtime 51 uses 0.263" },
   { crate = "wit-bindgen@0.57.1", reason = "wasip2 in the host dependency tree" },
   { crate = "windows-sys@0.52.0", reason = "ring, on Windows only" },
+  # hpke (encryption of spaces) is on the newer RustCrypto crates; snow, in
+  # libp2p-noise, is on the older ones.
+  { crate = "aead@0.5.2", reason = "snow" },
+  { crate = "chacha20poly1305@0.10.1", reason = "snow" },
+  { crate = "cipher@0.4.4", reason = "snow" },
+  { crate = "inout@0.1.4", reason = "snow" },
+  { crate = "poly1305@0.8.0", reason = "snow" },
+  { crate = "universal-hash@0.5.1", reason = "snow" },
 ]
 
 [sources]

@@ -5,13 +5,28 @@ name = "Photos"
 kind = "app"
 version = "0.1.0"
 build = 1
-requires = "fos:app@0.1.0"
+requires = "fileos:app@0.1.0"
 main = "bin/app.wasm"
 
 [[permissions]]
 path = "/photos"
-access = "read-write"
+access = "read-write,share.send"
 reason = "reason.photos"
 
 [[watch]]
 path = "/photos"
+filter = ["*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"]
+
+# Folders that the person picks, when the app asks (POST /import).
+[[watch]]
+path = "/granted"
+filter = ["*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"]
+
+[[asks]]
+permissions = "read"
+reason = "reason.import"
+
+# Once a day, index every photo again, in case a change was missed.
+[[schedule]]
+name = "reindex"
+every = "1d"
