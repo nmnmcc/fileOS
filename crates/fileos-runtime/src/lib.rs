@@ -432,12 +432,21 @@ impl WasiHttpView for AppCtx {
 /// Adds the fileOS interfaces of the `app` world to a linker.
 fn add_app_to_linker(linker: &mut Linker<AppCtx>, manifest: &Manifest) -> Result<(), Error> {
     // The old and new names give apps the same host calls and grant checks.
-    let mut fs = linker.instance(&manifest.wit_interface("fs")).map_err(wasm_error)?;
-    wit_fs::add_to_linker_instance::<AppCtx, HasSelf<AppCtx>>(&mut fs, |c| c).map_err(wasm_error)?;
-    let mut kv = linker.instance(&manifest.wit_interface("kv")).map_err(wasm_error)?;
-    wit_kv::add_to_linker_instance::<AppCtx, HasSelf<AppCtx>>(&mut kv, |c| c).map_err(wasm_error)?;
-    let mut log = linker.instance(&manifest.wit_interface("log")).map_err(wasm_error)?;
-    wit_log::add_to_linker_instance::<AppCtx, HasSelf<AppCtx>>(&mut log, |c| c).map_err(wasm_error)?;
+    let mut fs = linker
+        .instance(&manifest.wit_interface("fs"))
+        .map_err(wasm_error)?;
+    wit_fs::add_to_linker_instance::<AppCtx, HasSelf<AppCtx>>(&mut fs, |c| c)
+        .map_err(wasm_error)?;
+    let mut kv = linker
+        .instance(&manifest.wit_interface("kv"))
+        .map_err(wasm_error)?;
+    wit_kv::add_to_linker_instance::<AppCtx, HasSelf<AppCtx>>(&mut kv, |c| c)
+        .map_err(wasm_error)?;
+    let mut log = linker
+        .instance(&manifest.wit_interface("log"))
+        .map_err(wasm_error)?;
+    wit_log::add_to_linker_instance::<AppCtx, HasSelf<AppCtx>>(&mut log, |c| c)
+        .map_err(wasm_error)?;
     Ok(())
 }
 

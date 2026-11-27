@@ -33,7 +33,12 @@ async fn the_kernel_runs_the_schedules_of_an_app() {
     let answer = node
         .http_app(&id)
         .unwrap()
-        .request("POST", "/.well-known/fileos/schedule/reindex", &[], Vec::new())
+        .request(
+            "POST",
+            "/.well-known/fileos/schedule/reindex",
+            &[],
+            Vec::new(),
+        )
         .await
         .unwrap();
     assert_ne!(answer.status, 200);

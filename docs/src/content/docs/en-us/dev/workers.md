@@ -44,8 +44,8 @@ of browsers.
 | Event      | When                                       | Interface                               |
 | ---------- | ------------------------------------------ | --------------------------------------- |
 | `fetch`    | An HTTP request comes for its origin       | `wasi:http/incoming-handler` (standard) |
-| `watch`    | A file or a prefix it watches changes      | `fileos:app/events`                        |
-| `schedule` | A time given in the manifest, as cron does | `fileos:app/events`                        |
+| `watch`    | A file or a prefix it watches changes      | `fileos:app/events`                     |
+| `schedule` | A time given in the manifest, as cron does | `fileos:app/events`                     |
 
 Time is not data, so it is not a file: a `schedule` is listed in the manifest,
 as Cloudflare's Cron Triggers are. Every other "event" is a watch on files:

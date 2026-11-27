@@ -27,8 +27,8 @@ App 不会一直运行。它被一个事件唤醒，完成工作，然后停止�
 | 事件       | 什么时候                         | 接口                                 |
 | ---------- | -------------------------------- | ------------------------------------ |
 | `fetch`    | 有发给它的 origin 的 HTTP 请求   | `wasi:http/incoming-handler`（标准） |
-| `watch`    | 它监听的文件或前缀发生变化       | `fileos:app/events`                     |
-| `schedule` | manifest 中写明的时间，类似 cron | `fileos:app/events`                     |
+| `watch`    | 它监听的文件或前缀发生变化       | `fileos:app/events`                  |
+| `schedule` | manifest 中写明的时间，类似 cron | `fileos:app/events`                  |
 
 时间不是数据，所以它不是文件：`schedule` 写在 manifest 里，就像 Cloudflare 的 Cron Triggers。其他所有 “事件” 都是对文件的监听：
 

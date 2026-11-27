@@ -41,7 +41,7 @@ and what is kept apart, and why. In short:
 | A shared album or drive    | A space, with grants for the family                           |
 | A chat                     | A directory with one small file for each message              |
 | A group of people          | A group: a principal with members, owned by a key or a group  |
-| A person with many devices | An identity (`did:fileos`) and its nodes                         |
+| A person with many devices | An identity (`did:fileos`) and its nodes                      |
 | A backup or a relay        | A node with `data.keep` on a space                            |
 | Installing an app          | Putting the app into a space mounted at `/apps/<name>`        |
 | What an app may do         | Grants to the app's key, from the permissions in its manifest |
@@ -168,14 +168,14 @@ How sync works:
 We use [wasmtime](https://wasmtime.dev) and do not make our own. An app is a
 component of the `app` world in `wit/fileos.wit`:
 
-| Interface                | What it does                                                   |
-| ------------------------ | -------------------------------------------------------------- |
-| `fileos:app/fs`             | Read, write, add to and list paths, checked against the grants |
-| `fileos:app/kv`             | A cache on this node only, for indexes that can be made again  |
-| `fileos:app/log`            | Messages for people                                            |
-| `wasi:clocks/wall-clock` | The time, for names that sort by time                          |
-| `fileos:app/events` (out)   | `on-change`: a path that the app watches changed               |
-| `wasi:http` (out)        | The requests for the app's own origin, `<app-id>.localhost`    |
+| Interface                 | What it does                                                   |
+| ------------------------- | -------------------------------------------------------------- |
+| `fileos:app/fs`           | Read, write, add to and list paths, checked against the grants |
+| `fileos:app/kv`           | A cache on this node only, for indexes that can be made again  |
+| `fileos:app/log`          | Messages for people                                            |
+| `wasi:clocks/wall-clock`  | The time, for names that sort by time                          |
+| `fileos:app/events` (out) | `on-change`: a path that the app watches changed               |
+| `wasi:http` (out)         | The requests for the app's own origin, `<app-id>.localhost`    |
 
 Rules for apps:
 
@@ -263,23 +263,23 @@ Dependencies go down only. Apps depend only on `fileos-app`.
 
 ## What is built
 
-| Part                                                              | Built                                  |
-| ----------------------------------------------------------------- | -------------------------------------- |
+| Part                                                              | Built                                        |
+| ----------------------------------------------------------------- | -------------------------------------------- |
 | Signed logs in a causal graph, with no ordering node              | Yes (`fileos-space`, tested in `fileos-sim`) |
-| Files with fixed IDs, versions side by side, content in chunks    | Yes                                    |
-| Grants: permissions, prefixes and files, give on, take back, deny | Yes                                    |
-| Strong removal                                                    | Yes                                    |
-| Groups, owned by keys or by groups                                | Yes                                    |
-| Checkpoints, compaction, snapshots, retention                     | Yes                                    |
-| The node, store, network and gateway on the new kernel            | Yes                                    |
-| Identities: `did:fileos`, node certificates, an identity space       | Yes                                    |
-| Apps over `wasi:http`, with the photos and chat apps              | Yes                                    |
-| Encryption: keys that follow prefixes, HPKE, crypto-shredding     | No                                     |
-| People as principals (an identity acts for its devices)           | Yes                                    |
-| Views for apps, private app data, grants given at run time        | Yes                                    |
-| The picker, sharing between apps                                  | No                                     |
-| Apps as workers, watch options, `wasi:filesystem`, schedules      | No                                     |
-| Sign-in for people (OAuth with PKCE and DPoP)                     | No                                     |
+| Files with fixed IDs, versions side by side, content in chunks    | Yes                                          |
+| Grants: permissions, prefixes and files, give on, take back, deny | Yes                                          |
+| Strong removal                                                    | Yes                                          |
+| Groups, owned by keys or by groups                                | Yes                                          |
+| Checkpoints, compaction, snapshots, retention                     | Yes                                          |
+| The node, store, network and gateway on the new kernel            | Yes                                          |
+| Identities: `did:fileos`, node certificates, an identity space    | Yes                                          |
+| Apps over `wasi:http`, with the photos and chat apps              | Yes                                          |
+| Encryption: keys that follow prefixes, HPKE, crypto-shredding     | No                                           |
+| People as principals (an identity acts for its devices)           | Yes                                          |
+| Views for apps, private app data, grants given at run time        | Yes                                          |
+| The picker, sharing between apps                                  | No                                           |
+| Apps as workers, watch options, `wasi:filesystem`, schedules      | No                                           |
+| Sign-in for people (OAuth with PKCE and DPoP)                     | No                                           |
 
 ## Costs and open questions
 

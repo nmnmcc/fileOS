@@ -75,7 +75,7 @@ kept apart. Inside, all principals share one model:
 
 | Principal | Its authority                                                                         |
 | --------- | ------------------------------------------------------------------------------------- |
-| A person  | Its own rotation keys: a [`did:fileos`](../identity/) DID, which proves itself           |
+| A person  | Its own rotation keys: a [`did:fileos`](../identity/) DID, which proves itself        |
 | A device  | Its node key, with a certificate from its person                                      |
 | A group   | Its owner, which is a person or another group; the chain ends at a person             |
 | An app    | It belongs to a person, and acts with a key from a seed that the person's nodes share |

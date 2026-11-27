@@ -22,14 +22,14 @@ fileOS 把你的文件保存在你自己控制的电脑上：家里的小盒子�
 
 `fileos` 用于和节点的内核交互。命令分为几组：
 
-| 组                         | 用途                                                          |
-| -------------------------- | ------------------------------------------------------------- |
-| `fileos node`                 | 本节点：`init`、`run`、`status`、`connect`                    |
-| `fileos fs`                   | 文件：`ls`、`cat`、`put`、`append`、`rm`                      |
-| `fileos space`                | 空间：`new`、`mount`、`grant`、`grants`、`take`、`checkpoint` |
+| 组                               | 用途                                                          |
+| -------------------------------- | ------------------------------------------------------------- |
+| `fileos node`                    | 本节点：`init`、`run`、`status`、`connect`                    |
+| `fileos fs`                      | 文件：`ls`、`cat`、`put`、`append`、`rm`                      |
+| `fileos space`                   | 空间：`new`、`mount`、`grant`、`grants`、`take`、`checkpoint` |
 | `fileos identity`（`fileos id`） | 你的身份：`new`、`add-node`、`remove-node`、`join`            |
-| `fileos app`                  | `pack` 打包或 `install` 安装 App                              |
-| `fileos curl`                 | 带着节点令牌运行 curl，例如 `fileos curl /v0/status`             |
+| `fileos app`                     | `pack` 打包或 `install` 安装 App                              |
+| `fileos curl`                    | 带着节点令牌运行 curl，例如 `fileos curl /v0/status`          |
 
 App 做了什么不在 `fileos` 里，要在 App 里看。`fileos help <组>` 会进一步说明每一组。
 
@@ -37,8 +37,8 @@ App 做了什么不在 `fileos` 里，要在 App 里看。`fileos help <组>` �
 
 这些命令作用于你电脑上运行的节点。路径以空间的挂载位置开头，比如 `/photos/2026/beach.jpg`。
 
-| 命令                               | 作用                             |
-| ---------------------------------- | -------------------------------- |
+| 命令                                  | 作用                             |
+| ------------------------------------- | -------------------------------- |
 | `fileos fs ls /photos`                | 列出某个路径下的名字             |
 | `fileos fs cat /notes/todo.txt`       | 显示一个文件                     |
 | `fileos fs put /notes/todo.txt FILE`  | 放入一个文件（或者你输入的文字） |
@@ -86,8 +86,8 @@ App 以 `.app` 文件的形式提供，比如 `Photos.app`。用 `fileos app ins
 
 App 只能看到它自己的视图，永远看不到你的文件真正在哪里：
 
-| 命令                                                    | 作用                                    |
-| ------------------------------------------------------- | --------------------------------------- |
+| 命令                                                       | 作用                                    |
+| ---------------------------------------------------------- | --------------------------------------- |
 | `fileos app grants photos`                                 | App 看到什么，以及每一部分代表什么      |
 | `fileos app grant photos /pictures read`                   | 授予更多；它在 `/granted/<handle>` 看到 |
 | `fileos app grant photos /pictures read-write --as photos` | 让它的 `/photos` 就是你的 `/pictures`   |

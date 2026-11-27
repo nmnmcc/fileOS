@@ -364,7 +364,11 @@ impl Node {
         );
         let mut saved = BTreeMap::new();
         for space in store.load_spaces()? {
-            let hashes = space.entries().iter().map(fileos_space::Entry::hash).collect();
+            let hashes = space
+                .entries()
+                .iter()
+                .map(fileos_space::Entry::hash)
+                .collect();
             let base = space.base().map(|b| b.checkpoint.hash());
             saved.insert(space.id(), (hashes, base));
             node.insert(space);
@@ -1763,7 +1767,8 @@ impl Inner {
                             self.store.has(*h)
                                 && self.node.spaces().any(|s| {
                                     s.contents().iter().any(|c| {
-                                        c.hash == *h && fileos_space::content::complete(c, &self.store)
+                                        c.hash == *h
+                                            && fileos_space::content::complete(c, &self.store)
                                     })
                                 })
                         })

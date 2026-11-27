@@ -222,7 +222,10 @@ impl State {
         let (service, kind) = if let Some(service) = self.services.get(FOLDER_SERVICE) {
             (service, FOLDER_SERVICE_TYPE)
         } else {
-            (self.services.get(LEGACY_FOLDER_SERVICE)?, LEGACY_FOLDER_SERVICE_TYPE)
+            (
+                self.services.get(LEGACY_FOLDER_SERVICE)?,
+                LEGACY_FOLDER_SERVICE_TYPE,
+            )
         };
         (service.kind == kind).then_some(())?;
         service.endpoint.parse().ok()
@@ -568,7 +571,8 @@ impl FromStr for Link {
 
     fn from_str(text: &str) -> Result<Self, Error> {
         let (did, query) = text.split_once('?').unwrap_or((text, ""));
-        let id = did_suffix(did).ok_or_else(|| Error(format!("not a did:fileos link: {text:?}")))?;
+        let id =
+            did_suffix(did).ok_or_else(|| Error(format!("not a did:fileos link: {text:?}")))?;
         if id.is_empty() || !id.bytes().all(|b| BASE32.contains(&b)) {
             return Err(Error(format!("not a did:fileos link: {text:?}")));
         }
@@ -624,11 +628,18 @@ mod tests {
         let key = rotation.public();
         let prev = None::<Hash>;
         let sig = rotation.sign(&encode(&("did:fos operation", &change, prev, key)));
-        let ops = [Op { change, prev, key, sig }];
+        let ops = [Op {
+            change,
+            prev,
+            key,
+            sig,
+        }];
         let did = did_of(ops[0].hash());
         let old_did = did.replacen("did:fileos:", "did:fos:", 1);
         assert_eq!(ops[0].did(), old_did);
-        let link: Link = format!("{old_did}?r=/ip4/127.0.0.1/tcp/7341").parse().unwrap();
+        let link: Link = format!("{old_did}?r=/ip4/127.0.0.1/tcp/7341")
+            .parse()
+            .unwrap();
         assert_eq!(link.did, old_did);
         for name in [did, old_did] {
             assert_eq!(did_hash(&name).unwrap(), ops[0].hash());

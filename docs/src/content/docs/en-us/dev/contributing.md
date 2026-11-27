@@ -31,11 +31,11 @@ documentation you need Node.js 22.23.4 or later: run `npm install` and
 An ordinary laptop should be enough to take part. So CI checks a build
 budget on every pull request, measured on a 4-core laptop with 8 GB of RAM:
 
-| Measure                            | Budget  |
-| ---------------------------------- | ------- |
-| Clean debug build of the workspace | ≤ 360 s |
-| Rebuild after editing a leaf crate | ≤ 5 s   |
-| Rebuild after editing `fileos-core`   | ≤ 20 s  |
+| Measure                             | Budget  |
+| ----------------------------------- | ------- |
+| Clean debug build of the workspace  | ≤ 360 s |
+| Rebuild after editing a leaf crate  | ≤ 5 s   |
+| Rebuild after editing `fileos-core` | ≤ 20 s  |
 
 We treat a pull request over budget like one that fails the tests.
 

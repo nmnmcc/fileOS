@@ -593,8 +593,8 @@ mod tests {
 
     #[test]
     fn arguments_do_not_take_the_place_of_dir() {
-        let cli =
-            Cli::try_parse_from(["fileos", "--dir", "/data", "app", "install", "Photos.app"]).unwrap();
+        let cli = Cli::try_parse_from(["fileos", "--dir", "/data", "app", "install", "Photos.app"])
+            .unwrap();
         assert_eq!(cli.dir, PathBuf::from("/data"));
         let Command::App {
             command: AppCommand::Install { app },

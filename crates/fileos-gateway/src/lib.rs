@@ -90,7 +90,9 @@ pub fn target(host: &str) -> Option<Target> {
     };
     let name = name.trim_end_matches('.');
     match name {
-        "fileos.localhost" | "fos.localhost" | "localhost" | "127.0.0.1" | "::1" => Some(Target::Kernel),
+        "fileos.localhost" | "fos.localhost" | "localhost" | "127.0.0.1" | "::1" => {
+            Some(Target::Kernel)
+        }
         _ => {
             let label = name.strip_suffix(".localhost")?;
             let good = !label.is_empty()

@@ -96,7 +96,12 @@ impl HttpApp {
             (SCHEDULE_PATH, "fileos-event")
         };
         let answer = self
-            .request("POST", &format!("{path}{name}"), &[(header, "schedule")], Vec::new())
+            .request(
+                "POST",
+                &format!("{path}{name}"),
+                &[(header, "schedule")],
+                Vec::new(),
+            )
             .await?;
         Ok(answer.status)
     }

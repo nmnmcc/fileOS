@@ -1177,7 +1177,8 @@ impl Space {
                     }
                     Act::Vouch { ops, cert } => {
                         let cert = NodeCert::from_bytes(&cert.0).ok();
-                        if let Some(did) = cert.as_ref().and_then(|c| fileos_id::did_hash(&c.did).ok())
+                        if let Some(did) =
+                            cert.as_ref().and_then(|c| fileos_id::did_hash(&c.did).ok())
                         {
                             let ops = ops
                                 .iter()

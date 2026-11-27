@@ -32,14 +32,14 @@ There are only a few ideas:
 
 `fileos` works with the kernel of your node. Its commands are in groups:
 
-| Group                     | What it is for                                                  |
-| ------------------------- | --------------------------------------------------------------- |
-| `fileos node`                | This node: `init`, `run`, `status`, `connect`                   |
-| `fileos fs`                  | Files: `ls`, `cat`, `put`, `append`, `rm`                       |
-| `fileos space`               | Spaces: `new`, `mount`, `grant`, `grants`, `take`, `checkpoint` |
-| `fileos identity` (`fileos id`) | Your identity: `new`, `add-node`, `remove-node`, `join`         |
-| `fileos app`                 | `pack` or `install` an app                                      |
-| `fileos curl`                | curl with your node's token, for example `fileos curl /v0/status`  |
+| Group                           | What it is for                                                    |
+| ------------------------------- | ----------------------------------------------------------------- |
+| `fileos node`                   | This node: `init`, `run`, `status`, `connect`                     |
+| `fileos fs`                     | Files: `ls`, `cat`, `put`, `append`, `rm`                         |
+| `fileos space`                  | Spaces: `new`, `mount`, `grant`, `grants`, `take`, `checkpoint`   |
+| `fileos identity` (`fileos id`) | Your identity: `new`, `add-node`, `remove-node`, `join`           |
+| `fileos app`                    | `pack` or `install` an app                                        |
+| `fileos curl`                   | curl with your node's token, for example `fileos curl /v0/status` |
 
 What an app does is not in `fileos`; you see it in the app. `fileos help <group>`
 says more about each group.
@@ -49,8 +49,8 @@ says more about each group.
 These commands work on the node that runs on your computer. Paths start with
 the place a space is mounted, for example `/photos/2026/beach.jpg`.
 
-| Command                            | What it does                         |
-| ---------------------------------- | ------------------------------------ |
+| Command                               | What it does                         |
+| ------------------------------------- | ------------------------------------ |
 | `fileos fs ls /photos`                | The names under a path               |
 | `fileos fs cat /notes/todo.txt`       | Print a file                         |
 | `fileos fs put /notes/todo.txt FILE`  | Put a file (or the text you type)    |
@@ -118,8 +118,8 @@ app.
 
 An app sees only its own view, never where your files really are:
 
-| Command                                                 | What it does                                     |
-| ------------------------------------------------------- | ------------------------------------------------ |
+| Command                                                    | What it does                                     |
+| ---------------------------------------------------------- | ------------------------------------------------ |
 | `fileos app grants photos`                                 | What the app sees, and what each part stands for |
 | `fileos app grant photos /pictures read`                   | Give it more; it sees it at `/granted/<handle>`  |
 | `fileos app grant photos /pictures read-write --as photos` | Make its `/photos` be your `/pictures`           |
