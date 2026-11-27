@@ -13,6 +13,7 @@
 //! spaces/<id>.log         the snapshot and later entries of each space
 //! spaces/<id>.base        the snapshot in older logs
 //! local/<app>.kv          cache files of each app, on this node only
+//! auth.cbor               sign-in: passkeys and refresh tokens (hashed)
 //! gateway.token           the token for the local gateway
 //! gateway.addr            the address the gateway listens on, while it runs
 //! ```
@@ -195,6 +196,27 @@ impl Store {
         write_atomic(&self.dir.join("recipients.key"), &encode(&kept))
     }
 
+    /// The sign-in state of this node, as `fileos-auth` keeps it.
+    ///
+    /// # Errors
+    ///
+    /// When the file is there but cannot be read.
+    pub fn auth(&self) -> Result<Option<Vec<u8>>, Error> {
+        let path = self.dir.join("auth.cbor");
+        match fs::read(&path) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(io_error(&path, e)),
+        }
+    }
+
+    /// # Errors
+    ///
+    /// When the file cannot be written.
+    pub fn set_auth(&self, bytes: &[u8]) -> Result<(), Error> {
+        write_atomic(&self.dir.join("auth.cbor"), bytes)
+    }
+
     /// The token that a local client gives to the gateway. It is made the first time.
     ///
     /// # Errors
@@ -375,7 +397,9 @@ impl Store {
                 continue;
             };
             // Old logs can include entries before their snapshot.
-            let _ = space.insert(entries.collect());
+            space
+                .insert(entries.collect())
+                .map_err(|error| error.context(path.display()))?;
             spaces.push(space);
         }
         Ok(spaces)

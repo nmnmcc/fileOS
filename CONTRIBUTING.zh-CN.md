@@ -99,10 +99,11 @@ crates/
   fileos-net        libp2p：在节点之间传送同步消息
   fileos-store      数据目录：节点密钥、内容、空间的日志和基础、App 缓存
   fileos-space      空间：签名日志、文件、授权、检查点与同步（sans-IO，可移植）
+  fileos-auth       登录：通行密钥、令牌与 DPoP
   fileos-id         身份：did:fileos、节点证书、身份链接（可移植）
   fileos-core       格式：CBOR、ed25519、BLAKE3（依赖图最底层，可移植）
   fileos-sim        用于测试的确定性多节点模拟
-apps/               第二个 workspace，由 `apps` 编译成 wasm32-unknown-unknown
+apps/               应用 crate，由 `apps` 编译成 wasm32-unknown-unknown
   fileos-app        App 的 SDK（MIT OR Apache-2.0）
   photos            照片 App
   chat              聊天 App

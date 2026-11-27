@@ -511,7 +511,6 @@ impl View<'_> {
                     }
                     let versions: Vec<&Ver> = self
                         .versions(*file)
-                        .into_iter()
                         .filter(|v| parents.contains(&v.version.id))
                         .collect();
                     if parents.is_empty() || versions.len() != parents.len() {

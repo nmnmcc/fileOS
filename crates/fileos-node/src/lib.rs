@@ -37,6 +37,7 @@ use fileos_store::Store;
 pub use fileos_space::Principal;
 
 mod app;
+mod auth;
 mod identity;
 mod net;
 
@@ -133,6 +134,8 @@ struct Shared {
     scheduling: std::sync::atomic::AtomicBool,
     runtime: Runtime,
     key: PublicKey,
+    /// Sign-in for people, once the gateway runs (it needs the port).
+    auth: Mutex<Option<fileos_auth::Auth>>,
 }
 
 struct Inner {
@@ -454,6 +457,7 @@ impl Node {
                 scheduling: std::sync::atomic::AtomicBool::new(false),
                 runtime: Runtime::new()?,
                 key: key.public(),
+                auth: Mutex::new(None),
             }),
         };
         node.start_apps();

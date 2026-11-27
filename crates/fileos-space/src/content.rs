@@ -138,7 +138,7 @@ fn split_with(data: &[u8], piece: impl Fn(&[u8]) -> Vec<u8>) -> (Content, Vec<(H
     )
 }
 
-/// The bytes added to each encrypted chunk by its XChaCha20 nonce and tag.
+/// The bytes added to each encrypted chunk by its `XChaCha20` nonce and tag.
 const SEALED_OVERHEAD: u64 = 24 + 16;
 
 /// Checks a chunk list and gives the hashes and sizes that it names.

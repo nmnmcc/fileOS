@@ -160,6 +160,9 @@ enum IdentityCommand {
     AddNode { key: String },
     /// Take a node away from the identity.
     RemoveNode { key: String },
+    /// Make a one-time link to add a passkey, which signs you in to the apps
+    /// of this node. Open it on this machine within 10 minutes.
+    Passkey,
     /// Join an identity, with the space ID that `fileos identity add-node` gave.
     Join { space: String },
 }
@@ -463,6 +466,15 @@ fn identity(client: &Client, command: Option<IdentityCommand>, dir: &Path) -> Re
             println!(
                 "took away node {key}\nIts certificate is deleted and revoked: it is no \
                  longer a node of the identity in any space."
+            );
+            Ok(())
+        }
+        Some(IdentityCommand::Passkey) => {
+            let code = text(client.call("POST", "/v0/auth/setup", &[])?);
+            let port = client.addr.rsplit(':').next().unwrap_or_default();
+            println!(
+                "Open this link on this machine to add a passkey (it works once, for 10 \
+                 minutes):\n  http://fileos.localhost:{port}/setup#{code}"
             );
             Ok(())
         }

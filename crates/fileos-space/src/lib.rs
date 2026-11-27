@@ -28,9 +28,9 @@ pub use entry::{
     Sealed, good_name,
 };
 #[doc(inline)]
-pub use space::{File, Given, Grant, Keyring, Snapshot, Space, Summary, Version};
+pub use space::{EPOCH_MAX_AGE, File, Given, Grant, Keyring, Snapshot, Space, Summary, Version};
 #[doc(inline)]
-pub use sync::{Contents, Event, Msg, Node, Step};
+pub use sync::{Contents, Event, Msg, Node, Sealing, Step};
 
 #[cfg(test)]
 mod tests;

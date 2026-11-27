@@ -52,7 +52,7 @@ An ordinary laptop should be enough to contribute. Most of Rust's compile time d
 | -------------------------------------- | ------- |
 | Clean debug build of the native crates | ≤ 360 s |
 | Rebuild after a change to a leaf crate | ≤ 5 s   |
-| Rebuild after a change to `fileos-core`   | ≤ 20 s  |
+| Rebuild after a change to `fileos-core` | ≤ 20 s  |
 
 The budgets are for a laptop with 4 cores and 8 GB of RAM. We will change the budgets as the code gets bigger.
 
@@ -102,6 +102,7 @@ crates/
   fileos-net        libp2p: carries sync messages between nodes
   fileos-store      the data directory: node key, content, logs and bases of spaces, app caches
   fileos-space      spaces: signed logs, files, grants, checkpoints and sync (sans-IO, portable)
+  fileos-auth       sign-in: passkeys, tokens and DPoP
   fileos-id         identities: did:fileos, node certificates, identity links (portable)
   fileos-core       formats: CBOR, ed25519, BLAKE3 (bottom of the graph, portable)
   fileos-sim        deterministic multi-node simulation, for tests

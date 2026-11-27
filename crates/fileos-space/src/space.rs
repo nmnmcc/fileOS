@@ -1610,10 +1610,6 @@ mod tests {
 
     #[test]
     fn a_checkpoint_made_before_identity_grants_still_loads() {
-        let owner = SecretKey::from_seed(&[7; 32]);
-        let (mut space, _) = Space::create(Principal::Key(owner.public()), &owner, 1, 2);
-        let time = 3;
-        let retention = Retention::default();
         #[derive(Serialize)]
         struct OldSummary {
             files: [(); 0],
@@ -1621,6 +1617,11 @@ mod tests {
             groups: [(); 0],
             logs: Vec<(PublicKey, Hash, u64)>,
         }
+
+        let owner = SecretKey::from_seed(&[7; 32]);
+        let (mut space, _) = Space::create(Principal::Key(owner.public()), &owner, 1, 2);
+        let time = 3;
+        let retention = Retention::default();
 
         let old = OldSummary {
             files: [],

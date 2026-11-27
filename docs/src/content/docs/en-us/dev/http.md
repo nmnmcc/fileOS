@@ -3,9 +3,10 @@ title: "HTTP and the browser"
 description: How apps and plugins give their services over HTTP, each with an origin of its own, with no domains for people to configure and no cookies.
 ---
 
-:::note[Status: design, partly built]
-The gateway and apps as HTTP servers (steps 1 and 2 of the [plan](#plan))
-are built. The rest is not built yet.
+:::note[Status: built in part]
+The gateway, apps as HTTP servers, and sign-in (steps 1 to 3 of the
+[plan](#plan)) are built, but not signed URLs or OpenID Connect. The rest is
+not built yet.
 :::
 
 ## The goal
@@ -88,6 +89,29 @@ request forgery is not possible. `<img>`, `<video>` and download links cannot
 send an `Authorization` header, so the kernel gives short-lived signed URLs
 for them.
 
+### What is built
+
+- **A passkey for the node.** `fileos identity passkey` gives a one-time link,
+  good for 10 minutes on this machine, to `http://fileos.localhost:7341/setup`.
+  The page adds a passkey (P-256 or Ed25519, with the person verified). The
+  person is the identity of the node (its `did:fos`), or, with no identity,
+  the node key as a `did:key`.
+- **`GET /authorize`** takes `response_type=code`, `client_id` (the origin of
+  an app on this node), a `redirect_uri` on that origin, a PKCE challenge
+  (`S256`) and `state`. Its page names the app, and signs in with the
+  passkey. Codes last 60 seconds and are good once.
+- **`POST /token`** (from the app's origin only, with CORS) takes
+  `grant_type=authorization_code` or `refresh_token`, with a `DPoP` proof.
+  Access tokens last 10 minutes and are bound to the proof's key; refresh
+  tokens last 30 days if not used, change at each use, and a second use of
+  one takes back the whole sign-in. **`POST /revoke`** takes one back.
+- **Requests to an app** with `Authorization: DPoP <token>` and a `DPoP`
+  proof (`ES256` or `EdDSA`) for that method and URL reach the app with
+  `FileOS-User: <DID>`. A token for another app, a proof with another key or a
+  proof used before gets `401`.
+- The node keeps the passkeys and the hashes of refresh tokens in
+  `auth.cbor`; what has ended is dropped.
+
 ## What the gateway does
 
 - It listens on this machine only (127.0.0.1 and ::1), on a fixed port that
@@ -160,8 +184,8 @@ over WebSocket through a relay. It is a way in, not the home of your data:
    safe default headers.
 2. **Apps as HTTP servers:** `wasi:http` in the runtime, and requests sent by
    host name.
-3. **Sign-in:** `/authorize`, `/token` and `/revoke`, passkeys, DPoP, the
-   `FileOS-User` header, and signed URLs.
+3. **Sign-in:** `/authorize`, `/token` and `/revoke`, passkeys, DPoP and the
+   `FileOS-User` header (built); signed URLs and OpenID Connect (not yet).
 4. **The web interface in `fileos`**, and the web page of the project that sends
    people to their local node.
 5. **The shared domain** for devices with no node.

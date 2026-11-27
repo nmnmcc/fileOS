@@ -18,6 +18,7 @@ publish = false
 [workspace.dependencies]
 fileos-core = { path = "crates/fileos-core", version = "0.1.0" }
 fileos-id = { path = "crates/fileos-id", version = "0.1.0" }
+fileos-auth = { path = "crates/fileos-auth", version = "0.1.0" }
 fileos-space = { path = "crates/fileos-space", version = "0.1.0" }
 fileos-store = { path = "crates/fileos-store", version = "0.1.0" }
 fileos-runtime = { path = "crates/fileos-runtime", version = "0.1.0" }
@@ -48,6 +49,13 @@ cbor4ii = { version = "1.2.5", default-features = false, features = [
   "serde1",
   "use_std",
 ] }
+# Sign-in (fileos-auth): JSON for WebAuthn and DPoP, and P-256 and Ed25519
+# checks with ring. Both are already built: serde_json for wasmtime, and
+# ring for libp2p's Noise.
+serde_json = { version = "1.0.154", default-features = false, features = [
+  "std",
+] }
+ring = { version = "0.17.14", default-features = false, features = ["std"] }
 # The manifest of an .app folder.
 toml = { version = "1.2.3", default-features = false, features = [
   "std",

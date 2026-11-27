@@ -6,11 +6,9 @@
 //! [`app::export_app!`]. The interfaces are in `wit/fileos.wit`.
 
 /// Bindings for the `app` world.
-#[allow(
-    unsafe_code,
-    missing_docs,
-    clippy::pedantic,
-    reason = "made by wit-bindgen"
+#[expect(
+    clippy::same_length_and_capacity,
+    reason = "wit-bindgen wraps buffers passed in by the host"
 )]
 pub mod app {
     wit_bindgen::generate!({

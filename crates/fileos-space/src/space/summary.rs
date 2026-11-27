@@ -156,6 +156,10 @@ struct OldVersion<'a> {
     author: PublicKey,
     time: u64,
     parents: &'a [Id],
+    #[expect(
+        clippy::option_option,
+        reason = "an absent field and a null key have different bytes"
+    )]
     #[serde(skip_serializing_if = "Option::is_none")]
     key: Option<Option<&'a Wrapped>>,
 }
