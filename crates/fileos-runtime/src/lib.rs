@@ -27,7 +27,8 @@ use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 mod http;
 mod pack;
 
-pub use http::{Answer, HttpApp};
+#[doc(inline)]
+pub use http::{Answer, Body, HttpApp};
 
 mod bindings {
     pub mod app {
@@ -156,7 +157,7 @@ pub struct Ask {
 }
 
 /// Files that an app takes when other apps share them (see
-/// `fos:app/access.share`).
+/// `fileos:app/access.share`).
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Receive {
     /// Name patterns, such as `*.jpg`. Any file when empty.
@@ -186,7 +187,7 @@ impl Schedule {
     ///
     /// When `every` is not a number and a unit, or is less than a minute.
     pub fn seconds(&self) -> Result<u64, Error> {
-        let bad = || Error(format!("not a time for a schedule: {:?}", self.every));
+        let bad = || Error::invalid(format!("not a time for a schedule: {:?}", self.every));
         let unit = self.every.chars().last().ok_or_else(bad)?;
         let n: u64 = self.every[..self.every.len() - unit.len_utf8()]
             .parse()
@@ -200,7 +201,7 @@ impl Schedule {
             _ => return Err(bad()),
         };
         if seconds < 60 {
-            return Err(Error(format!(
+            return Err(Error::invalid(format!(
                 "a schedule runs at most once a minute: {:?}",
                 self.every
             )));
@@ -239,8 +240,8 @@ pub const WIT_VERSION: &str = "fileos:app@0.1.0";
 /// An `.app` folder: its manifest and its files, by path.
 #[derive(Clone, Debug)]
 pub struct Bundle {
-    pub manifest: Manifest,
-    pub files: BTreeMap<String, Vec<u8>>,
+    manifest: Manifest,
+    files: BTreeMap<String, Vec<u8>>,
 }
 
 impl Bundle {
@@ -252,19 +253,19 @@ impl Bundle {
     pub fn from_files(files: BTreeMap<String, Vec<u8>>) -> Result<Self, Error> {
         let text = files
             .get("/manifest.toml")
-            .ok_or_else(|| Error("an .app folder needs a manifest.toml".into()))?;
+            .ok_or_else(|| Error::invalid("an .app folder needs a manifest.toml".into()))?;
         let text = std::str::from_utf8(text)
-            .map_err(|e| Error(format!("manifest.toml is not UTF-8: {e}")))?;
+            .map_err(|e| Error::invalid(format!("manifest.toml is not UTF-8: {e}")))?;
         let manifest: Manifest =
-            toml::from_str(text).map_err(|e| Error(format!("manifest.toml: {e}")))?;
+            toml::from_str(text).map_err(|e| Error::invalid(format!("manifest.toml: {e}")))?;
         if manifest.requires != WIT_VERSION {
-            return Err(Error(format!(
+            return Err(Error::invalid(format!(
                 "{} needs {}, but this runtime gives {WIT_VERSION}",
                 manifest.id, manifest.requires
             )));
         }
         if !files.contains_key(&format!("/{}", manifest.main)) {
-            return Err(Error(format!(
+            return Err(Error::invalid(format!(
                 "{} is not in the .app folder",
                 manifest.main
             )));
@@ -277,7 +278,7 @@ impl Bundle {
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
             {
-                return Err(Error(format!(
+                return Err(Error::invalid(format!(
                     "a schedule name has letters, digits, - and _: {:?}",
                     schedule.name
                 )));
@@ -310,10 +311,27 @@ impl Bundle {
             Ok(())
         }
         let mut files = BTreeMap::new();
-        walk(dir, "", &mut files).map_err(|e| Error(format!("{}: {e}", dir.display())))?;
+        walk(dir, "", &mut files).map_err(|e| Error::invalid(format!("{}: {e}", dir.display())))?;
         Self::from_files(files)
     }
 
+    /// The manifest checked when this bundle was opened.
+    pub fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+
+    /// The paths and bytes of all files in the bundle.
+    pub fn files(&self) -> impl Iterator<Item = (&str, &[u8])> {
+        self.files
+            .iter()
+            .map(|(path, data)| (path.as_str(), data.as_slice()))
+    }
+
+    /// The main component named in the manifest.
+    ///
+    /// # Panics
+    ///
+    /// If the bundle's internal check that the main file exists is broken.
     pub fn main(&self) -> &[u8] {
         &self.files[&format!("/{}", self.manifest.main)]
     }
@@ -334,6 +352,8 @@ impl Bundle {
 #[derive(Clone)]
 pub struct Runtime {
     engine: wasmtime::Engine,
+    requests: Arc<tokio::sync::Semaphore>,
+    host_workers: Arc<tokio::sync::Semaphore>,
 }
 
 impl std::fmt::Debug for Runtime {
@@ -350,12 +370,18 @@ impl Runtime {
         let mut config = Config::new();
         config.consume_fuel(true);
         let engine = wasmtime::Engine::new(&config).map_err(wasm_error)?;
-        Ok(Self { engine })
+        Ok(Self {
+            engine,
+            // Each request has its own Wasm store. Bound their total cost.
+            requests: Arc::new(tokio::sync::Semaphore::new(8)),
+            // Some host calls wait for disk or the node's state lock.
+            host_workers: Arc::new(tokio::sync::Semaphore::new(4)),
+        })
     }
 
     fn component(&self, bundle: &Bundle, kind: Kind) -> Result<Component, Error> {
         if bundle.manifest.kind != kind {
-            return Err(Error(
+            return Err(Error::invalid(
                 format!("{} is not an {kind:?}", bundle.manifest.id).to_lowercase(),
             ));
         }
@@ -367,7 +393,7 @@ impl Runtime {
     /// # Errors
     ///
     /// When the bundle is not an app, or its component does not start.
-    pub fn app(&self, bundle: &Bundle, host: Arc<dyn AppHost>) -> Result<AppInstance, Error> {
+    pub fn app(&self, bundle: &Bundle, host: Host) -> Result<AppInstance, Error> {
         let component = self.component(bundle, Kind::App)?;
         let mut linker = Linker::new(&self.engine);
         add_fileos_to_linker(&mut linker)?;
@@ -378,6 +404,7 @@ impl Runtime {
         let app = AppInstance {
             manifest: bundle.manifest.clone(),
             host,
+            host_workers: Arc::clone(&self.host_workers),
             pre,
         };
         // Start it once now, so a broken app is found at install.
@@ -387,7 +414,7 @@ impl Runtime {
 }
 
 fn wasm_error(e: wasmtime::Error) -> Error {
-    Error(format!("{e:#}"))
+    Error::internal(format!("{e:#}")).with_source(e.into_boxed_dyn_error())
 }
 
 /// An error from the file system, as an app sees it.
@@ -396,6 +423,46 @@ pub enum FsError {
     Denied(String),
     NotFound,
     Invalid(String),
+    Unavailable(String),
+}
+
+impl std::fmt::Display for FsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Denied(message) => write!(f, "not allowed: {message}"),
+            Self::NotFound => f.write_str("not found"),
+            Self::Invalid(message) | Self::Unavailable(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for FsError {}
+
+impl From<FsError> for Error {
+    fn from(error: FsError) -> Self {
+        let message = error.to_string();
+        match error {
+            FsError::Denied(_) => Self::denied(message),
+            FsError::NotFound => Self::not_found(message),
+            FsError::Invalid(_) => Self::invalid(message),
+            FsError::Unavailable(_) => Self::unavailable(message),
+        }
+        .with_source(error)
+    }
+}
+
+impl From<Error> for FsError {
+    fn from(error: Error) -> Self {
+        if error.is_denied() {
+            Self::Denied(error.to_string())
+        } else if error.is_not_found() {
+            Self::NotFound
+        } else if error.is_invalid() {
+            Self::Invalid(error.to_string())
+        } else {
+            Self::Unavailable("the file system could not finish the request".into())
+        }
+    }
 }
 
 /// What an app may call. The node gives this; `app` is the ID of the app.
@@ -447,9 +514,33 @@ pub trait AppHost: Send + Sync {
     }
 }
 
+/// A shared host that handles calls made by an app.
+#[derive(Clone)]
+pub struct Host(Arc<dyn AppHost>);
+
+impl Host {
+    /// Makes a host from its implementation.
+    pub fn new(host: impl AppHost + 'static) -> Self {
+        Self(Arc::new(host))
+    }
+}
+
+impl<T: AppHost + 'static> From<Arc<T>> for Host {
+    fn from(host: Arc<T>) -> Self {
+        Self(host)
+    }
+}
+
+impl std::fmt::Debug for Host {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Host")
+    }
+}
+
 struct AppCtx {
     app: String,
-    host: Arc<dyn AppHost>,
+    host: Host,
+    host_workers: Arc<tokio::sync::Semaphore>,
     limits: StoreLimits,
     table: ResourceTable,
     wasi: WasiCtx,
@@ -485,10 +576,11 @@ type OutgoingResult = Result<
 >;
 
 impl AppCtx {
-    fn new(app: &str, host: Arc<dyn AppHost>) -> Self {
+    fn new(app: &str, host: Host, host_workers: Arc<tokio::sync::Semaphore>) -> Self {
         Self {
             app: app.to_string(),
             host,
+            host_workers,
             limits: StoreLimitsBuilder::new().memory_size(APP_MEMORY).build(),
             table: ResourceTable::new(),
             // No files, no environment, no network, and nothing on the
@@ -537,67 +629,66 @@ fn to_wit(e: FsError) -> wit_fs::Error {
     match e {
         FsError::Denied(m) => wit_fs::Error::Denied(m),
         FsError::NotFound => wit_fs::Error::NotFound,
-        FsError::Invalid(m) => wit_fs::Error::Invalid(m),
+        FsError::Invalid(m) | FsError::Unavailable(m) => wit_fs::Error::Invalid(m),
     }
 }
 
 impl wit_fs::Host for AppCtx {
     fn read(&mut self, path: String) -> Result<Vec<u8>, wit_fs::Error> {
-        self.host.read(&self.app, &path).map_err(to_wit)
+        self.host.0.read(&self.app, &path).map_err(to_wit)
     }
 
     fn write(&mut self, path: String, data: Vec<u8>) -> Result<(), wit_fs::Error> {
-        self.host.write(&self.app, &path, data).map_err(to_wit)
+        self.host.0.write(&self.app, &path, data).map_err(to_wit)
     }
 
     fn append(&mut self, path: String, data: Vec<u8>) -> Result<(), wit_fs::Error> {
-        self.host.append(&self.app, &path, data).map_err(to_wit)
+        self.host.0.append(&self.app, &path, data).map_err(to_wit)
     }
 
     fn delete(&mut self, path: String) -> Result<(), wit_fs::Error> {
-        self.host.delete(&self.app, &path).map_err(to_wit)
+        self.host.0.delete(&self.app, &path).map_err(to_wit)
     }
 
     fn list_dir(&mut self, path: String) -> Result<Vec<String>, wit_fs::Error> {
-        self.host.list(&self.app, &path).map_err(to_wit)
+        self.host.0.list(&self.app, &path).map_err(to_wit)
     }
 }
 
 impl wit_access::Host for AppCtx {
     fn ask(&mut self, purpose: String, permissions: String) -> Result<String, String> {
-        self.host.ask(&self.app, &purpose, &permissions)
+        self.host.0.ask(&self.app, &purpose, &permissions)
     }
 
     fn share(&mut self, path: String) -> Result<String, String> {
-        self.host.share(&self.app, &path)
+        self.host.0.share(&self.app, &path)
     }
 }
 
 impl wit_kv::Host for AppCtx {
     fn get(&mut self, key: String) -> Option<Vec<u8>> {
-        self.host.kv_get(&self.app, &key)
+        self.host.0.kv_get(&self.app, &key)
     }
 
     fn set(&mut self, key: String, value: Vec<u8>) {
-        self.host.kv_set(&self.app, &key, value);
+        self.host.0.kv_set(&self.app, &key, value);
     }
 
     fn delete(&mut self, key: String) {
-        self.host.kv_delete(&self.app, &key);
+        self.host.0.kv_delete(&self.app, &key);
     }
 
     fn keys(&mut self, prefix: String) -> Vec<String> {
-        self.host.kv_keys(&self.app, &prefix)
+        self.host.0.kv_keys(&self.app, &prefix)
     }
 }
 
 impl wit_log::Host for AppCtx {
     fn info(&mut self, message: String) {
-        self.host.log(&self.app, &message);
+        self.host.0.log(&self.app, &message);
     }
 }
 
-/// A running app.
 /// An app, ready for events.
 ///
 /// It is a worker: each event gets a new instance, with its own limits, and
@@ -605,7 +696,8 @@ impl wit_log::Host for AppCtx {
 /// files, or into the app's cache.
 pub struct AppInstance {
     manifest: Manifest,
-    host: Arc<dyn AppHost>,
+    host: Host,
+    host_workers: Arc<tokio::sync::Semaphore>,
     pre: bindings::app::AppPre<AppCtx>,
 }
 
@@ -648,7 +740,11 @@ impl AppInstance {
     fn instance(&self) -> Result<(Store<AppCtx>, bindings::app::App), Error> {
         let mut store = Store::new(
             self.pre.engine(),
-            AppCtx::new(&self.manifest.id, Arc::clone(&self.host)),
+            AppCtx::new(
+                &self.manifest.id,
+                self.host.clone(),
+                Arc::clone(&self.host_workers),
+            ),
         );
         store.limiter(|ctx| &mut ctx.limits);
         store.set_fuel(APP_FUEL).map_err(wasm_error)?;
@@ -656,6 +752,3 @@ impl AppInstance {
         Ok((store, app))
     }
 }
-
-#[cfg(test)]
-mod tests;

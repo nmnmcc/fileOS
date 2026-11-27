@@ -5,10 +5,11 @@
 //! An app implements [`app::exports::fileos::app::events::Guest`] and calls
 //! [`app::export_app!`]. The interfaces are in `wit/fileos.wit`.
 
-#![allow(unsafe_code, reason = "the code that wit-bindgen makes uses unsafe")]
-
 /// Bindings for the `app` world.
-#[allow(missing_docs, clippy::pedantic, reason = "made by wit-bindgen")]
+#[expect(
+    clippy::same_length_and_capacity,
+    reason = "wit-bindgen wraps buffers passed in by the host"
+)]
 pub mod app {
     wit_bindgen::generate!({
         path: "../../wit",

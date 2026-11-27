@@ -14,7 +14,6 @@ fileos-core.workspace = true
 fileos-space.workspace = true
 getrandom.workspace = true
 
-[dev-dependencies]
 tempfile.workspace = true
 
 [lints]

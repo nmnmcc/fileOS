@@ -154,20 +154,122 @@ pub fn encode<T: Serialize>(value: &T) -> Vec<u8> {
 ///
 /// When the bytes are not a CBOR form of `T`.
 pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
-    cbor4ii::serde::from_slice(bytes).map_err(|e| Error(format!("bad CBOR: {e}")))
+    cbor4ii::serde::from_slice(bytes)
+        .map_err(|e| Error::invalid(format!("bad CBOR: {e}")).with_source(e))
 }
 
-/// An error with a message for people.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Error(pub String);
+/// An operation that could not finish.
+#[derive(Debug)]
+pub struct Error {
+    message: String,
+    kind: Kind,
+    source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    backtrace: std::backtrace::Backtrace,
+}
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Invalid,
+    Denied,
+    NotFound,
+    Unavailable,
+    Internal,
+}
+
+impl Error {
+    fn new(kind: Kind, message: String) -> Self {
+        Self {
+            message,
+            kind,
+            source: None,
+            backtrace: std::backtrace::Backtrace::capture(),
+        }
+    }
+
+    /// Bad input or a request that cannot be carried out as given.
+    pub fn invalid(message: String) -> Self {
+        Self::new(Kind::Invalid, message)
+    }
+
+    /// The caller lacks the right to do this.
+    pub fn denied(message: String) -> Self {
+        Self::new(Kind::Denied, message)
+    }
+
+    /// The requested item does not exist.
+    pub fn not_found(message: String) -> Self {
+        Self::new(Kind::NotFound, message)
+    }
+
+    /// A service or some data is not ready now.
+    pub fn unavailable(message: String) -> Self {
+        Self::new(Kind::Unavailable, message)
+    }
+
+    /// A failure in the service that handles the request.
+    pub fn internal(message: String) -> Self {
+        Self::new(Kind::Internal, message)
+    }
+
+    /// Adds where the error happened, keeping its cause and kind.
+    #[must_use]
+    pub fn context(mut self, message: impl fmt::Display) -> Self {
+        self.message = format!("{message}: {}", self.message);
+        self
+    }
+
+    /// Keeps a lower-level cause for diagnostics.
+    #[must_use]
+    pub fn with_source(
+        mut self,
+        cause: impl Into<Box<dyn std::error::Error + Send + Sync>>,
+    ) -> Self {
+        self.source = Some(cause.into());
+        self
+    }
+
+    pub fn is_invalid(&self) -> bool {
+        self.kind == Kind::Invalid
+    }
+
+    pub fn is_denied(&self) -> bool {
+        self.kind == Kind::Denied
+    }
+
+    pub fn is_not_found(&self) -> bool {
+        self.kind == Kind::NotFound
+    }
+
+    pub fn is_unavailable(&self) -> bool {
+        self.kind == Kind::Unavailable
+    }
+
+    pub fn backtrace(&self) -> &std::backtrace::Backtrace {
+        &self.backtrace
     }
 }
 
-impl std::error::Error for Error {}
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::internal(error.to_string()).with_source(error)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)?;
+        if f.alternate() && self.backtrace.status() == std::backtrace::BacktraceStatus::Captured {
+            write!(f, "\n{}", self.backtrace)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_deref().map(|error| error as _)
+    }
+}
 
 // Hex text and serde for the fixed-size byte types.
 
@@ -179,7 +281,7 @@ fn write_hex(f: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
 }
 
 fn read_hex<const N: usize>(s: &str) -> Result<[u8; N], Error> {
-    let bad = || Error(format!("not {} hex characters: {s:?}", N * 2));
+    let bad = || Error::invalid(format!("not {} hex characters: {s:?}", N * 2));
     if s.len() != N * 2 || !s.is_ascii() {
         return Err(bad());
     }
@@ -219,7 +321,7 @@ macro_rules! byte_type {
             type Error = Error;
             fn try_from(bytes: &[u8]) -> Result<Self, Error> {
                 bytes.try_into().map(Self).map_err(|_| {
-                    Error(format!(
+                    Error::invalid(format!(
                         concat!("a ", stringify!($name), " has {} bytes, not {}"),
                         $len,
                         bytes.len()

@@ -44,7 +44,7 @@ const UV: u8 = 0x04;
 const AT: u8 = 0x40;
 
 fn bad(why: &str) -> Error {
-    Error(format!("a passkey answer that is not good: {why}"))
+    Error::invalid(format!("a passkey answer that is not good: {why}"))
 }
 
 fn check_client(json: &[u8], kind: &str, challenge: &[u8], origin: &str) -> Result<(), Error> {
@@ -208,7 +208,7 @@ pub fn verify(
 
 /// A test authenticator, as a browser and a passkey do it.
 #[cfg(any(test, feature = "testing"))]
-#[allow(
+#[expect(
     missing_debug_implementations,
     clippy::new_without_default,
     clippy::missing_panics_doc,

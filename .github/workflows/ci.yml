@@ -43,9 +43,6 @@ jobs:
         with:
           cache-bin: false
           key: ${{ hashFiles('devenv.lock', 'devenv.nix', 'devenv.yaml') }}
-          workspaces: |
-            .
-            apps
       - run: devenv shell -- check --group standard
 
   msrv:

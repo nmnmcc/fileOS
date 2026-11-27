@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use fileos_core::SecretKey;
+use fileos_core::{Hash, SecretKey};
 
 use super::*;
 
@@ -587,6 +587,54 @@ fn a_grant_to_a_person_is_for_every_node_of_that_person() {
     assert!(fresh.may(who(&laptop), Permission::FilesRead, &all));
     assert!(!fresh.may(who(&phone), Permission::FilesRead, &all));
     assert_eq!(fresh.digest(), space.digest());
+}
+
+#[test]
+fn missing_content_is_requested_again_when_a_peer_returns() {
+    struct Empty;
+
+    impl Contents for Empty {
+        fn has(&self, _: Hash) -> bool {
+            false
+        }
+        fn get(&self, _: Hash) -> Option<Vec<u8>> {
+            None
+        }
+    }
+
+    let owner = SecretKey::from_seed(&[7; 32]);
+    let source = owner.public();
+    let (mut space, genesis) = Space::create(Principal::Key(source), &owner, 1, 2);
+    let item = space
+        .write(&owner, 2, vec![create("file", b"bytes")])
+        .unwrap();
+    let hash = Hash::of(b"bytes");
+    let id = space.id();
+    let mut follower = Node::new(SecretKey::from_seed(&[8; 32]), 3);
+    follower.connected(source);
+    follower.follow(id);
+    let step = follower.receive(
+        source,
+        Msg::Entries {
+            space: id,
+            entries: vec![genesis, item],
+        },
+        &Empty,
+    );
+    assert!(step.out.contains(&(source, Msg::WantContent(hash))));
+
+    follower.disconnected(source);
+    follower.connected(source);
+    let offer = Msg::Have(vec![(id, space.logs())]);
+    let step = follower.receive(source, offer, &Empty);
+    assert!(step.out.contains(&(source, Msg::WantContent(hash))));
+    follower.content_failed(source, hash);
+    assert!(
+        follower
+            .retry_contents(&Empty)
+            .out
+            .contains(&(source, Msg::WantContent(hash)))
+    );
 }
 
 #[test]

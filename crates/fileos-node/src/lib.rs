@@ -23,25 +23,30 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt::{self, Write as _};
 use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use fileos_core::{Error, Hash, PublicKey, SecretKey};
-use fileos_id::{Link, NodeCert, Op as DidOp, Service, State};
-use fileos_runtime::{AppHost, AppInstance, Bundle, ChangeKind, FsError, Kind, Runtime};
+use fileos_runtime::{AppInstance, ChangeKind, FsError, HttpApp, Runtime};
 use fileos_space::{
-    Act, Content, Contents as _, Effect, Event, File, Id, Permission, Resource, Retention, Space,
-    Step,
+    Act, Content, Contents as _, Effect, Event, File, Id, Msg, Permission, Resource, Retention,
+    Space, Step,
 };
 use fileos_store::Store;
-use tokio::sync::mpsc;
 
-pub use fileos_net::Config as NetConfig;
-pub use fileos_runtime::{Answer, HttpApp};
 pub use fileos_space::Principal;
 
-/// Where the identity space is mounted in the home space.
-pub const IDENTITY_AT: &str = "/identity";
+mod app;
+mod auth;
+mod identity;
+mod net;
+
+#[doc(inline)]
+pub use app::{Installed, app_id, pack_app};
+#[doc(inline)]
+pub use identity::{IDENTITY_AT, Identity, parse_principal};
+#[doc(inline)]
+pub use net::NetConfig;
 
 /// The prefix of the files in the home space that say what is mounted where.
 const MOUNTS: &str = ".mounts/";
@@ -135,11 +140,13 @@ struct Shared {
 
 struct Inner {
     store: Store,
+    clock: fn() -> u64,
     key: SecretKey,
     node: fileos_space::Node,
     home: Hash,
     kv: BTreeMap<String, BTreeMap<String, Vec<u8>>>,
-    net: Option<mpsc::UnboundedSender<fileos_net::Command>>,
+    net: Option<fileos_net::Commands>,
+    net_dirty: bool,
     listening: Vec<String>,
     /// For each space: the entries kept on disk, and the checkpoint of the
     /// base that is on disk.
@@ -154,6 +161,36 @@ struct Inner {
     rotation_key: Option<SecretKey>,
     /// The signing key of the identity, when this node holds it.
     signing_key: Option<SecretKey>,
+}
+
+/// A file version ready to read in chunks.
+#[derive(Debug)]
+pub struct FileReader {
+    reader: fileos_space::content::Reader,
+    store: Store,
+}
+
+impl FileReader {
+    /// The number of bytes in the file.
+    pub fn len(&self) -> u64 {
+        self.reader.content().size
+    }
+
+    /// Whether there are zero bytes in the file.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Gives each checked chunk to the caller, in order.
+    ///
+    /// # Errors
+    ///
+    /// When a piece cannot be read or the caller stops the read.
+    pub fn read(&self, write: impl FnMut(Vec<u8>) -> Option<()>) -> Result<(), Error> {
+        self.reader
+            .read(&self.store, write)
+            .ok_or_else(|| Error::unavailable("could not finish reading the file".into()))
+    }
 }
 
 /// What a node is doing, for people.
@@ -171,29 +208,6 @@ pub struct Status {
     pub identity: Option<Identity>,
 }
 
-/// The identity of a node.
-#[derive(Clone, Debug)]
-pub struct Identity {
-    /// The DID of the identity. `None` while the node waits for the
-    /// identity space from another node, or when its log is not valid.
-    pub did: Option<String>,
-    /// The identity space.
-    pub space: Hash,
-    /// The rotation keys, as `did:key`, the first one with the highest priority.
-    pub rotation_keys: Vec<String>,
-    /// Other names of the identity.
-    pub also_known_as: Vec<String>,
-    /// This node holds a rotation key of the identity.
-    pub holds_rotation_key: bool,
-    /// This node holds the signing key of the identity, so it can add nodes.
-    pub holds_signing_key: bool,
-    /// The nodes of the identity: the ones with a good certificate.
-    pub nodes: Vec<PublicKey>,
-    /// The link that people give to others, with the addresses of this node
-    /// as hints.
-    pub link: Option<String>,
-}
-
 #[derive(Clone, Debug)]
 pub struct SpaceStatus {
     pub id: Hash,
@@ -207,7 +221,25 @@ pub struct SpaceStatus {
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    m.lock().expect("node state was left incomplete by a panic")
+}
+
+/// Sources for the time of file changes and for new keys.
+#[derive(Clone, Copy, Debug)]
+pub struct Sources {
+    /// The time in milliseconds since 1970.
+    pub clock: fn() -> u64,
+    /// Fills a new seed from a source of random bytes.
+    pub entropy: fn() -> Result<[u8; 32], Error>,
+}
+
+impl Default for Sources {
+    fn default() -> Self {
+        Self {
+            clock: now,
+            entropy: fileos_store::random_seed,
+        }
+    }
 }
 
 /// The time now, in milliseconds since 1970.
@@ -220,48 +252,6 @@ fn now() -> u64 {
 /// A node path without its first `/`, and with no `/` at the end.
 fn clean(path: &str) -> String {
     path.trim_matches('/').to_string()
-}
-
-/// Packs the `.app` folder `dir` into the bytes of an `.app` file: a zip
-/// with no compression, with `manifest.toml` as it is and the other files in
-/// `payload.tar.zst`.
-///
-/// # Errors
-///
-/// When the folder is not a good bundle.
-pub fn pack_app(dir: &Path) -> Result<Vec<u8>, Error> {
-    Bundle::read_dir(dir)?.pack()
-}
-
-/// The ID of an app: the host name of its origin, `<app-id>.localhost`.
-///
-/// It is the ID in the manifest (only lowercase letters, digits and `-`)
-/// and the start of the ID of the app's space. So it does not change, and is
-/// not used again by another app, which would get the data that the browser
-/// keeps for the origin.
-pub fn app_id(manifest_id: &str, space: Hash) -> String {
-    let name: String = manifest_id
-        .to_ascii_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .take(40)
-        .collect();
-    let name = name.trim_matches('-');
-    let short = &space.to_string()[..10];
-    if name.is_empty() {
-        format!("app-{short}")
-    } else {
-        format!("{name}-{short}")
-    }
-}
-
-/// An app that was installed.
-#[derive(Clone, Debug)]
-pub struct Installed {
-    /// The key that the app acts with.
-    pub key: PublicKey,
-    /// The ID of the app: its origin is `<id>.localhost`.
-    pub id: String,
 }
 
 /// The token that local clients give to the gateway of the node in `dir`.
@@ -342,8 +332,9 @@ pub fn parse_permissions(list: &str) -> Result<Vec<Permission>, Error> {
                 out.insert(Permission::DataKeep);
             }
             other => {
-                let permission = fileos_core::decode::<Permission>(&fileos_core::encode(&other))
-                    .map_err(|e| Error(format!("not a permission or template: {other:?} ({e})")))?;
+                let permission = other
+                    .parse::<Permission>()
+                    .map_err(|e| e.context("give a permission or template"))?;
                 out.insert(permission);
             }
         }
@@ -357,17 +348,29 @@ impl Node {
     /// # Errors
     ///
     /// When the directory already has a node.
-    pub fn init(dir: &Path) -> Result<PublicKey, Error> {
-        let store = Store::open(dir)?;
+    pub fn init(dir: impl AsRef<Path>) -> Result<PublicKey, Error> {
+        Self::init_with_sources(dir.as_ref(), Sources::default())
+    }
+
+    /// Makes a node with a caller-supplied clock and source of random bytes.
+    ///
+    /// # Errors
+    ///
+    /// When the node already exists or its data files cannot be made.
+    pub fn init_with_sources(dir: &Path, sources: Sources) -> Result<PublicKey, Error> {
+        let store = Store::open_with_entropy(dir, sources.entropy)?;
         if store.home()?.is_some() {
-            return Err(Error(format!("{} already has a node", dir.display())));
+            return Err(Error::invalid(format!(
+                "{} already has a node",
+                dir.display()
+            )));
         }
         let key = store.key()?;
-        let seed = fileos_store::random_seed()?;
+        let seed = store.seed()?;
         let (space, genesis) = Space::create(
             Principal::Key(key.public()),
             &key,
-            now(),
+            (sources.clock)(),
             u64::from_le_bytes(seed[..8].try_into().unwrap_or_default()),
         );
         store.append_entries(space.id(), &[genesis])?;
@@ -380,10 +383,19 @@ impl Node {
     /// # Errors
     ///
     /// When there is no node in `dir`, or its data is broken.
-    pub fn open(dir: &Path) -> Result<Node, Error> {
-        let store = Store::open(dir)?;
+    pub fn open(dir: impl AsRef<Path>) -> Result<Node, Error> {
+        Self::open_with_sources(dir.as_ref(), Sources::default())
+    }
+
+    /// Opens a node with a caller-supplied clock and source of random bytes.
+    ///
+    /// # Errors
+    ///
+    /// When there is no node in the directory, or its data cannot be read.
+    pub fn open_with_sources(dir: &Path, sources: Sources) -> Result<Node, Error> {
+        let store = Store::open_with_entropy(dir, sources.entropy)?;
         let home = store.home()?.ok_or_else(|| {
-            Error(format!(
+            Error::invalid(format!(
                 "{} has no node: run `fileos node init`",
                 dir.display()
             ))
@@ -391,7 +403,7 @@ impl Node {
         let key = store.key()?;
         let rotation_key = store.identity_key("rotation")?;
         let signing_key = store.identity_key("signing")?;
-        let seed = fileos_store::random_seed()?;
+        let seed = store.seed()?;
         let mut node = fileos_space::Node::new(
             key.clone(),
             u64::from_le_bytes(seed[..8].try_into().unwrap_or_default()),
@@ -402,22 +414,20 @@ impl Node {
         node.set_recipients(store.recipients()?);
         let mut saved = BTreeMap::new();
         for space in store.load_spaces()? {
-            let hashes = space
-                .entries()
-                .iter()
-                .map(fileos_space::Entry::hash)
-                .collect();
+            let hashes = space.iter().map(fileos_space::Entry::hash).collect();
             let base = space.base().map(|b| b.checkpoint.hash());
             saved.insert(space.id(), (hashes, base));
             node.insert(space);
         }
         let mut inner = Inner {
             store,
+            clock: sources.clock,
             key: key.clone(),
             node,
             home,
             kv: BTreeMap::new(),
             net: None,
+            net_dirty: false,
             listening: Vec::new(),
             saved,
             seen: BTreeMap::new(),
@@ -471,7 +481,8 @@ impl Node {
     /// When something is mounted at `at` already.
     pub fn create(&self, at: &str) -> Result<Hash, Error> {
         let mut inner = self.inner();
-        let (id, step) = inner.node.create(now());
+        let time = (inner.clock)();
+        let (id, step) = inner.node.create(time);
         inner.process(step, &self.shared.changed)?;
         inner.mount(id, at, &self.shared.changed)?;
         Ok(id)
@@ -529,8 +540,33 @@ impl Node {
     ///
     /// When the path is not there, or the node has no grant for it.
     pub fn read(&self, path: &str) -> Result<Vec<u8>, Error> {
-        let key = self.key();
-        self.inner().read(key, path).map_err(fs_error)
+        let mut bytes = Vec::new();
+        self.open_file(path)?.read(|chunk| {
+            bytes.try_reserve(chunk.len()).ok()?;
+            bytes.extend_from_slice(&chunk);
+            Some(())
+        })?;
+        Ok(bytes)
+    }
+
+    /// Opens a file for a read in chunks.
+    ///
+    /// # Errors
+    ///
+    /// When the file is missing, cannot be read, or has pieces still to come.
+    pub fn open_file(&self, path: &str) -> Result<FileReader, Error> {
+        let inner = self.inner();
+        let (space, name) = inner.resolve(path);
+        let reader = inner.reader_in(self.key(), space, &name)?;
+        if !fileos_space::content::complete(&reader.content(), &inner.store) {
+            return Err(Error::unavailable(
+                "the file is not on this node yet".into(),
+            ));
+        }
+        Ok(FileReader {
+            reader,
+            store: inner.store.clone(),
+        })
     }
 
     /// The names directly under a path.
@@ -540,7 +576,7 @@ impl Node {
     /// When the space is not here, or the node has no grant for it.
     pub fn list(&self, path: &str) -> Result<Vec<String>, Error> {
         let key = self.key();
-        self.inner().list(key, path).map_err(fs_error)
+        self.inner().list(key, path).map_err(Error::from)
     }
 
     /// Gives `to` permissions on `path`: on the file when there is a file
@@ -604,12 +640,18 @@ impl Node {
             .into_iter()
             .map(|g| {
                 let g_ = &g.given;
+                let permissions = g_
+                    .permissions
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 format!(
-                    "{} {:?} -> {:?} {:?} on {:?}{}",
-                    grant_text(g_.id),
+                    "{} {} -> {} {} on {}{}",
+                    g_.id,
                     g_.effect,
-                    principal_text(g_.to),
-                    g_.permissions,
+                    g_.to,
+                    permissions,
                     g_.on,
                     if g.in_effect { "" } else { " (not in effect)" }
                 )
@@ -628,438 +670,7 @@ impl Node {
         inner.checkpoint(space, &self.shared.changed)
     }
 
-    /// Installs an app from an `.app` file (or an `.app` folder): puts it into a space mounted
-    /// at `/apps/<name>`, gives its key the permissions in its manifest, and
-    /// starts it. Gives the app's key and ID.
-    ///
-    /// # Errors
-    ///
-    /// When the bundle is not an app, a permission cannot be given, or the app
-    /// does not start.
-    pub fn install(&self, dir: &Path) -> Result<Installed, Error> {
-        let bundle = Bundle::read(dir)?;
-        if bundle.manifest.kind != Kind::App {
-            return Err(Error(format!("{} is not an app", dir.display())));
-        }
-        let name = dir
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let at = format!("/apps/{name}");
-        let app_key;
-        let space;
-        {
-            let mut inner = self.inner();
-            let app = bundle.manifest.id.clone();
-            app_key = inner.app_key(&app);
-            let (id, step) = inner.node.create(now());
-            space = id;
-            inner.process(step, &self.shared.changed)?;
-            inner.mount(id, &at, &self.shared.changed)?;
-            for (path, data) in &bundle.files {
-                inner.put(None, &format!("{at}{path}"), data, &self.shared.changed)?;
-            }
-            // The private data of the app: a space that its key owns, so no
-            // other app and no person has access to it unless given.
-            if inner.app_data(&app).is_none() {
-                let (data, step) = inner.node.create_as(&app_key, now());
-                inner.process(step, &self.shared.changed)?;
-                inner.mount(data, &format!("{APPDATA}{app}"), &self.shared.changed)?;
-            }
-            // Each permission in the manifest is mounted in the app's view at
-            // the name the manifest gives.
-            for permission in &bundle.manifest.permissions {
-                inner.give_app(
-                    &app,
-                    &permission.path,
-                    &parse_permissions(&permission.access)?,
-                    &clean(&permission.path),
-                    &self.shared.changed,
-                )?;
-            }
-        }
-        let id = self.start_app(&bundle, space)?;
-        // Tell the new app about the files that are there already.
-        let mut existing = Vec::new();
-        {
-            let inner = self.inner();
-            for watch in &bundle.manifest.watch {
-                existing.extend(inner.files_under(&watch.path));
-            }
-        }
-        lock(&self.shared.changed).extend(existing.into_iter().map(|p| (p, ChangeKind::Made)));
-        self.pump();
-        Ok(Installed {
-            key: app_key.public(),
-            id,
-        })
-    }
-
-    /// Gives an installed app (by the ID in its manifest) permissions on a
-    /// node path, and mounts it in the app's view at `name`, or at
-    /// `granted/<handle>` with no name. A mount at the same name is taken
-    /// back first. Gives the name in the app's view.
-    ///
-    /// # Errors
-    ///
-    /// When the path is not there, or the node may not give the permissions.
-    pub fn app_grant(
-        &self,
-        app: &str,
-        path: &str,
-        permissions: &[Permission],
-        name: Option<&str>,
-    ) -> Result<String, Error> {
-        let mut inner = self.inner();
-        let name = if let Some(n) = name {
-            clean(n)
-        } else {
-            let (space, prefix) = inner.resolve(path);
-            let handle = Hash::of_value(&(app, space, &prefix)).to_string();
-            format!("granted/{}", &handle[..12])
-        };
-        if inner.views(app).iter().any(|v| v.name == name) {
-            inner.take_app(app, &name, &self.shared.changed)?;
-        }
-        inner.give_app(app, path, permissions, &name, &self.shared.changed)?;
-        // The app hears of the new mount, and of the files that are there
-        // already.
-        let mut existing = vec![format!("/{}", clean(path))];
-        existing.extend(inner.files_under(path));
-        drop(inner);
-        lock(&self.shared.changed).extend(existing.into_iter().map(|p| (p, ChangeKind::Made)));
-        self.pump();
-        Ok(format!("/{name}"))
-    }
-
-    /// What an app sees: the mounts in its view.
-    pub fn app_view(&self, app: &str) -> Vec<ViewMount> {
-        self.inner().views(app)
-    }
-
-    /// The requests of apps for access that wait for the person.
-    pub fn requests(&self) -> Vec<AccessRequest> {
-        self.inner().requests()
-    }
-
-    /// Answers a request of an app: gives it what it asked for on the node
-    /// path the person picked, at `/granted/<handle>` in its view. Gives that
-    /// path.
-    ///
-    /// # Errors
-    ///
-    /// When there is no such request, or the grant cannot be given.
-    pub fn answer(&self, id: &str, path: &str) -> Result<String, Error> {
-        let request = self
-            .requests()
-            .into_iter()
-            .find(|r| r.id == id)
-            .ok_or_else(|| Error(format!("no request {id:?}")))?;
-        if let Some((space, file)) = request.share {
-            // A share: `path` names the app to give the file to.
-            let at = self.share_to(path, space, file)?;
-            self.refuse(id)?;
-            return Ok(at);
-        }
-        let at = self.app_grant(
-            &request.app,
-            path,
-            &parse_permissions(&request.permissions)?,
-            None,
-        )?;
-        self.refuse(id)?;
-        Ok(at)
-    }
-
-    /// Gives the app `to` read access to one file, by its ID, mounted at
-    /// `granted/<handle>/<name>` in its view.
-    fn share_to(&self, to: &str, space: Hash, file: Id) -> Result<String, Error> {
-        let mut inner = self.inner();
-        let s = inner
-            .node
-            .space(space)
-            .ok_or_else(|| Error("the space of the file is not here".into()))?;
-        let f = s
-            .file(file)
-            .filter(|f| !f.deleted())
-            .ok_or_else(|| Error("the file is not there any more".into()))?;
-        let name = f.versions[0].name.clone();
-        let short = name.rsplit('/').next().unwrap_or(&name).to_string();
-        let takes = lock(&self.shared.receives).get(to).is_some_and(|list| {
-            list.iter().any(|r| {
-                r.filter.is_empty() || r.filter.iter().any(|g| fileos_runtime::glob(g, &short))
-            })
-        });
-        if !takes {
-            return Err(Error(format!("the app {to} does not take {short:?}")));
-        }
-        let key = inner.app_key(to).public();
-        let grant = inner.write(
-            None,
-            space,
-            vec![Act::Give {
-                to: Principal::Key(key),
-                effect: Effect::Allow,
-                permissions: vec![Permission::FilesRead],
-                on: Resource::File(file),
-            }],
-            &self.shared.changed,
-        )?;
-        let handle = &grant.entry.to_string()[..12];
-        let mount = format!("granted/{handle}/{short}");
-        let home = inner.home;
-        let text = format!("{space}\n{name}\n{}", grant_text(grant));
-        inner.put_name(
-            None,
-            home,
-            &format!("{VIEWS}{to}/{mount}"),
-            text.as_bytes(),
-            &self.shared.changed,
-        )?;
-        let at: Vec<String> = inner.node_paths(space, &name);
-        drop(inner);
-        lock(&self.shared.changed).extend(at.into_iter().map(|p| (p, ChangeKind::Made)));
-        self.pump();
-        Ok(format!("/{mount}"))
-    }
-
-    /// Says no to a request of an app: it goes away, and the app gets
-    /// nothing.
-    ///
-    /// # Errors
-    ///
-    /// When there is no such request.
-    pub fn refuse(&self, id: &str) -> Result<(), Error> {
-        let mut inner = self.inner();
-        let home = inner.home;
-        inner.delete_name(None, home, &format!("{REQUESTS}{id}"), &self.shared.changed)
-    }
-
-    /// Takes a mount away from an app's view, and takes back its grant.
-    ///
-    /// # Errors
-    ///
-    /// When there is no such mount.
-    pub fn app_take(&self, app: &str, name: &str) -> Result<(), Error> {
-        let result = self
-            .inner()
-            .take_app(app, &clean(name), &self.shared.changed);
-        self.pump();
-        result
-    }
-
-    /// The app with this ID, if it gives HTTP.
-    pub fn http_app(&self, id: &str) -> Option<HttpApp> {
-        lock(&self.shared.http).get(id).cloned()
-    }
-
-    /// The IDs of the apps that give HTTP.
-    pub fn http_apps(&self) -> Vec<String> {
-        lock(&self.shared.http).keys().cloned().collect()
-    }
-
-    /// Makes a new identity. This node holds its rotation key and its
-    /// signing key, and is its first node. Gives the DID.
-    ///
-    /// # Errors
-    ///
-    /// When this node already has an identity, or the keys cannot be kept.
-    pub fn identity_new(&self) -> Result<String, Error> {
-        let mut inner = self.inner();
-        if let Some(space) = inner.identity_space() {
-            return Err(Error(format!(
-                "this node already has an identity, with the space {space}"
-            )));
-        }
-        // Keys from an earlier try that did not end are used again.
-        let rotation = inner.identity_key("rotation")?;
-        let signing = inner.identity_key("signing")?;
-        let (space, step) = inner.node.create_as(&signing, now());
-        inner.process(step, &self.shared.changed)?;
-        inner.mount(space, IDENTITY_AT, &self.shared.changed)?;
-        let state = State {
-            rotation_keys: vec![fileos_id::did_key(rotation.public())],
-            verification_methods: [(
-                fileos_id::SIGNING_METHOD.to_string(),
-                fileos_id::did_key(signing.public()),
-            )]
-            .into(),
-            also_known_as: Vec::new(),
-            services: [(
-                fileos_id::FOLDER_SERVICE.to_string(),
-                Service {
-                    kind: fileos_id::FOLDER_SERVICE_TYPE.to_string(),
-                    endpoint: space.to_string(),
-                },
-            )]
-            .into(),
-        };
-        let genesis = DidOp::genesis(state, &rotation)?;
-        let did = genesis.did();
-        let path = format!("{IDENTITY_AT}{}", fileos_id::op_path(&genesis));
-        inner.put(
-            Some(&signing),
-            &path,
-            &genesis.to_bytes(),
-            &self.shared.changed,
-        )?;
-        inner.add_node(&did, &signing, self.key(), &self.shared.changed)?;
-        drop(inner);
-        self.pump();
-        Ok(did)
-    }
-
-    /// Adds a node to the identity: puts its certificate into the identity
-    /// space, and lets it read and keep the space. Only the node that holds
-    /// the signing key of the identity can do this. Gives the ID of the
-    /// identity space, which the other node joins.
-    ///
-    /// # Errors
-    ///
-    /// When this node does not hold the signing key of the identity.
-    pub fn identity_add_node(&self, node: PublicKey) -> Result<Hash, Error> {
-        let mut inner = self.inner();
-        let (did, signing, space) = inner.held_identity()?;
-        inner.add_node(&did, &signing, node, &self.shared.changed)?;
-        drop(inner);
-        self.pump();
-        Ok(space)
-    }
-
-    /// Takes a node away from the identity: deletes its certificate and
-    /// takes back its grant on the identity space.
-    ///
-    /// # Errors
-    ///
-    /// When this node does not hold the signing key of the identity, or the
-    /// node is not one of its nodes.
-    pub fn identity_remove_node(&self, node: PublicKey) -> Result<(), Error> {
-        let mut inner = self.inner();
-        let (did, signing, space) = inner.held_identity()?;
-        let path = format!("{IDENTITY_AT}{}", fileos_id::node_path(node));
-        inner.delete(Some(&signing), &path, &self.shared.changed)?;
-        // The revocation ends the node in every space that counted it as a
-        // node of the identity.
-        let revocation = fileos_id::NodeRevocation::sign(&did, &signing, node);
-        let path = format!("{IDENTITY_AT}{}", fileos_id::revocation_path(node));
-        inner.put(
-            Some(&signing),
-            &path,
-            &revocation.to_bytes(),
-            &self.shared.changed,
-        )?;
-        let grants: Vec<Id> = inner
-            .node
-            .space(space)
-            .map(|s| {
-                s.grants()
-                    .into_iter()
-                    .filter(|g| g.given.to == Principal::Key(node))
-                    .map(|g| g.given.id)
-                    .collect()
-            })
-            .unwrap_or_default();
-        for grant in grants {
-            inner.write(
-                Some(&signing),
-                space,
-                vec![Act::Take { grant }],
-                &self.shared.changed,
-            )?;
-        }
-        drop(inner);
-        self.pump();
-        Ok(())
-    }
-
-    /// Makes this node one of the nodes of an identity, by the ID of its
-    /// space. The node that holds the signing key must add this node first
-    /// ([`Node::identity_add_node`]), or the space does not come.
-    ///
-    /// # Errors
-    ///
-    /// When this node already has an identity.
-    pub fn identity_join(&self, space: Hash) -> Result<(), Error> {
-        if let Some(have) = self.inner().identity_space() {
-            return Err(Error(format!(
-                "this node already has an identity, with the space {have}"
-            )));
-        }
-        self.mount(space, IDENTITY_AT)
-    }
-
-    /// Starts sign-in for people, for a gateway on `port`. The person is
-    /// the identity of the node (its DID), or, with no identity, the node
-    /// key as a `did:key`.
-    ///
-    /// # Errors
-    ///
-    /// When the sign-in state on disk is broken.
-    pub fn start_sign_in(&self, port: u16) -> Result<(), Error> {
-        let inner = self.inner();
-        let state = match inner.store.auth()? {
-            Some(bytes) => fileos_core::decode(&bytes)?,
-            None => fileos_auth::AuthState::default(),
-        };
-        let auth = fileos_auth::Auth::new(
-            inner.key.clone(),
-            self.person_locked(&inner),
-            format!("http://fileos.localhost:{port}"),
-            "fileos.localhost".into(),
-            state,
-            fileos_store::random_seed()?,
-        );
-        drop(inner);
-        *lock(&self.shared.auth) = Some(auth);
-        Ok(())
-    }
-
-    fn person_locked(&self, inner: &Inner) -> String {
-        inner
-            .identity(self.key())
-            .and_then(|id| id.did)
-            .unwrap_or_else(|| fileos_id::did_key(self.key()))
-    }
-
-    /// Runs `f` on the sign-in state, and keeps it on disk after. The
-    /// person is brought up to date first, as the node may have joined an
-    /// identity.
-    ///
-    /// # Errors
-    ///
-    /// When sign-in is not started, `f` fails, or the state cannot be kept.
-    pub fn sign_in<T>(
-        &self,
-        f: impl FnOnce(&mut fileos_auth::Auth) -> Result<T, Error>,
-    ) -> Result<T, Error> {
-        let person = self.person_locked(&self.inner());
-        let mut guard = lock(&self.shared.auth);
-        let auth = guard
-            .as_mut()
-            .ok_or_else(|| Error("sign-in is not started".into()))?;
-        if auth.sub() != person {
-            auth.set_sub(person);
-        }
-        let before = auth.state().clone();
-        let result = f(auth);
-        if *auth.state() != before {
-            self.inner()
-                .store
-                .set_auth(&fileos_core::encode(auth.state()))?;
-        }
-        result
-    }
-
-    /// The identity of this node, if it has one.
-    pub fn identity(&self) -> Option<Identity> {
-        self.inner().identity(self.key())
-    }
-
-    /// The cache of an app on this node.
-    pub fn kv(&self, app: &str) -> BTreeMap<String, Vec<u8>> {
-        self.inner().kv(app).clone()
-    }
-
+    /// What this node is doing.
     pub fn status(&self) -> Status {
         let apps = lock(&self.shared.apps)
             .iter()
@@ -1099,215 +710,6 @@ impl Node {
             identity,
         }
     }
-
-    /// Starts the network. Call it inside a Tokio runtime.
-    ///
-    /// # Errors
-    ///
-    /// When the network does not start.
-    pub fn start_net(&self, config: NetConfig) -> Result<(), Error> {
-        let seed = self.inner().key.seed();
-        let (commands, mut events) = fileos_net::start(seed, config)?;
-        self.inner().net = Some(commands);
-        let node = self.clone();
-        tokio::spawn(async move {
-            while let Some(event) = events.recv().await {
-                node.on_net(event);
-            }
-        });
-        Ok(())
-    }
-
-    /// Connects to another node.
-    ///
-    /// # Errors
-    ///
-    /// When the network is not started.
-    pub fn dial(&self, addr: &str) -> Result<(), Error> {
-        let addr = addr
-            .parse()
-            .map_err(|e| Error(format!("not a multiaddr: {e}")))?;
-        let inner = self.inner();
-        let net = inner
-            .net
-            .as_ref()
-            .ok_or_else(|| Error("the network is not started".into()))?;
-        net.send(fileos_net::Command::Dial(addr))
-            .map_err(|e| Error(format!("the network stopped: {e}")))
-    }
-
-    fn on_net(&self, event: fileos_net::Event) {
-        {
-            let mut inner = self.inner();
-            let step = match event {
-                fileos_net::Event::Listening(addr) => {
-                    inner.listening.push(format!(
-                        "{addr}/p2p/{}",
-                        fileos_net::peer_id(self.key())
-                            .map(|p| p.to_string())
-                            .unwrap_or_default()
-                    ));
-                    return;
-                }
-                fileos_net::Event::Connected(peer) => inner.node.connected(peer),
-                fileos_net::Event::Disconnected(peer) => {
-                    inner.node.disconnected(peer);
-                    return;
-                }
-                fileos_net::Event::Message { from, msg } => {
-                    let Inner { node, store, .. } = &mut *inner;
-                    node.receive(from, *msg, store)
-                }
-            };
-            if let Err(e) = inner.process(step, &self.shared.changed) {
-                tracing::warn!("{e}");
-            }
-        }
-        self.pump();
-    }
-
-    fn start_apps(&self) {
-        let bundles = {
-            let inner = self.inner();
-            inner
-                .mounts()
-                .into_iter()
-                .filter(|(at, _)| at.starts_with("apps/"))
-                .filter_map(|(_, id)| Some((inner.bundle(id)?, id)))
-                .collect::<Vec<_>>()
-        };
-        for (bundle, space) in bundles {
-            if let Err(e) = self.start_app(&bundle, space) {
-                tracing::warn!("app {} did not start: {e}", bundle.manifest.id);
-            }
-        }
-    }
-
-    /// Starts an app that is in the space `space`. Gives its app ID.
-    fn start_app(&self, bundle: &Bundle, space: Hash) -> Result<String, Error> {
-        let host = Arc::new(Host {
-            shared: Arc::downgrade(&self.shared),
-        });
-        let id = app_id(&bundle.manifest.id, space);
-        let http = self
-            .shared
-            .runtime
-            .http_app(bundle, Arc::<Host>::clone(&host))?;
-        let app = self.shared.runtime.app(bundle, host)?;
-        lock(&self.shared.apps).push(app);
-        lock(&self.shared.http).insert(id.clone(), http);
-        lock(&self.shared.schedules).insert(id.clone(), bundle.manifest.schedule.clone());
-        let mut asks = BTreeSet::new();
-        for ask in &bundle.manifest.asks {
-            asks.extend(parse_permissions(&ask.permissions)?);
-        }
-        lock(&self.shared.asks).insert(bundle.manifest.id.clone(), asks);
-        lock(&self.shared.receives)
-            .insert(bundle.manifest.id.clone(), bundle.manifest.receives.clone());
-        if self
-            .shared
-            .scheduling
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            for schedule in &bundle.manifest.schedule {
-                self.spawn_schedule(&id, schedule);
-            }
-        }
-        Ok(id)
-    }
-
-    /// Runs one schedule of an app now: sends `POST
-    /// /.well-known/fileos/schedule/<name>` with `fileos-event: schedule` to the
-    /// app. Gives the status of its answer.
-    ///
-    /// # Errors
-    ///
-    /// When there is no such app or schedule, or the app fails.
-    pub async fn run_schedule(&self, app: &str, name: &str) -> Result<u16, Error> {
-        let known = lock(&self.shared.schedules)
-            .get(app)
-            .is_some_and(|list| list.iter().any(|s| s.name == name));
-        let http = self
-            .http_app(app)
-            .filter(|_| known)
-            .ok_or_else(|| Error(format!("the app {app} has no schedule {name:?}")))?;
-        let answer = http
-            .request(
-                "POST",
-                &format!("{}{name}", fileos_runtime::SCHEDULE_PATH),
-                &[("fileos-event", "schedule")],
-                Vec::new(),
-            )
-            .await?;
-        Ok(answer.status)
-    }
-
-    /// Starts the timers of the schedules of every app. Call it once, inside
-    /// a Tokio runtime. A schedule runs first one period after the start;
-    /// times missed while the node was off are not made up, as with cron.
-    pub fn start_schedules(&self) {
-        self.shared
-            .scheduling
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        let all: Vec<(String, fileos_runtime::Schedule)> = lock(&self.shared.schedules)
-            .iter()
-            .flat_map(|(id, list)| list.iter().map(|s| (id.clone(), s.clone())))
-            .collect();
-        for (id, schedule) in all {
-            self.spawn_schedule(&id, &schedule);
-        }
-    }
-
-    fn spawn_schedule(&self, id: &str, schedule: &fileos_runtime::Schedule) {
-        let Ok(seconds) = schedule.seconds() else {
-            return;
-        };
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            return;
-        };
-        let node = self.clone();
-        let (id, name) = (id.to_string(), schedule.name.clone());
-        handle.spawn(async move {
-            let period = std::time::Duration::from_secs(seconds);
-            let mut timer = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
-            timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                timer.tick().await;
-                match node.run_schedule(&id, &name).await {
-                    Ok(status) if status < 400 => {}
-                    Ok(status) => tracing::warn!("schedule {name} of {id}: status {status}"),
-                    Err(e) => tracing::warn!("schedule {name} of {id}: {e}"),
-                }
-            }
-        });
-    }
-
-    /// Tells the apps about changed paths, until there are no more.
-    pub fn pump(&self) {
-        pump(&self.shared);
-    }
-}
-
-/// A principal as people write it: a key, `did:fileos:…`, or `group:<id>`.
-fn principal_text(p: Principal) -> String {
-    match p {
-        Principal::Key(k) => k.to_string(),
-        Principal::Identity(d) => fileos_id::did_of(d),
-        Principal::Group(id) => format!("group:{}", grant_text(id)),
-    }
-}
-
-/// Reads a principal: a node or app key in hex, or a `did:fileos` DID for a
-/// person and all their nodes.
-///
-/// # Errors
-///
-/// When the text is neither.
-pub fn parse_principal(text: &str) -> Result<Principal, Error> {
-    if text.starts_with("did:") {
-        return fileos_id::did_hash(text).map(Principal::Identity);
-    }
-    text.parse().map(Principal::Key)
 }
 
 /// A grant ID as text: the hash of its entry and its index.
@@ -1321,57 +723,8 @@ fn grant_text(id: Id) -> String {
 ///
 /// When the text is not a grant ID.
 pub fn parse_grant(text: &str) -> Result<Id, Error> {
-    let (entry, index) = text
-        .split_once(':')
-        .ok_or_else(|| Error(format!("not a grant ID: {text:?}")))?;
-    Ok(Id {
-        entry: entry.parse()?,
-        index: index
-            .parse()
-            .map_err(|e| Error(format!("not a grant ID: {text:?} ({e})")))?,
-    })
-}
-
-fn pump(shared: &Shared) {
-    loop {
-        let Some((path, kind)) = lock(&shared.changed).pop_front() else {
-            return;
-        };
-        // When the apps are busy, this is a write made by an app while it was
-        // told of a change: the loop that holds them takes this path next.
-        let mut apps = match shared.apps.try_lock() {
-            Ok(apps) => apps,
-            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
-            Err(std::sync::TryLockError::WouldBlock) => {
-                lock(&shared.changed).push_front((path, kind));
-                return;
-            }
-        };
-        // Each app hears of the change at the paths of its own view.
-        let seen: Vec<Vec<String>> = {
-            let inner = lock(&shared.inner);
-            let (space, name) = inner.resolve(&path);
-            apps.iter()
-                .map(|a| inner.view_paths(&a.manifest().id, space, &name))
-                .collect()
-        };
-        for (app, paths) in apps.iter_mut().zip(seen) {
-            let paths: Vec<String> = paths.into_iter().filter(|p| app.wants(p, kind)).collect();
-            for path in &paths {
-                if let Err(e) = app.on_change(path) {
-                    tracing::warn!("app {} failed on {path}: {e}", app.manifest().id);
-                }
-            }
-        }
-    }
-}
-
-fn fs_error(e: FsError) -> Error {
-    match e {
-        FsError::Denied(m) => Error(format!("not allowed: {m}")),
-        FsError::NotFound => Error("not found".into()),
-        FsError::Invalid(m) => Error(m),
-    }
+    text.parse()
+        .map_err(|error: Error| error.context("bad grant ID"))
 }
 
 /// The newest version of a file that has content: when there are more, the
@@ -1425,7 +778,9 @@ impl Inner {
     fn mount(&mut self, space: Hash, at: &str, changed: &Changed) -> Result<(), Error> {
         let at = clean(at);
         if at.is_empty() || self.mounts().iter().any(|(m, _)| *m == at) {
-            return Err(Error(format!("something is mounted at /{at} already")));
+            return Err(Error::invalid(format!(
+                "something is mounted at /{at} already"
+            )));
         }
         let home = self.home;
         self.put_name(
@@ -1437,13 +792,6 @@ impl Inner {
         )
     }
 
-    fn identity_space(&self) -> Option<Hash> {
-        self.mounts()
-            .into_iter()
-            .find(|(at, _)| *at == clean(IDENTITY_AT))
-            .map(|(_, id)| id)
-    }
-
     /// Writes acts into a space, as `author` (the node when `None`).
     fn write(
         &mut self,
@@ -1453,7 +801,7 @@ impl Inner {
         changed: &Changed,
     ) -> Result<Id, Error> {
         let author = author.cloned().unwrap_or_else(|| self.key.clone());
-        let (entry, step) = self.node.write_as(space, &author, now(), acts)?;
+        let (entry, step) = self.node.write_as(space, &author, (self.clock)(), acts)?;
         self.process(step, changed)?;
         Ok(Id {
             entry: entry.hash(),
@@ -1490,7 +838,7 @@ impl Inner {
         let s = self
             .node
             .space(space)
-            .ok_or_else(|| Error(format!("space {space} is not here yet")))?;
+            .ok_or_else(|| Error::unavailable(format!("space {space} is not here yet")))?;
         let file = s.find(name).into_iter().next();
         let (content, key, pieces) =
             self.node
@@ -1523,10 +871,11 @@ impl Inner {
         changed: &Changed,
     ) -> Result<(), Error> {
         let who = author.map_or_else(|| self.key.public(), SecretKey::public);
-        let mut bytes = match self.read(who, path) {
+        let (space, name) = self.resolve(path);
+        let mut bytes = match self.read_in(who, space, &name) {
             Ok(bytes) => bytes,
             Err(FsError::NotFound) => Vec::new(),
-            Err(e) => return Err(fs_error(e)),
+            Err(e) => return Err(e.into()),
         };
         bytes.extend_from_slice(data);
         self.put(author, path, &bytes, changed)
@@ -1557,12 +906,12 @@ impl Inner {
         let s = self
             .node
             .space(space)
-            .ok_or_else(|| Error(format!("space {space} is not here yet")))?;
+            .ok_or_else(|| Error::unavailable(format!("space {space} is not here yet")))?;
         let file = s
             .find(name)
             .into_iter()
             .next()
-            .ok_or_else(|| Error(format!("{name:?} is not there")))?;
+            .ok_or_else(|| Error::not_found(format!("{name:?} is not there")))?;
         let act = Act::Change {
             file: file.id,
             parents: file.versions.iter().map(|v| v.id).collect(),
@@ -1595,7 +944,7 @@ impl Inner {
         let s = self
             .node
             .space(space)
-            .ok_or_else(|| Error(format!("space {space} is not here yet")))?;
+            .ok_or_else(|| Error::unavailable(format!("space {space} is not here yet")))?;
         let on = Self::resource(s, &name);
         self.write(
             author,
@@ -1611,10 +960,12 @@ impl Inner {
     }
 
     fn checkpoint(&mut self, space: Hash, changed: &Changed) -> Result<(), Error> {
-        let step = self.node.checkpoint(space, now(), Retention::default())?;
+        let step = self
+            .node
+            .checkpoint(space, (self.clock)(), Retention::default())?;
         self.process(step, changed)?;
         let (_, step) = self.node.compact(space);
-        self.process(step, changed)?;
+        self.apply(step, changed)?;
         self.save(space)
     }
 
@@ -1624,25 +975,27 @@ impl Inner {
         s.may(Principal::Key(who), permission, &on)
     }
 
-    fn read(&self, who: PublicKey, path: &str) -> Result<Vec<u8>, FsError> {
-        let (space, name) = self.resolve(path);
-        self.read_in(who, space, &name)
-    }
-
-    fn read_in(&self, who: PublicKey, space: Hash, name: &str) -> Result<Vec<u8>, FsError> {
+    fn reader_in(
+        &self,
+        who: PublicKey,
+        space: Hash,
+        name: &str,
+    ) -> Result<fileos_space::content::Reader, FsError> {
         let s = self.node.space(space).ok_or(FsError::NotFound)?;
         let file = s.find(name).into_iter().next().ok_or(FsError::NotFound)?;
         if !Self::may(s, who, Permission::FilesRead, name) {
             return Err(FsError::Denied(format!("{who} may not read {name}")));
         }
-        if newest(&file).is_none() {
-            return Err(FsError::NotFound);
-        }
-        self.bytes(space, &file).ok_or_else(|| {
-            FsError::Invalid(
-                "the file is not on this node yet, or this node has no key for it".into(),
-            )
-        })
+        let version = newest_version(&file).ok_or(FsError::NotFound)?;
+        self.node
+            .reader(space, file.id, version)
+            .ok_or_else(|| FsError::Unavailable("this node has no key for the file yet".into()))
+    }
+
+    fn read_in(&self, who: PublicKey, space: Hash, name: &str) -> Result<Vec<u8>, FsError> {
+        self.reader_in(who, space, name)?
+            .join(&self.store)
+            .ok_or_else(|| FsError::Unavailable("the file is not on this node yet".into()))
     }
 
     fn list(&self, who: PublicKey, path: &str) -> Result<Vec<String>, FsError> {
@@ -1702,190 +1055,6 @@ impl Inner {
     }
 
     /// The requests of apps that wait for the person.
-    fn requests(&self) -> Vec<AccessRequest> {
-        let Some(home) = self.node.space(self.home) else {
-            return Vec::new();
-        };
-        home.files()
-            .iter()
-            .filter_map(|f| {
-                let id = f
-                    .versions
-                    .iter()
-                    .find_map(|v| v.name.strip_prefix(REQUESTS))?
-                    .to_string();
-                let text = String::from_utf8(self.bytes(self.home, f)?).ok()?;
-                let mut lines = text.split('\n');
-                let app = lines.next()?.to_string();
-                let permissions = lines.next()?.to_string();
-                let purpose = lines.next().unwrap_or_default().to_string();
-                let share = match (lines.next(), lines.next()) {
-                    (Some(space), Some(file)) => {
-                        Some((space.parse().ok()?, parse_grant(file).ok()?))
-                    }
-                    _ => None,
-                };
-                let file = share.and_then(|(space, file)| {
-                    let f = self.node.space(space)?.file(file)?;
-                    Some(f.versions.first()?.name.clone())
-                });
-                Some(AccessRequest {
-                    id,
-                    app,
-                    purpose,
-                    permissions,
-                    file,
-                    share,
-                })
-            })
-            .collect()
-    }
-
-    /// The private data space of an app, if it has one.
-    fn app_data(&self, app: &str) -> Option<Hash> {
-        let at = format!("{APPDATA}{app}");
-        self.mounts()
-            .into_iter()
-            .find(|(m, _)| *m == at)
-            .map(|(_, id)| id)
-    }
-
-    /// The mounts in the view of an app.
-    fn views(&self, app: &str) -> Vec<ViewMount> {
-        let prefix = format!("{VIEWS}{app}/");
-        let Some(home) = self.node.space(self.home) else {
-            return Vec::new();
-        };
-        let mut out: Vec<ViewMount> = home
-            .files()
-            .iter()
-            .filter_map(|f| {
-                let name = f
-                    .versions
-                    .iter()
-                    .find_map(|v| v.name.strip_prefix(&prefix))?
-                    .to_string();
-                let bytes = self.bytes(self.home, f)?;
-                let text = String::from_utf8(bytes).ok()?;
-                let mut lines = text.split('\n');
-                let space = lines.next()?.parse().ok()?;
-                let prefix = lines.next().unwrap_or_default().to_string();
-                let grant = lines.next().and_then(|g| parse_grant(g).ok());
-                Some(ViewMount {
-                    name,
-                    space,
-                    prefix,
-                    grant,
-                })
-            })
-            .collect();
-        out.sort_by(|a, b| a.name.cmp(&b.name));
-        out
-    }
-
-    /// The space and the name in it of a path in the view of an app. A path
-    /// under no mount is in the app's private data space.
-    fn resolve_app(&self, app: &str, path: &str) -> Result<(Hash, String), FsError> {
-        let path = clean(path);
-        let best = self
-            .views(app)
-            .into_iter()
-            .filter(|v| path == v.name || path.starts_with(&format!("{}/", v.name)))
-            .max_by_key(|v| v.name.len());
-        if let Some(v) = best {
-            let rest = path[v.name.len()..].trim_start_matches('/');
-            let name = match (v.prefix.is_empty(), rest.is_empty()) {
-                (true, _) => rest.to_string(),
-                (false, true) => v.prefix.clone(),
-                (false, false) => format!("{}/{rest}", v.prefix),
-            };
-            return Ok((v.space, name));
-        }
-        let data = self
-            .app_data(app)
-            .ok_or_else(|| FsError::Invalid("the app has no data space".into()))?;
-        Ok((data, path))
-    }
-
-    /// The paths in the view of an app where a name of a space is seen.
-    fn view_paths(&self, app: &str, space: Hash, name: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        for v in self.views(app) {
-            if v.space != space {
-                continue;
-            }
-            let rest = if v.prefix.is_empty() {
-                Some(name)
-            } else if name == v.prefix {
-                Some("")
-            } else {
-                name.strip_prefix(&format!("{}/", v.prefix))
-            };
-            if let Some(rest) = rest {
-                out.push(if rest.is_empty() {
-                    format!("/{}", v.name)
-                } else {
-                    format!("/{}/{rest}", v.name)
-                });
-            }
-        }
-        if self.app_data(app) == Some(space) {
-            out.push(format!("/{name}"));
-        }
-        out
-    }
-
-    /// Gives the key of `app` permissions on a node path, and mounts it in
-    /// the app's view at `name`.
-    fn give_app(
-        &mut self,
-        app: &str,
-        path: &str,
-        permissions: &[Permission],
-        name: &str,
-        changed: &Changed,
-    ) -> Result<(), Error> {
-        let key = self.app_key(app).public();
-        let (space, prefix) = self.resolve(path);
-        let grant = self.grant(None, path, Principal::Key(key), permissions, changed)?;
-        let home = self.home;
-        let text = format!("{space}\n{prefix}\n{}", grant_text(grant));
-        self.put_name(
-            None,
-            home,
-            &format!("{VIEWS}{app}/{name}"),
-            text.as_bytes(),
-            changed,
-        )
-    }
-
-    /// Takes a mount away from the view of an app, and takes back its grant.
-    fn take_app(&mut self, app: &str, name: &str, changed: &Changed) -> Result<(), Error> {
-        let v = self
-            .views(app)
-            .into_iter()
-            .find(|v| v.name == name)
-            .ok_or_else(|| Error(format!("the app {app} has no /{name}")))?;
-        if let Some(grant) = v.grant
-            && self
-                .node
-                .space(v.space)
-                .is_some_and(|s| s.grants().iter().any(|g| g.given.id == grant))
-        {
-            self.write(None, v.space, vec![Act::Take { grant }], changed)?;
-        }
-        let home = self.home;
-        self.delete_name(None, home, &format!("{VIEWS}{app}/{name}"), changed)
-    }
-
-    fn kv(&mut self, app: &str) -> &mut BTreeMap<String, Vec<u8>> {
-        let store = &self.store;
-        self.kv
-            .entry(app.to_string())
-            .or_insert_with(|| store.kv_load(app))
-    }
-
-    /// The node paths of every file under a node path.
     fn files_under(&self, path: &str) -> Vec<String> {
         let (space, name) = self.resolve(path);
         let Some(s) = self.node.space(space) else {
@@ -1921,21 +1090,6 @@ impl Inner {
             .collect()
     }
 
-    /// The files of an app space, as a bundle.
-    fn bundle(&self, space: Hash) -> Option<Bundle> {
-        let s = self.node.space(space)?;
-        let files = s
-            .files()
-            .iter()
-            .map(|f| {
-                let name = &f.versions.first()?.name;
-                let bytes = self.bytes(space, f)?;
-                Some((format!("/{name}"), bytes))
-            })
-            .collect::<Option<_>>()?;
-        Bundle::from_files(files).ok()
-    }
-
     /// Keeps the entries of a space that are not on disk yet. After
     /// compaction, writes the space again.
     fn save(&mut self, space: Hash) -> Result<(), Error> {
@@ -1946,16 +1100,13 @@ impl Inner {
         let saved = self.saved.entry(space).or_default();
         if saved.1 != base {
             self.store.save_space(s)?;
-            *saved = (
-                s.entries().iter().map(fileos_space::Entry::hash).collect(),
-                base,
-            );
+            *saved = (s.iter().map(fileos_space::Entry::hash).collect(), base);
             return Ok(());
         }
         let new: Vec<fileos_space::Entry> = s
-            .entries()
-            .into_iter()
+            .iter()
             .filter(|e| !saved.0.contains(&e.hash()))
+            .cloned()
             .collect();
         self.store.append_entries(space, &new)?;
         saved.0.extend(new.iter().map(fileos_space::Entry::hash));
@@ -1978,7 +1129,7 @@ impl Inner {
                 contents.insert(name, newest(&f));
             }
         }
-        let before = self.seen.insert(space, now.clone()).unwrap_or_default();
+        let before = self.seen.remove(&space).unwrap_or_default();
         let names: BTreeSet<&String> = now
             .iter()
             .filter(|(n, ids)| before.get(*n) != Some(*ids))
@@ -2006,33 +1157,35 @@ impl Inner {
                 _ => ready.extend(at),
             }
         }
+        self.seen.insert(space, now);
         lock(changed).extend(ready);
     }
 
     /// Keeps what a step made, sends its messages, and notes changed paths.
     fn process(&mut self, step: Step, changed: &Changed) -> Result<(), Error> {
-        if let Some(net) = &self.net {
-            for (to, msg) in step.out {
-                let _ = net.send(fileos_net::Command::Send {
-                    to,
-                    msg: Box::new(msg),
-                });
-            }
+        self.rotate_if_due(changed)?;
+        for space in self.apply(step, changed)? {
+            self.maybe_checkpoint(space, changed);
         }
+        Ok(())
+    }
+
+    fn apply(&mut self, step: Step, changed: &Changed) -> Result<BTreeSet<Hash>, Error> {
+        let mut spaces = BTreeSet::new();
+        let mut out = step.out;
+        let mut proof_changed = false;
         for event in step.events {
             match event {
                 Event::Changed(space) => {
-                    self.rotate_if_due(changed)?;
                     self.save(space)?;
                     self.note(space, changed);
-                    self.maybe_checkpoint(space, changed);
-                    if self.identity_space() == Some(space) {
-                        self.update_proof(changed)?;
-                    }
+                    spaces.insert(space);
+                    proof_changed |= self.identity_space() == Some(space);
                 }
-                Event::Content(data) => {
+                Event::Content { from, data } => {
                     let hash = Hash::of(&data);
                     self.store.put_piece(hash, &data)?;
+                    out.extend(self.node.content_saved(from, &self.store).out);
                     // A list of chunks or the last chunk came: the paths that
                     // waited for content that is now complete can go.
                     let done: Vec<Hash> = self
@@ -2054,9 +1207,10 @@ impl Inner {
                         lock(changed).extend(paths);
                     }
                     // The certificate of this node may be what just came.
-                    self.update_proof(changed)?;
+                    proof_changed = true;
                 }
                 Event::Again { space, entries } => {
+                    tracing::info!(name: "node.space.rebased", %space, entries, "offline changes were written again");
                     self.log(format!(
                         "{entries} changes made at the same time as a checkpoint of space \
                          {space} were written again on top"
@@ -2064,7 +1218,35 @@ impl Inner {
                 }
             }
         }
-        Ok(())
+        if proof_changed {
+            self.update_proof(changed)?;
+        }
+        if let Some(net) = self.net.clone() {
+            for (to, msg) in out {
+                let content = match &msg {
+                    Msg::WantContent(hash) => Some(*hash),
+                    _ => None,
+                };
+                if net
+                    .send(fileos_net::Command::Send {
+                        to,
+                        msg: Box::new(msg),
+                    })
+                    .is_err()
+                {
+                    self.send_failed(to, content);
+                }
+            }
+        }
+        Ok(spaces)
+    }
+
+    fn send_failed(&mut self, to: PublicKey, content: Option<Hash>) {
+        if let Some(hash) = content {
+            self.node.content_failed(to, hash);
+        } else {
+            self.net_dirty = true;
+        }
     }
 
     /// The default policy: a node makes a new recipient key (the key it gets
@@ -2072,7 +1254,7 @@ impl Inner {
     /// [`RECIPIENT_MAX_AGE`], keeps it on disk first, and keeps only the one
     /// before it, so the older secrets are destroyed.
     fn rotate_if_due(&mut self, changed: &Changed) -> Result<(), Error> {
-        let now = now();
+        let now = (self.clock)();
         let due = self
             .node
             .recipient_made()
@@ -2082,7 +1264,7 @@ impl Inner {
         }
         let step = self.node.rotate_recipient(now);
         self.store.set_recipients(&self.node.recipients())?;
-        self.process(step, changed)
+        self.apply(step, changed).map(drop)
     }
 
     /// The default policy: a node makes a checkpoint of a space it owns when
@@ -2094,462 +1276,24 @@ impl Inner {
         if s.len() < CHECKPOINT_AFTER {
             return;
         }
-        let mine = s.may(
-            Principal::Key(self.key.public()),
-            Permission::SpaceCheckpoint,
-            &Resource::Prefix(String::new()),
-        );
+        let mine = s.owner() == Principal::Key(self.key.public());
         let result = if mine {
             self.checkpoint(space, changed)
         } else {
-            let (_, step) = self.node.compact(space);
-            self.process(step, changed).and_then(|()| self.save(space))
+            let (compacted, step) = self.node.compact(space);
+            self.apply(step, changed)
+                .and_then(|_| if compacted { self.save(space) } else { Ok(()) })
         };
         if let Err(e) = result {
-            tracing::warn!("space {space}: {e}");
+            tracing::warn!(name: "node.space.checkpoint.failed", %space, error = %e, "space could not be compacted");
         }
     }
 
     fn log(&mut self, message: String) {
-        tracing::info!("{message}");
         self.logs.push_back(message);
         while self.logs.len() > 100 {
             self.logs.pop_front();
         }
-    }
-
-    /// A secret key of the identity on this node, by its use. It is made
-    /// and kept when this node does not have it yet.
-    fn identity_key(&mut self, usage: &str) -> Result<SecretKey, Error> {
-        let held = match usage {
-            "rotation" => &mut self.rotation_key,
-            _ => &mut self.signing_key,
-        };
-        if let Some(key) = held {
-            return Ok(key.clone());
-        }
-        let key = SecretKey::from_seed(&fileos_store::random_seed()?);
-        self.store.set_identity_key(usage, &key)?;
-        *held = Some(key.clone());
-        if usage == "signing" {
-            self.node.add_key(key.clone());
-        }
-        Ok(key)
-    }
-
-    /// The bytes of the files under `dir` in a space, by the rest of their
-    /// name.
-    fn files_in(&self, space: Hash, dir: &str) -> Vec<(String, Vec<u8>)> {
-        let Some(s) = self.node.space(space) else {
-            return Vec::new();
-        };
-        let prefix = format!("{}/", dir.trim_matches('/'));
-        s.files()
-            .iter()
-            .filter_map(|f| {
-                let name = f.versions.first()?.name.strip_prefix(&prefix)?.to_string();
-                let bytes = self.bytes(space, f)?;
-                Some((name, bytes))
-            })
-            .collect()
-    }
-
-    /// The operations of the DID log in the identity space.
-    fn identity_ops(&self, space: Hash) -> Vec<DidOp> {
-        self.files_in(space, fileos_id::OPS)
-            .into_iter()
-            .filter_map(|(name, bytes)| {
-                let op = DidOp::from_bytes(&bytes).ok()?;
-                (op.hash().to_string() == name).then_some(op)
-            })
-            .collect()
-    }
-
-    /// The DID and the state of the identity whose log is in `space`: the
-    /// one whose state names this space, and whose signing key owns it.
-    fn resolve_identity(&self, space: Hash) -> Option<(String, State)> {
-        let owner = self.node.space(space)?.owner();
-        let ops = self.identity_ops(space);
-        fileos_id::dids(&ops).into_iter().find_map(|did| {
-            let state = fileos_id::resolve(&did, &ops).ok()?.state?;
-            (state.folder() == Some(space)
-                && state.signing_key().map(Principal::Key) == Some(owner))
-            .then_some((did, state))
-        })
-    }
-
-    /// The DID, the signing key and the space of the identity, when this
-    /// node holds the signing key.
-    fn held_identity(&self) -> Result<(String, SecretKey, Hash), Error> {
-        let none = || Error("this node does not hold the signing key of an identity".into());
-        let signing = self.signing_key.clone().ok_or_else(none)?;
-        let space = self.identity_space().ok_or_else(none)?;
-        let (did, state) = self.resolve_identity(space).ok_or_else(none)?;
-        if state.signing_key() != Some(signing.public()) {
-            return Err(none());
-        }
-        Ok((did, signing, space))
-    }
-
-    /// Puts the certificate of `node` into the identity space, and lets the
-    /// node read and keep the space.
-    fn add_node(
-        &mut self,
-        did: &str,
-        signing: &SecretKey,
-        node: PublicKey,
-        changed: &Changed,
-    ) -> Result<(), Error> {
-        let cert = NodeCert::sign(did, signing, node);
-        let path = format!("{IDENTITY_AT}{}", fileos_id::node_path(node));
-        self.put(Some(signing), &path, &cert.to_bytes(), changed)?;
-        if node == signing.public() {
-            return Ok(());
-        }
-        self.grant(
-            Some(signing),
-            IDENTITY_AT,
-            Principal::Key(node),
-            &READ,
-            changed,
-        )
-        .map(drop)
-    }
-
-    /// The identity of this node. Which nodes belong to it is a fact: the
-    /// kernel checks the DID log and the certificates.
-    fn identity(&self, me: PublicKey) -> Option<Identity> {
-        let space = self.identity_space()?;
-        let holds = |key: &Option<SecretKey>, keys: &[PublicKey]| {
-            key.as_ref().is_some_and(|k| keys.contains(&k.public()))
-        };
-        let Some((did, state)) = self.resolve_identity(space) else {
-            return Some(Identity {
-                did: None,
-                space,
-                rotation_keys: Vec::new(),
-                also_known_as: Vec::new(),
-                holds_rotation_key: false,
-                holds_signing_key: false,
-                nodes: Vec::new(),
-                link: None,
-            });
-        };
-        let signing = state.signing_key();
-        let nodes = self
-            .files_in(space, fileos_id::NODES)
-            .into_iter()
-            .filter_map(|(name, bytes)| {
-                let cert = NodeCert::from_bytes(&bytes).ok()?;
-                (cert.did == did
-                    && signing.is_some_and(|key| cert.verify(key))
-                    && cert.node.to_string() == name)
-                    .then_some(cert.node)
-            })
-            .collect::<Vec<_>>();
-        // Other nodes find this one by its addresses only if it is one of
-        // the nodes of the identity.
-        let hints = if nodes.contains(&me) {
-            self.listening.clone()
-        } else {
-            Vec::new()
-        };
-        Some(Identity {
-            link: Some(
-                Link {
-                    did: did.clone(),
-                    hints,
-                }
-                .to_string(),
-            ),
-            did: Some(did),
-            space,
-            holds_rotation_key: holds(
-                &self.rotation_key,
-                &state.rotation_keys().unwrap_or_default(),
-            ),
-            holds_signing_key: holds(&self.signing_key, &signing.into_iter().collect::<Vec<_>>()),
-            rotation_keys: state.rotation_keys,
-            also_known_as: state.also_known_as,
-            nodes,
-        })
-    }
-
-    /// When this node is a node of its identity, tells the kernel, so that a
-    /// grant to the identity is a grant to this node too.
-    fn update_proof(&mut self, changed: &Changed) -> Result<(), Error> {
-        let Some(space) = self.identity_space() else {
-            return Ok(());
-        };
-        let revocations: Vec<fileos_core::Bytes> = self
-            .files_in(space, fileos_id::REVOKED)
-            .into_iter()
-            .map(|(_, bytes)| fileos_core::Bytes(bytes))
-            .collect();
-        if !revocations.is_empty() {
-            let step = self.node.add_revocations(revocations);
-            self.process(step, changed)?;
-        }
-        let me = self.key.public().to_string();
-        let ops: Vec<fileos_core::Bytes> = self
-            .files_in(space, fileos_id::OPS)
-            .into_iter()
-            .map(|(_, bytes)| fileos_core::Bytes(bytes))
-            .collect();
-        let Some(cert) = self
-            .files_in(space, fileos_id::NODES)
-            .into_iter()
-            .find(|(name, _)| *name == me)
-            .map(|(_, bytes)| fileos_core::Bytes(bytes))
-        else {
-            return Ok(());
-        };
-        match self.node.set_identity(ops, cert) {
-            Ok(step) => self.process(step, changed),
-            // Not a good certificate (yet, or any more): nothing to show.
-            Err(_) => Ok(()),
-        }
-    }
-
-    fn app_key(&self, app: &str) -> SecretKey {
-        self.key.derive(&format!("app:{app}"))
-    }
-}
-
-/// What an app may call. Every call is checked against the grants of the
-/// app's key.
-struct Host {
-    shared: Weak<Shared>,
-}
-
-impl Host {
-    fn with<T>(&self, f: impl FnOnce(&mut Inner, &Changed) -> T) -> Option<T> {
-        let shared = self.shared.upgrade()?;
-        let out = f(&mut lock(&shared.inner), &shared.changed);
-        // Apps hear of what an app wrote.
-        pump(&shared);
-        Some(out)
-    }
-
-    fn stopped<T>() -> Result<T, FsError> {
-        Err(FsError::Invalid("the node stopped".into()))
-    }
-}
-
-impl AppHost for Host {
-    fn read(&self, app: &str, path: &str) -> Result<Vec<u8>, FsError> {
-        self.with(|inner, _| {
-            let key = inner.app_key(app).public();
-            let (space, name) = inner.resolve_app(app, path)?;
-            inner.read_in(key, space, &name)
-        })
-        .unwrap_or_else(Host::stopped)
-    }
-
-    fn write(&self, app: &str, path: &str, data: Vec<u8>) -> Result<(), FsError> {
-        self.with(|inner, changed| {
-            let key = inner.app_key(app);
-            let (space, name) = inner.resolve_app(app, path)?;
-            inner
-                .put_name(Some(&key), space, &name, &data, changed)
-                .map_err(|e| FsError::Denied(e.0))
-        })
-        .unwrap_or_else(Host::stopped)
-    }
-
-    fn append(&self, app: &str, path: &str, data: Vec<u8>) -> Result<(), FsError> {
-        self.with(|inner, changed| {
-            let key = inner.app_key(app);
-            let (space, name) = inner.resolve_app(app, path)?;
-            let mut bytes = match inner.read_in(key.public(), space, &name) {
-                Ok(bytes) => bytes,
-                Err(FsError::NotFound) => Vec::new(),
-                Err(e) => return Err(e),
-            };
-            bytes.extend_from_slice(&data);
-            inner
-                .put_name(Some(&key), space, &name, &bytes, changed)
-                .map_err(|e| FsError::Denied(e.0))
-        })
-        .unwrap_or_else(Host::stopped)
-    }
-
-    fn delete(&self, app: &str, path: &str) -> Result<(), FsError> {
-        self.with(|inner, changed| {
-            let key = inner.app_key(app);
-            let (space, name) = inner.resolve_app(app, path)?;
-            inner
-                .delete_name(Some(&key), space, &name, changed)
-                .map_err(|e| FsError::Denied(e.0))
-        })
-        .unwrap_or_else(Host::stopped)
-    }
-
-    fn list(&self, app: &str, path: &str) -> Result<Vec<String>, FsError> {
-        self.with(|inner, _| {
-            let key = inner.app_key(app).public();
-            let (space, name) = inner.resolve_app(app, path)?;
-            let mut names = inner.list_in(key, space, &name)?;
-            // Mounts of the view under this path are names too.
-            let here = clean(path);
-            for v in inner.views(app) {
-                let rest = if here.is_empty() {
-                    Some(v.name.as_str())
-                } else {
-                    v.name.strip_prefix(&format!("{here}/"))
-                };
-                if let Some(first) = rest.and_then(|r| r.split('/').next()) {
-                    names.push(first.to_string());
-                }
-            }
-            names.sort();
-            names.dedup();
-            Ok(names)
-        })
-        .unwrap_or_else(Host::stopped)
-    }
-
-    fn kv_get(&self, app: &str, key: &str) -> Option<Vec<u8>> {
-        self.with(|inner, _| inner.kv(app).get(key).cloned())
-            .flatten()
-    }
-
-    fn kv_set(&self, app: &str, key: &str, value: Vec<u8>) {
-        self.with(|inner, _| {
-            inner.kv(app).insert(key.to_string(), value);
-            let map = inner.kv(app).clone();
-            if let Err(e) = inner.store.kv_save(app, &map) {
-                tracing::warn!("{e}");
-            }
-        });
-    }
-
-    fn kv_delete(&self, app: &str, key: &str) {
-        self.with(|inner, _| {
-            if inner.kv(app).remove(key).is_some() {
-                let map = inner.kv(app).clone();
-                if let Err(e) = inner.store.kv_save(app, &map) {
-                    tracing::warn!("{e}");
-                }
-            }
-        });
-    }
-
-    fn kv_keys(&self, app: &str, prefix: &str) -> Vec<String> {
-        self.with(|inner, _| {
-            inner
-                .kv(app)
-                .keys()
-                .filter(|k| k.starts_with(prefix))
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default()
-    }
-
-    fn log(&self, app: &str, message: &str) {
-        self.with(|inner, _| inner.log(format!("[{app}] {message}")));
-    }
-
-    fn ask(&self, app: &str, purpose: &str, permissions: &str) -> Result<String, String> {
-        let shared = self.shared.upgrade().ok_or("the node stopped")?;
-        let asked = parse_permissions(permissions).map_err(|e| e.0)?;
-        let allowed = lock(&shared.asks).get(app).cloned().unwrap_or_default();
-        if let Some(p) = asked.iter().find(|p| !allowed.contains(p)) {
-            return Err(format!(
-                "the manifest of {app} does not let it ask for {p:?}"
-            ));
-        }
-        if purpose.len() > 500 || purpose.contains('\n') {
-            return Err("a purpose is one line of at most 500 bytes".into());
-        }
-        let id = Hash::of_value(&(app, purpose, permissions, now())).to_string()[..12].to_string();
-        let text = format!("{app}\n{permissions}\n{purpose}");
-        self.with(|inner, changed| {
-            let home = inner.home;
-            inner.put_name(
-                None,
-                home,
-                &format!("{REQUESTS}{id}"),
-                text.as_bytes(),
-                changed,
-            )
-        })
-        .ok_or("the node stopped")?
-        .map_err(|e| e.0)?;
-        Ok(id)
-    }
-
-    fn share(&self, app: &str, path: &str) -> Result<String, String> {
-        self.with(|inner, changed| {
-            let key = inner.app_key(app).public();
-            let (space, name) = inner.resolve_app(app, path).map_err(|e| format!("{e:?}"))?;
-            let s = inner.node.space(space).ok_or("the file is not here")?;
-            let file = s.find(&name).into_iter().next().ok_or("no such file")?;
-            if !s.may(
-                Principal::Key(key),
-                Permission::ShareSend,
-                &Resource::File(file.id),
-            ) {
-                return Err(format!("{app} may not share {path} (it needs share.send)"));
-            }
-            let id = Hash::of_value(&(app, space, file.id, now())).to_string()[..12].to_string();
-            let short = name.rsplit('/').next().unwrap_or(&name);
-            let text = format!(
-                "{app}\nshare\nShare {short}\n{space}\n{}",
-                grant_text(file.id)
-            );
-            let home = inner.home;
-            inner
-                .put_name(
-                    None,
-                    home,
-                    &format!("{REQUESTS}{id}"),
-                    text.as_bytes(),
-                    changed,
-                )
-                .map_err(|e| e.0)?;
-            Ok(id)
-        })
-        .ok_or("the node stopped")?
-    }
-}
-
-impl fmt::Display for Identity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut out = String::new();
-        match &self.did {
-            Some(did) => {
-                let _ = writeln!(out, "did      {did}");
-            }
-            None => {
-                let _ = writeln!(
-                    out,
-                    "did      (waiting for the identity space: the node that holds the \
-                     signing key must add this node, and be connected)"
-                );
-            }
-        }
-        let _ = writeln!(out, "space    {}", self.space);
-        if let Some(link) = &self.link {
-            let _ = writeln!(out, "link     {link}");
-        }
-        for name in &self.also_known_as {
-            let _ = writeln!(out, "aka      {name}");
-        }
-        for (i, key) in self.rotation_keys.iter().enumerate() {
-            let _ = writeln!(out, "rotation {key} (priority {})", i + 1);
-        }
-        if self.holds_rotation_key {
-            let _ = writeln!(out, "         this node holds a rotation key");
-        }
-        if self.holds_signing_key {
-            let _ = writeln!(out, "         this node holds the signing key");
-        }
-        for node in &self.nodes {
-            let _ = writeln!(out, "node     {node}");
-        }
-        f.write_str(&out)
     }
 }
 

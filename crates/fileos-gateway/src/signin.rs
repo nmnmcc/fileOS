@@ -220,7 +220,7 @@ fn form(body: &[u8]) -> Vec<(String, String)> {
 }
 
 fn b64(text: &str) -> Result<Vec<u8>, Error> {
-    fileos_auth::b64::decode(text).ok_or_else(|| Error("not base64url".into()))
+    fileos_auth::b64::decode(text).ok_or_else(|| Error::invalid("not base64url".into()))
 }
 
 #[derive(Deserialize)]
@@ -288,7 +288,7 @@ pub fn handle(node: &Node, req: &Request<'_>) -> Reply {
 fn handle_inner(node: &Node, req: &Request<'_>) -> Result<Reply, Error> {
     let now = now();
     let parse = |body: &[u8]| -> Result<serde_json::Value, Error> {
-        serde_json::from_slice(body).map_err(|e| Error(format!("bad JSON: {e}")))
+        serde_json::from_slice(body).map_err(|e| Error::invalid(format!("bad JSON: {e}")))
     };
     match (req.method, req.path) {
         (&Method::GET, "/signin.js") => {
@@ -321,7 +321,7 @@ fn handle_inner(node: &Node, req: &Request<'_>) -> Result<Reply, Error> {
         (&Method::POST, "/authorize/challenge") => {
             let (challenge, ids) = node.sign_in(|a| Ok((a.challenge(now), a.passkey_ids())))?;
             if ids.is_empty() {
-                return Err(Error(
+                return Err(Error::invalid(
                     "this node has no passkey yet: run `fileos identity passkey` and open the link"
                         .into(),
                 ));
@@ -341,16 +341,16 @@ fn handle_inner(node: &Node, req: &Request<'_>) -> Result<Reply, Error> {
         }
         (&Method::POST, "/setup/finish") => {
             let s: Setup = serde_json::from_value(parse(&req.body)?)
-                .map_err(|e| Error(format!("bad request: {e}")))?;
+                .map_err(|e| Error::invalid(format!("bad request: {e}")))?;
             let (client, att) = (b64(&s.client_data)?, b64(&s.attestation)?);
             node.sign_in(|a| a.register(&s.code, &s.challenge, &client, &att, now))?;
             Ok(json(StatusCode::OK, &serde_json::json!({})))
         }
         (&Method::POST, "/authorize/finish") => {
             let f: Finish = serde_json::from_value(parse(&req.body)?)
-                .map_err(|e| Error(format!("bad request: {e}")))?;
+                .map_err(|e| Error::invalid(format!("bad request: {e}")))?;
             if !is_app_origin(node, &f.client_id, req.host) {
-                return Err(Error("no such app on this node".into()));
+                return Err(Error::invalid("no such app on this node".into()));
             }
             let request = fileos_auth::Authorize {
                 client_id: f.client_id,
@@ -368,7 +368,7 @@ fn handle_inner(node: &Node, req: &Request<'_>) -> Result<Reply, Error> {
                 .sign_in(|a| a.authorize(&request, &id, &client, &data, &sig, &f.challenge, now))
                 .map_err(|e| {
                     tracing::info!("sign-in: {e}");
-                    Error("the sign-in did not work".into())
+                    Error::invalid("the sign-in did not work".into())
                 })?;
             Ok(json(
                 StatusCode::OK,
@@ -382,7 +382,7 @@ fn handle_inner(node: &Node, req: &Request<'_>) -> Result<Reply, Error> {
             if req.origin != Some(client_id) || !is_app_origin(node, client_id, req.host) {
                 return Ok(oauth_error(
                     "invalid_client",
-                    &Error("not an app of this node".into()),
+                    &Error::invalid("not an app of this node".into()),
                 ));
             }
             let proof = req.dpop.unwrap_or_default();
@@ -405,14 +405,14 @@ fn handle_inner(node: &Node, req: &Request<'_>) -> Result<Reply, Error> {
                 other => {
                     return Ok(oauth_error(
                         "unsupported_grant_type",
-                        &Error(format!("grant type {other:?}")),
+                        &Error::invalid(format!("grant type {other:?}")),
                     ));
                 }
             };
             match result {
                 Ok(tokens) => Ok(json(
                     StatusCode::OK,
-                    &serde_json::to_value(&tokens).map_err(|e| Error(e.to_string()))?,
+                    &serde_json::to_value(&tokens).map_err(|e| Error::invalid(e.to_string()))?,
                 )),
                 Err(e) => Ok(oauth_error("invalid_grant", &e)),
             }
@@ -422,7 +422,7 @@ fn handle_inner(node: &Node, req: &Request<'_>) -> Result<Reply, Error> {
             if !req.origin.is_some_and(|o| is_app_origin(node, o, req.host)) {
                 return Ok(oauth_error(
                     "invalid_client",
-                    &Error("not an app of this node".into()),
+                    &Error::invalid("not an app of this node".into()),
                 ));
             }
             node.sign_in(|a| {
@@ -452,7 +452,7 @@ pub fn person(
     let Some(token) = authorization.and_then(|a| a.strip_prefix("DPoP ")) else {
         return Ok(None);
     };
-    let proof = dpop.ok_or_else(|| Error("a DPoP proof is needed".into()))?;
+    let proof = dpop.ok_or_else(|| Error::invalid("a DPoP proof is needed".into()))?;
     let url = format!("http://{host}{path_and_query}");
     let origin = format!("http://{host}");
     node.sign_in(|a| a.check(token, proof, method, &url, &origin, now()))

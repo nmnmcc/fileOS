@@ -9,6 +9,7 @@
 //! hashes stays good.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use crate::crypto::Wrapped;
 use fileos_core::{Bytes, Error, Hash, PublicKey, SecretKey, Signature, decode, encode};
@@ -24,6 +25,28 @@ pub struct Id {
     pub index: u32,
 }
 
+impl fmt::Display for Id {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.entry, self.index)
+    }
+}
+
+impl std::str::FromStr for Id {
+    type Err = Error;
+
+    fn from_str(text: &str) -> Result<Self, Error> {
+        let (entry, index) = text
+            .split_once(':')
+            .ok_or_else(|| Error::invalid(format!("not an entry and index: {text:?}")))?;
+        Ok(Self {
+            entry: entry.parse()?,
+            index: index
+                .parse()
+                .map_err(|e| Error::invalid(format!("not an index: {index:?}")).with_source(e))?,
+        })
+    }
+}
+
 /// Someone who acts.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub enum Principal {
@@ -36,6 +59,16 @@ pub enum Principal {
     /// its DID log. Its nodes act for it, once a `Vouch` in the space shows
     /// that they are its nodes.
     Identity(Hash),
+}
+
+impl fmt::Display for Principal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Key(key) => key.fmt(f),
+            Self::Group(id) => write!(f, "group:{id}"),
+            Self::Identity(did) => f.write_str(&fileos_id::did_of(*did)),
+        }
+    }
 }
 
 /// An exact permission. Templates such as "Read and write" are lists of
@@ -75,6 +108,53 @@ pub enum Permission {
     Member,
 }
 
+impl fmt::Display for Permission {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::FilesList => "files.list",
+            Self::FilesRead => "files.read",
+            Self::FilesCreate => "files.create",
+            Self::FilesChange => "files.change",
+            Self::FilesDelete => "files.delete",
+            Self::FilesHistory => "files.history",
+            Self::FilesWatch => "files.watch",
+            Self::AccessView => "access.view",
+            Self::AccessGive => "access.give",
+            Self::AccessTake => "access.take",
+            Self::RulesSet => "rules.set",
+            Self::ShareSend => "share.send",
+            Self::DataKeep => "data.keep",
+            Self::SpaceCheckpoint => "space.checkpoint",
+            Self::Member => "member",
+        })
+    }
+}
+
+impl std::str::FromStr for Permission {
+    type Err = Error;
+
+    fn from_str(text: &str) -> Result<Self, Error> {
+        match text {
+            "files.list" => Ok(Self::FilesList),
+            "files.read" => Ok(Self::FilesRead),
+            "files.create" => Ok(Self::FilesCreate),
+            "files.change" => Ok(Self::FilesChange),
+            "files.delete" => Ok(Self::FilesDelete),
+            "files.history" => Ok(Self::FilesHistory),
+            "files.watch" => Ok(Self::FilesWatch),
+            "access.view" => Ok(Self::AccessView),
+            "access.give" => Ok(Self::AccessGive),
+            "access.take" => Ok(Self::AccessTake),
+            "rules.set" => Ok(Self::RulesSet),
+            "share.send" => Ok(Self::ShareSend),
+            "data.keep" => Ok(Self::DataKeep),
+            "space.checkpoint" => Ok(Self::SpaceCheckpoint),
+            "member" => Ok(Self::Member),
+            _ => Err(Error::invalid(format!("not a permission: {text:?}"))),
+        }
+    }
+}
+
 /// What a grant is on.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub enum Resource {
@@ -85,6 +165,17 @@ pub enum Resource {
     /// A group. A grant of `member` on it puts someone in it; `access.give`
     /// on it lets someone put others in it.
     Group(Id),
+}
+
+impl fmt::Display for Resource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Prefix(prefix) if prefix.is_empty() => f.write_str("the whole space"),
+            Self::Prefix(prefix) => write!(f, "prefix {prefix:?}"),
+            Self::File(id) => write!(f, "file {id}"),
+            Self::Group(id) => write!(f, "group {id}"),
+        }
+    }
 }
 
 /// A key that a device may be given.
@@ -121,6 +212,15 @@ pub struct Sealed {
 pub enum Effect {
     Allow,
     Deny,
+}
+
+impl fmt::Display for Effect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Allow => "allow",
+            Self::Deny => "deny",
+        })
+    }
 }
 
 /// The bytes of a version. The bytes themselves are kept apart, in the
@@ -344,10 +444,12 @@ impl Entry {
             .author
             .verify(&encode(&self.header), &self.signature)
         {
-            return Err(Error("the signature of the entry is wrong".into()));
+            return Err(Error::invalid("the signature of the entry is wrong".into()));
         }
         if Hash::of(&self.body.0) != self.header.body {
-            return Err(Error("the body is not the one the header names".into()));
+            return Err(Error::invalid(
+                "the body is not the one the header names".into(),
+            ));
         }
         decode(&self.body.0)
     }

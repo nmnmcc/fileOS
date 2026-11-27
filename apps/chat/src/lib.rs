@@ -51,8 +51,8 @@ impl Guest for Chat {
 }
 
 impl Http for Chat {
-    fn handle(request: IncomingRequest, out: ResponseOutparam) {
-        fileos_app::http::serve(request, out, route);
+    fn handle(request: IncomingRequest, response_out: ResponseOutparam) {
+        fileos_app::http::serve(request, response_out, route);
     }
 }
 

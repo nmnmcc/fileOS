@@ -115,7 +115,7 @@ pub fn check(
     now: u64,
     token: Option<&str>,
 ) -> Result<Proof, Error> {
-    let bad = |why: &str| Error(format!("a DPoP proof that is not good: {why}"));
+    let bad = |why: &str| Error::invalid(format!("a DPoP proof that is not good: {why}"));
     let mut parts = proof.split('.');
     let (Some(h), Some(c), Some(s), None) =
         (parts.next(), parts.next(), parts.next(), parts.next())
@@ -161,7 +161,7 @@ pub fn check(
 
 /// Test keys that make proofs, as a browser does.
 #[cfg(any(test, feature = "testing"))]
-#[allow(
+#[expect(
     missing_debug_implementations,
     clippy::new_without_default,
     clippy::missing_panics_doc,

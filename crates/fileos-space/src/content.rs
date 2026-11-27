@@ -93,20 +93,9 @@ pub fn seal(data: &[u8], data_key: &Key) -> (Content, Vec<(Hash, Vec<u8>)>) {
     })
 }
 
-/// The bytes of content made by [`seal`], if all of it is here and the key
-/// is right.
+/// The bytes of content made by [`seal`], if all of it is here and the key is right.
 pub fn open(content: &Content, data_key: &Key, store: &dyn Contents) -> Option<Vec<u8>> {
-    let mut out = Vec::with_capacity(usize::try_from(content.size).ok()?);
-    for hash in chunks(content, store)? {
-        let piece = store.get(hash)?;
-        if Hash::of(&piece) != hash || piece.len() < 24 {
-            return None;
-        }
-        let (nonce, sealed) = piece.split_at(24);
-        let nonce: [u8; 24] = nonce.try_into().ok()?;
-        out.extend(crypto::open(data_key, &nonce, sealed, b"")?);
-    }
-    (out.len() as u64 == content.size).then_some(out)
+    Reader::sealed(*content, vec![*data_key])?.join(store)
 }
 
 fn split_with(data: &[u8], piece: impl Fn(&[u8]) -> Vec<u8>) -> (Content, Vec<(Hash, Vec<u8>)>) {
@@ -149,26 +138,164 @@ fn split_with(data: &[u8], piece: impl Fn(&[u8]) -> Vec<u8>) -> (Content, Vec<(H
     )
 }
 
+/// The bytes added to each encrypted chunk by its `XChaCha20` nonce and tag.
+const SEALED_OVERHEAD: u64 = 24 + 16;
+
+/// Checks a chunk list and gives the hashes and sizes that it names.
+pub(crate) fn chunk_list(content: &Content, bytes: &[u8]) -> Option<Vec<(Hash, u64)>> {
+    if Hash::of(bytes) != content.hash {
+        return None;
+    }
+    let list: Vec<(Hash, u64)> = decode(bytes).ok()?;
+    (list.len() >= 2
+        && (list_size(&list, 0) == Some(content.size)
+            || list_size(&list, SEALED_OVERHEAD) == Some(content.size)))
+    .then_some(list)
+}
+
+fn list_size(list: &[(Hash, u64)], overhead: u64) -> Option<u64> {
+    list.iter().try_fold(0_u64, |total, &(_, size)| {
+        let size = size.checked_sub(overhead)?;
+        if size == 0 || size > MAX as u64 {
+            return None;
+        }
+        total.checked_add(size)
+    })
+}
+
 /// The hashes of the chunks of `content`, if its list is here.
 pub fn chunks(content: &Content, store: &dyn Contents) -> Option<Vec<Hash>> {
     if !content.chunks {
-        return Some(vec![content.hash]);
+        return (content.size <= MAX as u64).then(|| vec![content.hash]);
     }
-    let list: Vec<(Hash, u64)> = decode(&store.get(content.hash)?).ok()?;
-    Some(list.into_iter().map(|(h, _)| h).collect())
+    Some(
+        chunk_list(content, &store.get(content.hash)?)?
+            .into_iter()
+            .map(|(hash, _)| hash)
+            .collect(),
+    )
 }
 
-/// The bytes of `content`, if all of it is here and good.
-pub fn join(content: &Content, store: &dyn Contents) -> Option<Vec<u8>> {
-    let mut out = Vec::with_capacity(usize::try_from(content.size).ok()?);
-    for hash in chunks(content, store)? {
-        let chunk = store.get(hash)?;
-        if Hash::of(&chunk) != hash {
-            return None;
-        }
-        out.extend_from_slice(&chunk);
+/// A read of one file version, with the keys that can open it.
+pub struct Reader {
+    content: Content,
+    keys: Option<Vec<Key>>,
+}
+
+impl std::fmt::Debug for Reader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Reader")
+            .field("content", &self.content)
+            .finish_non_exhaustive()
     }
-    (out.len() as u64 == content.size).then_some(out)
+}
+
+impl Reader {
+    pub(crate) fn plain(content: Content) -> Self {
+        Self {
+            content,
+            keys: None,
+        }
+    }
+
+    pub(crate) fn sealed(content: Content, keys: Vec<Key>) -> Option<Self> {
+        (!keys.is_empty()).then_some(Self {
+            content,
+            keys: Some(keys),
+        })
+    }
+
+    /// The stored content and its size before encryption.
+    pub fn content(&self) -> Content {
+        self.content
+    }
+
+    /// Passes verified chunks to `write` in order.
+    ///
+    /// A missing or invalid chunk, or a stopped write, gives `None`.
+    /// Earlier chunks may have already reached `write`.
+    pub fn read(
+        &self,
+        store: &dyn Contents,
+        mut write: impl FnMut(Vec<u8>) -> Option<()>,
+    ) -> Option<()> {
+        let overhead = if self.keys.is_some() {
+            SEALED_OVERHEAD
+        } else {
+            0
+        };
+        let content = self.content;
+        let one;
+        let list;
+        let parts = if content.chunks {
+            list = chunk_list(&content, &store.get(content.hash)?)?;
+            if list_size(&list, overhead) != Some(content.size) {
+                return None;
+            }
+            list.as_slice()
+        } else {
+            if content.size > MAX as u64 {
+                return None;
+            }
+            one = [(content.hash, content.size + overhead)];
+            &one
+        };
+        let mut key = None;
+        for &(hash, size) in parts {
+            let piece = store.get(hash)?;
+            if piece.len() as u64 != size || Hash::of(&piece) != hash {
+                return None;
+            }
+            let chunk = match &self.keys {
+                None => piece,
+                Some(keys) => {
+                    let (nonce, sealed) = piece.split_at_checked(24)?;
+                    let nonce = nonce.try_into().ok()?;
+                    if let Some(key) = key {
+                        crypto::open(key, nonce, sealed, b"")?
+                    } else {
+                        let (found, bytes) = keys.iter().find_map(|candidate| {
+                            let bytes = crypto::open(candidate, nonce, sealed, b"")?;
+                            Some((candidate, bytes))
+                        })?;
+                        key = Some(found);
+                        bytes
+                    }
+                }
+            };
+            write(chunk)?;
+        }
+        Some(())
+    }
+
+    /// Collects all of the verified chunks into one buffer.
+    pub fn join(&self, store: &dyn Contents) -> Option<Vec<u8>> {
+        let mut out = Vec::new();
+        self.read(store, |chunk| {
+            if out.is_empty() {
+                out = chunk;
+            } else {
+                out.try_reserve(chunk.len()).ok()?;
+                out.extend_from_slice(&chunk);
+            }
+            Some(())
+        })?;
+        Some(out)
+    }
+}
+
+/// Passes verified unencrypted chunks to `write` in order.
+pub fn read(
+    content: &Content,
+    store: &dyn Contents,
+    write: impl FnMut(Vec<u8>) -> Option<()>,
+) -> Option<()> {
+    Reader::plain(*content).read(store, write)
+}
+
+/// The bytes of unencrypted content, if all of it is here and good.
+pub fn join(content: &Content, store: &dyn Contents) -> Option<Vec<u8>> {
+    Reader::plain(*content).join(store)
 }
 
 /// Says if every piece of `content` is here.
@@ -213,6 +340,21 @@ mod tests {
         let mut store = Mem(pieces.into_iter().collect());
         assert_eq!(open(&c, &key, &store).unwrap(), data);
         assert_eq!(open(&c, &other, &store), None);
+
+        let reader = Reader::sealed(c, vec![other, key]).unwrap();
+        let mut count = 0;
+        let mut offset = 0;
+        reader
+            .read(&store, |chunk| {
+                let end = offset + chunk.len();
+                assert_eq!(chunk, data[offset..end]);
+                offset = end;
+                count += 1;
+                Some(())
+            })
+            .unwrap();
+        assert!(count > 1);
+        assert_eq!(offset, data.len());
         assert!(
             store
                 .0

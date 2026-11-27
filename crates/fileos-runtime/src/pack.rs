@@ -31,7 +31,7 @@ const PAYLOAD: &str = "payload.tar.zst";
 const MAX_UNPACKED: u64 = 512 << 20;
 
 fn zip_error(e: &dyn std::fmt::Display) -> Error {
-    Error(format!("not a good .app file: {e}"))
+    Error::invalid(format!("not a good .app file: {e}"))
 }
 
 /// Says if a path in an archive is a plain relative path, with no `..`.
@@ -49,7 +49,7 @@ impl Bundle {
     ///
     /// When the archive cannot be made.
     pub fn pack(&self) -> Result<Vec<u8>, Error> {
-        let io = |e: std::io::Error| Error(format!("cannot make the .app file: {e}"));
+        let io = |e: std::io::Error| Error::invalid(format!("cannot make the .app file: {e}"));
         let mut tar = tar::Builder::new(Vec::new());
         for (path, data) in &self.files {
             let name = path.trim_start_matches('/');
@@ -148,8 +148,9 @@ impl Bundle {
         if path.is_dir() {
             return Self::read_dir(path);
         }
-        let bytes = std::fs::read(path).map_err(|e| Error(format!("{}: {e}", path.display())))?;
-        Self::unpack(&bytes).map_err(|e| Error(format!("{}: {e}", path.display())))
+        let bytes =
+            std::fs::read(path).map_err(|e| Error::invalid(format!("{}: {e}", path.display())))?;
+        Self::unpack(&bytes).map_err(|e| Error::invalid(format!("{}: {e}", path.display())))
     }
 
     /// Writes the files of the bundle into a directory.
@@ -162,10 +163,10 @@ impl Bundle {
             let target = dir.join(path.trim_start_matches('/'));
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent)
-                    .map_err(|e| Error(format!("{}: {e}", parent.display())))?;
+                    .map_err(|e| Error::invalid(format!("{}: {e}", parent.display())))?;
             }
             std::fs::write(&target, data)
-                .map_err(|e| Error(format!("{}: {e}", target.display())))?;
+                .map_err(|e| Error::invalid(format!("{}: {e}", target.display())))?;
         }
         Ok(())
     }

@@ -50,18 +50,23 @@
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
+use std::time::Duration;
 
 use bytes::Bytes;
 use fileos_core::Error;
 use fileos_node::{Node, parse_grant, parse_permissions, parse_principal};
 use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt as _, Full};
-use hyper::body::Incoming;
+use hyper::body::{Frame, Incoming};
 use hyper::header::{self, HeaderMap, HeaderValue};
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
 use tokio::net::TcpListener;
+use tokio::sync::{Semaphore, mpsc};
 
 mod signin;
 
@@ -179,27 +184,39 @@ pub async fn start(node: Node, port: u16, token: String) -> Result<u16, Error> {
     let v4 = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let listener = TcpListener::bind(v4)
         .await
-        .map_err(|e| Error(format!("gateway: {v4}: {e}")))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| Error(format!("gateway: {e}")))?
-        .port();
+        .map_err(|e| Error::from(e).context(v4))?;
+    let port = listener.local_addr().map_err(Error::from)?.port();
     node.start_sign_in(port)?;
     let mut listeners = vec![listener];
     let v6 = SocketAddr::from((Ipv6Addr::LOCALHOST, port));
     match TcpListener::bind(v6).await {
         Ok(listener) => listeners.push(listener),
-        Err(e) => tracing::debug!("gateway: not on {v6}: {e}"),
+        Err(e) => {
+            tracing::debug!(name: "gateway.listen.skipped", address = %v6, error = %e, "could not listen on IPv6");
+        }
     }
+    // A connection can hold an app instance or a file reader open.
+    let connections = Arc::new(Semaphore::new(32));
     for listener in listeners {
         let (node, token) = (node.clone(), token.clone());
+        let connections = Arc::clone(&connections);
         tokio::spawn(async move {
             loop {
-                let Ok((stream, _)) = listener.accept().await else {
-                    continue;
+                let Ok(slot) = Arc::clone(&connections).acquire_owned().await else {
+                    break;
+                };
+                let (stream, _) = match listener.accept().await {
+                    Ok(accepted) => accepted,
+                    Err(error) => {
+                        tracing::warn!(name: "gateway.accept.failed", %error, "could not accept a connection");
+                        // Give the system time to free file descriptors.
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
                 };
                 let (node, token) = (node.clone(), token.clone());
                 tokio::spawn(async move {
+                    let _slot = slot;
                     let service = hyper::service::service_fn(move |req| {
                         serve(node.clone(), token.clone(), req)
                     });
@@ -207,7 +224,7 @@ pub async fn start(node: Node, port: u16, token: String) -> Result<u16, Error> {
                         .serve_connection(TokioIo::new(stream), service)
                         .await
                     {
-                        tracing::debug!("gateway connection: {e}");
+                        tracing::debug!(name: "gateway.connection.closed", error = %e, "connection ended with an error");
                     }
                 });
             }
@@ -272,20 +289,21 @@ async fn app(node: &Node, id: &str, host: &str, req: Request<Incoming>) -> Reply
     }
     let (mut parts, body) = req.into_parts();
     let get = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
-    let path = parts.uri.path_and_query().map_or("/", |p| p.as_str());
-    let person = {
-        let (authorization, dpop) = (get("authorization"), get("dpop"));
+    let person = if let Some(authorization) =
+        get("authorization").filter(|a| a.starts_with("DPoP "))
+    {
+        let path = parts.uri.path_and_query().map_or("/", |p| p.as_str());
+        let (authorization, dpop) = (authorization.to_string(), get("dpop").map(str::to_string));
         let (node, method, host, path) = (
             node.clone(),
             parts.method.to_string(),
             host.to_string(),
             path.to_string(),
         );
-        let (authorization, dpop) = (authorization.map(str::to_string), dpop.map(str::to_string));
         tokio::task::spawn_blocking(move || {
             signin::person(
                 &node,
-                authorization.as_deref(),
+                Some(&authorization),
                 dpop.as_deref(),
                 &method,
                 &host,
@@ -293,7 +311,11 @@ async fn app(node: &Node, id: &str, host: &str, req: Request<Incoming>) -> Reply
             )
         })
         .await
-        .unwrap_or_else(|e| Err(Error(e.to_string())))
+        .unwrap_or_else(|e| {
+            Err(Error::internal("the sign-in worker stopped".into()).with_source(e))
+        })
+    } else {
+        Ok(None)
     };
     for name in KERNEL_HEADERS {
         parts.headers.remove(name);
@@ -306,8 +328,11 @@ async fn app(node: &Node, id: &str, host: &str, req: Request<Incoming>) -> Reply
             }
         }
         Ok(None) => {}
-        Err(e) => {
-            tracing::info!("sign-in for {id}: {e}");
+        Err(error) if error.is_unavailable() || !error.is_invalid() && !error.is_denied() => {
+            return error_reply(&error);
+        }
+        Err(error) => {
+            tracing::info!(name: "gateway.app.sign_in.failed", app = id, %error, "app sign-in failed");
             let mut answer = reply(StatusCode::UNAUTHORIZED, "the sign-in is not good\n");
             answer.headers_mut().insert(
                 header::WWW_AUTHENTICATE,
@@ -319,9 +344,13 @@ async fn app(node: &Node, id: &str, host: &str, req: Request<Incoming>) -> Reply
     }
     let mut answer = match app.handle(Request::from_parts(parts, body)).await {
         Ok(answer) => answer.map(|body| body.map_err(|e| Box::new(e) as BodyError).boxed_unsync()),
-        Err(e) => {
-            tracing::warn!("{e}");
-            reply(StatusCode::BAD_GATEWAY, format!("{e}\n"))
+        Err(e) if e.is_unavailable() => error_reply(&e),
+        Err(error) => {
+            tracing::warn!(name: "gateway.app.failed", app = id, %error, "app request failed");
+            reply(
+                StatusCode::BAD_GATEWAY,
+                "the app could not finish the request\n",
+            )
         }
     };
     clean_app_headers(answer.headers_mut());
@@ -371,9 +400,67 @@ async fn kernel(node: Node, token: String, host: &str, req: Request<Incoming>) -
         tokio::task::spawn_blocking(move || route(&node, &method, &path, &query, body)).await;
     match result {
         Ok(Ok(reply)) => reply,
-        Ok(Err(e)) => reply(StatusCode::BAD_REQUEST, format!("{e}\n")),
-        Err(e) => reply(StatusCode::INTERNAL_SERVER_ERROR, format!("{e}\n")),
+        Ok(Err(e)) => error_reply(&e),
+        Err(error) => {
+            tracing::error!(name: "gateway.request.worker.failed", %error, "request work stopped");
+            reply(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "the node could not finish the request\n",
+            )
+        }
     }
+}
+
+fn error_reply(error: &Error) -> Reply {
+    let status = if error.is_invalid() {
+        StatusCode::BAD_REQUEST
+    } else if error.is_denied() {
+        StatusCode::FORBIDDEN
+    } else if error.is_not_found() {
+        StatusCode::NOT_FOUND
+    } else if error.is_unavailable() {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        tracing::error!(name: "gateway.request.failed", %error, "the node could not finish the request");
+        return reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "the node could not finish the request\n",
+        );
+    };
+    reply(status, format!("{error}\n"))
+}
+
+struct FileBody(mpsc::Receiver<Result<Frame<Bytes>, BodyError>>);
+
+impl hyper::body::Body for FileBody {
+    type Data = Bytes;
+    type Error = BodyError;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, BodyError>>> {
+        self.get_mut().0.poll_recv(cx)
+    }
+}
+
+fn read_file(node: &Node, path: &str) -> Result<Reply, Error> {
+    let file = node.open_file(path)?;
+    let len = file.len();
+    // The reader can stay at most two chunks ahead of the connection.
+    let (send, recv) = mpsc::channel(2);
+    tokio::task::spawn_blocking(move || {
+        let result =
+            file.read(|chunk| send.blocking_send(Ok(Frame::data(Bytes::from(chunk)))).ok());
+        if let Err(error) = result {
+            let _ = send.blocking_send(Err(Box::new(error) as BodyError));
+        }
+    });
+    let mut response = Response::new(FileBody(recv).boxed_unsync());
+    response
+        .headers_mut()
+        .insert(header::CONTENT_LENGTH, HeaderValue::from(len));
+    Ok(response)
 }
 
 /// A sign-in request: no token, and runs on a thread for blocking work.
@@ -432,17 +519,17 @@ fn route(
         query
             .get(name)
             .cloned()
-            .ok_or_else(|| Error(format!("`{name}` is needed")))
+            .ok_or_else(|| Error::invalid(format!("`{name}` is needed")))
     };
     let ok = |text: String| Ok(reply(StatusCode::OK, text));
     let text = |body: Vec<u8>| {
-        String::from_utf8(body).map_err(|e| Error(format!("the body is not text: {e}")))
+        String::from_utf8(body).map_err(|e| Error::invalid(format!("the body is not text: {e}")))
     };
     if let Some(fs_path) = path.strip_prefix("/v0/fs") {
         let fs_path = if fs_path.is_empty() { "/" } else { fs_path };
         return match *method {
             Method::GET if query.contains_key("list") => ok(node.list(fs_path)?.join("\n") + "\n"),
-            Method::GET => Ok(reply(StatusCode::OK, node.read(fs_path)?)),
+            Method::GET => read_file(node, fs_path),
             Method::PUT => node.put(fs_path, &body).and_then(|()| ok(String::new())),
             Method::POST if query.contains_key("append") => {
                 node.append(fs_path, &body).and_then(|()| ok(String::new()))
@@ -458,7 +545,7 @@ fn route(
             Method::POST => {
                 let to = parse_principal(&arg("to")?)?;
                 let id = node.grant_to(at, to, &parse_permissions(&arg("permissions")?)?)?;
-                ok(format!("{}:{}\n", id.entry, id.index))
+                ok(format!("{id}\n"))
             }
             Method::DELETE => node
                 .take(at, parse_grant(&arg("id")?)?)

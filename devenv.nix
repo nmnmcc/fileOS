@@ -121,6 +121,7 @@ in
           ./Cargo.toml
           ./Cargo.lock
           ./crates
+          ./apps
           ./wit
         ];
       };

@@ -23,8 +23,8 @@ struct Photos;
 /// The pages of the app, at its own origin: the photos it found, the photos
 /// themselves, and upload.
 impl Http for Photos {
-    fn handle(request: IncomingRequest, out: ResponseOutparam) {
-        fileos_app::http::serve(request, out, route);
+    fn handle(request: IncomingRequest, response_out: ResponseOutparam) {
+        fileos_app::http::serve(request, response_out, route);
     }
 }
 

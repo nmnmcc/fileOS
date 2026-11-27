@@ -39,7 +39,7 @@ fn png(width: u32, height: u32) -> Vec<u8> {
 fn start(dir: &Path) -> Node {
     let node = Node::open(dir).unwrap();
     node.start_net(NetConfig {
-        listen: vec!["/ip4/127.0.0.1/tcp/0".parse().unwrap()],
+        listen: vec!["/ip4/127.0.0.1/tcp/0".into()],
         peers: Vec::new(),
         mdns: false,
     })
@@ -119,6 +119,24 @@ async fn two_nodes_share_a_photos_space() {
     assert!(alice.kv("photos").is_empty());
     bob.read("/apps/Photos.app/manifest.toml").unwrap();
     alice.read("/apps/Photos.app/manifest.toml").unwrap_err();
+
+    // A file with more pieces than fit in the network queues still arrives.
+    let mut noise = 1_u64;
+    let video: Vec<u8> = (0..(4 << 20))
+        .map(|_| {
+            noise ^= noise << 13;
+            noise ^= noise >> 7;
+            noise ^= noise << 17;
+            noise as u8
+        })
+        .collect();
+    alice.put("/photos/clip.bin", &video).unwrap();
+    until("bob gets every piece of the file", || {
+        bob.read("/photos/clip.bin")
+            .as_deref()
+            .is_ok_and(|bytes| bytes == video)
+    })
+    .await;
 
     // Bob's node comes back after a restart, with its spaces and its app.
     let before = entries(&bob);

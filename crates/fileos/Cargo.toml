@@ -18,6 +18,7 @@ fileos-core.workspace = true
 fileos-node.workspace = true
 fileos-gateway.workspace = true
 clap.workspace = true
+mimalloc.workspace = true
 percent-encoding.workspace = true
 tokio.workspace = true
 tracing-subscriber.workspace = true

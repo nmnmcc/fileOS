@@ -21,7 +21,7 @@ from rich.console import Console
 ROOT = Path(__file__).resolve().parent.parent
 
 WASM_TARGET = "wasm32-unknown-unknown"
-APPS = ["--manifest-path", "apps/Cargo.toml"]
+APPS = ["--package", "fileos-app", "--package", "chat", "--package", "photos"]
 
 
 def portable_check() -> list[str]:
@@ -66,11 +66,19 @@ CHECKS: list[list[str] | Callable[[], list[str]]] = [
         "warnings",
     ],
     ["cargo", "test", "--workspace", "--locked"],
-    ["cargo", "test", *APPS, "--locked"],
+    [
+        "cargo",
+        "check",
+        "--package",
+        "fileos-sim",
+        "--features",
+        "test-util",
+        "--all-targets",
+        "--locked",
+    ],
     ["cargo", "doc", "--workspace", "--no-deps", "--locked"],
     portable_check,  # shared with apps, phone shells and the web app
     ["cargo", "deny", "check"],
-    ["cargo", "deny", *APPS, "check"],
     ["cargo", "machete"],
     ["uv", "run", "--locked", "basedpyright"],
 ]

@@ -40,7 +40,7 @@ pub fn issue(claims: &Claims, key: &SecretKey) -> String {
 ///
 /// When the token is not good, was not made by `key`, or has ended.
 pub fn check(token: &str, key: PublicKey, now: u64) -> Result<Claims, Error> {
-    let bad = || Error("the access token is not good".into());
+    let bad = || Error::invalid("the access token is not good".into());
     let (body, sig) = token.split_once('.').ok_or_else(bad)?;
     let body = b64::decode(body).ok_or_else(bad)?;
     let sig: [u8; 64] = b64::decode(sig)
@@ -51,7 +51,7 @@ pub fn check(token: &str, key: PublicKey, now: u64) -> Result<Claims, Error> {
     }
     let claims: Claims = fileos_core::decode(&body).map_err(|_e| bad())?;
     if claims.exp <= now {
-        return Err(Error("the access token has ended".into()));
+        return Err(Error::invalid("the access token has ended".into()));
     }
     Ok(claims)
 }

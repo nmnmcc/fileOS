@@ -91,7 +91,7 @@ pub fn did_key(key: PublicKey) -> String {
 /// When the text is not the `did:key` of an ed25519 key.
 pub fn parse_did_key(text: &str) -> Result<PublicKey, Error> {
     let bad = |why: &dyn fmt::Display| {
-        Error(format!(
+        Error::invalid(format!(
             "not the did:key of an ed25519 key: {text:?}: {why}"
         ))
     };
@@ -148,7 +148,7 @@ fn unbase32(text: &str) -> Option<Vec<u8>> {
 ///
 /// When the text is not a `did:fileos` DID.
 pub fn did_hash(did: &str) -> Result<Hash, Error> {
-    let bad = || Error(format!("not a did:fileos DID: {did:?}"));
+    let bad = || Error::invalid(format!("not a did:fileos DID: {did:?}"));
     let bytes = did
         .strip_prefix("did:fileos:")
         .and_then(unbase32)
@@ -216,16 +216,18 @@ impl State {
     fn check(&self) -> Result<(), Error> {
         let keys = self.rotation_keys()?;
         if keys.is_empty() || keys.len() > MAX_ROTATION_KEYS {
-            return Err(Error(format!(
+            return Err(Error::invalid(format!(
                 "an identity has 1 to {MAX_ROTATION_KEYS} rotation keys, not {}",
                 keys.len()
             )));
         }
         if (1..keys.len()).any(|i| keys[..i].contains(&keys[i])) {
-            return Err(Error("a rotation key is in the list two times".into()));
+            return Err(Error::invalid(
+                "a rotation key is in the list two times".into(),
+            ));
         }
         if self.verification_methods.len() > MAX_VERIFICATION_METHODS {
-            return Err(Error(format!(
+            return Err(Error::invalid(format!(
                 "an identity has at most {MAX_VERIFICATION_METHODS} verification methods"
             )));
         }
@@ -270,7 +272,7 @@ impl Op {
     pub fn genesis(state: State, rotation_key: &SecretKey) -> Result<Op, Error> {
         state.check()?;
         if !state.rotation_keys()?.contains(&rotation_key.public()) {
-            return Err(Error(
+            return Err(Error::invalid(
                 "the first operation must be signed by one of its own rotation keys".into(),
             ));
         }
@@ -312,7 +314,7 @@ impl Op {
     /// When the bytes are too many, or are not an operation.
     pub fn from_bytes(bytes: &[u8]) -> Result<Op, Error> {
         if bytes.len() > MAX_OP_BYTES {
-            return Err(Error(format!(
+            return Err(Error::invalid(format!(
                 "an operation has at most {MAX_OP_BYTES} bytes"
             )));
         }
@@ -363,7 +365,7 @@ pub fn resolve(did: &str, ops: &[Op]) -> Result<Resolved, Error> {
     let genesis = ops
         .iter()
         .find(|op| op.did() == did && valid_genesis(op))
-        .ok_or_else(|| Error(format!("no valid first operation for {did}")))?;
+        .ok_or_else(|| Error::invalid(format!("no valid first operation for {did}")))?;
     let mut children: BTreeMap<Hash, Vec<&Op>> = BTreeMap::new();
     for op in ops {
         if let Some(prev) = op.prev {
@@ -371,7 +373,9 @@ pub fn resolve(did: &str, ops: &[Op]) -> Result<Resolved, Error> {
         }
     }
     let Change::Update(first) = &genesis.change else {
-        return Err(Error("the first operation is not an update".into()));
+        return Err(Error::invalid(
+            "the first operation is not an update".into(),
+        ));
     };
     let mut state = first.clone();
     let mut head = genesis.hash();
@@ -546,9 +550,9 @@ impl FromStr for Link {
         let (did, query) = text.split_once('?').unwrap_or((text, ""));
         let id = did
             .strip_prefix("did:fileos:")
-            .ok_or_else(|| Error(format!("not a did:fileos link: {text:?}")))?;
+            .ok_or_else(|| Error::invalid(format!("not a did:fileos link: {text:?}")))?;
         if id.is_empty() || !id.bytes().all(|b| BASE32.contains(&b)) {
-            return Err(Error(format!("not a did:fileos link: {text:?}")));
+            return Err(Error::invalid(format!("not a did:fileos link: {text:?}")));
         }
         let hints = query
             .split('&')

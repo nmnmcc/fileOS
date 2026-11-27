@@ -73,6 +73,13 @@ skip = [
   { crate = "thiserror-impl@1.0.69", reason = "rtnetlink (Linux only), through if-watch in libp2p" },
   { crate = "hashbrown@0.16.1", reason = "gimli, in wasmtime; indexmap is on the newer one" },
   { crate = "syn@2.0.119", reason = "proc macros upstream (libp2p, curve25519-dalek, jni); serde is on syn 3" },
+  # The host and guest tools pin different versions of the same formats.
+  { crate = "wasm-encoder@0.262.0", reason = "wit-bindgen 0.63; Wasmtime 51 uses 0.263" },
+  { crate = "wasm-metadata@0.262.0", reason = "wit-bindgen 0.63; Wasmtime 51 uses 0.263" },
+  { crate = "wasmparser@0.262.0", reason = "wit-bindgen 0.63; Wasmtime 51 uses 0.263" },
+  { crate = "wit-component@0.262.0", reason = "wit-bindgen 0.63; Wasmtime 51 uses 0.263" },
+  { crate = "wit-parser@0.262.0", reason = "wit-bindgen 0.63; Wasmtime 51 uses 0.263" },
+  { crate = "wit-bindgen@0.57.1", reason = "wasip2 in the host dependency tree" },
   { crate = "windows-sys@0.52.0", reason = "ring, on Windows only" },
   # hpke (encryption of spaces) is on the newer RustCrypto crates; snow, in
   # libp2p-noise, is on the older ones.

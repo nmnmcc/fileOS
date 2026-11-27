@@ -23,7 +23,7 @@ async fn until(what: &str, mut ok: impl FnMut() -> bool) {
 fn start(dir: &Path) -> Node {
     let node = Node::open(dir).unwrap();
     node.start_net(NetConfig {
-        listen: vec!["/ip4/127.0.0.1/tcp/0".parse().unwrap()],
+        listen: vec!["/ip4/127.0.0.1/tcp/0".into()],
         peers: Vec::new(),
         mdns: false,
     })

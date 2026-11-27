@@ -185,7 +185,7 @@ impl Auth {
         self.challenges
             .remove(challenge)
             .and_then(|_| b64::decode(challenge))
-            .ok_or_else(|| Error("the challenge is not good, or has ended".into()))
+            .ok_or_else(|| Error::invalid("the challenge is not good, or has ended".into()))
     }
 
     /// Registers a passkey, with a setup code and a challenge.
@@ -203,7 +203,9 @@ impl Auth {
     ) -> Result<(), Error> {
         self.prune(now);
         if self.setup.remove(setup_code).is_none() {
-            return Err(Error("the setup code is not good, or has ended".into()));
+            return Err(Error::invalid(
+                "the setup code is not good, or has ended".into(),
+            ));
         }
         let c = self.take_challenge(challenge, now)?;
         let key = webauthn::register(client_data, attestation, &c, &self.origin, &self.rp_id)?;
@@ -228,7 +230,7 @@ impl Auth {
     /// # Errors
     ///
     /// When the request or the passkey answer is not good.
-    #[allow(
+    #[expect(
         clippy::too_many_arguments,
         reason = "the fields of one WebAuthn answer"
     )]
@@ -243,10 +245,12 @@ impl Auth {
         now: u64,
     ) -> Result<String, Error> {
         if !req.redirect_uri.starts_with(&format!("{}/", req.client_id)) {
-            return Err(Error("the redirect URI is not on the app's origin".into()));
+            return Err(Error::invalid(
+                "the redirect URI is not on the app's origin".into(),
+            ));
         }
         if req.code_challenge.len() != 43 {
-            return Err(Error("a PKCE challenge (S256) is needed".into()));
+            return Err(Error::invalid("a PKCE challenge (S256) is needed".into()));
         }
         let c = self.take_challenge(challenge, now)?;
         let (origin, rp_id) = (self.origin.clone(), self.rp_id.clone());
@@ -255,7 +259,7 @@ impl Auth {
             .passkeys
             .iter_mut()
             .find(|k| k.id.0 == credential)
-            .ok_or_else(|| Error("no such passkey".into()))?;
+            .ok_or_else(|| Error::invalid("no such passkey".into()))?;
         key.count = webauthn::verify(key, client_data, auth_data, signature, &c, &origin, &rp_id)?;
         let code = self.random();
         self.codes.insert(
@@ -289,7 +293,7 @@ impl Auth {
     ) -> Result<String, Error> {
         let p = dpop::check(proof, method, url, now, token)?;
         if self.jtis.contains_key(&p.jti) {
-            return Err(Error("a DPoP proof that was used before".into()));
+            return Err(Error::invalid("a DPoP proof that was used before".into()));
         }
         self.jtis.insert(p.jti, now + 2 * dpop::SKEW);
         Ok(p.jkt)
@@ -330,7 +334,7 @@ impl Auth {
     ///
     /// When the code, the verifier or the proof is not good. A code is good
     /// for one try.
-    #[allow(clippy::too_many_arguments, reason = "the fields of one token request")]
+    #[expect(clippy::too_many_arguments, reason = "the fields of one token request")]
     pub fn token_from_code(
         &mut self,
         code: &str,
@@ -345,10 +349,10 @@ impl Auth {
         let c = self
             .codes
             .remove(code)
-            .ok_or_else(|| Error("the code is not good, or has ended".into()))?;
+            .ok_or_else(|| Error::invalid("the code is not good, or has ended".into()))?;
         if c.aud != client_id || c.redirect != redirect_uri || !pkce::check(verifier, &c.challenge)
         {
-            return Err(Error("the code is not for this app".into()));
+            return Err(Error::invalid("the code is not for this app".into()));
         }
         let jkt = self.proof(proof, url, now, None, "POST")?;
         let family = Hash(sha256(format!("{code}{}", self.random()).as_bytes()));
@@ -373,22 +377,26 @@ impl Auth {
         self.prune(now);
         let hash = Hash(sha256(refresh.as_bytes()));
         let Some(r) = self.state.refresh.iter_mut().find(|r| r.hash == hash) else {
-            return Err(Error("the refresh token is not good".into()));
+            return Err(Error::invalid("the refresh token is not good".into()));
         };
         if r.used {
             let family = r.family;
             self.state.refresh.retain(|r| r.family != family);
-            return Err(Error(
+            return Err(Error::invalid(
                 "the refresh token was used before; the sign-in is taken back".into(),
             ));
         }
         r.used = true;
         let (aud, jkt, family) = (r.aud.clone(), r.jkt.clone(), r.family);
         if aud != client_id {
-            return Err(Error("the refresh token is not for this app".into()));
+            return Err(Error::invalid(
+                "the refresh token is not for this app".into(),
+            ));
         }
         if self.proof(proof, url, now, None, "POST")? != jkt {
-            return Err(Error("the refresh token is bound to another key".into()));
+            return Err(Error::invalid(
+                "the refresh token is bound to another key".into(),
+            ));
         }
         Ok(self.tokens(aud, jkt, family, now))
     }
@@ -431,7 +439,7 @@ impl Auth {
     ) -> Result<String, Error> {
         let claims = token::check(access_token, self.key.public(), now)?;
         if claims.aud != app_origin {
-            return Err(Error("the access token is for another app".into()));
+            return Err(Error::invalid("the access token is for another app".into()));
         }
         // A token stays good only while its sign-in is not taken back.
         if !self
@@ -440,10 +448,12 @@ impl Auth {
             .iter()
             .any(|r| r.jkt == claims.jkt && r.aud == claims.aud)
         {
-            return Err(Error("the sign-in was taken back".into()));
+            return Err(Error::invalid("the sign-in was taken back".into()));
         }
         if self.proof(proof, url, now, Some(access_token), method)? != claims.jkt {
-            return Err(Error("the access token is bound to another key".into()));
+            return Err(Error::invalid(
+                "the access token is bound to another key".into(),
+            ));
         }
         Ok(claims.sub)
     }

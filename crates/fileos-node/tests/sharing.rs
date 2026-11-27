@@ -62,7 +62,14 @@ async fn an_app_shares_one_file_with_another() {
     assert!(view.iter().any(|v| format!("/{v}") == at), "{view:?}");
     // The grant is on the one file, by its ID, for reading only.
     let grants = node.grants("/photos");
-    let to_chat: Vec<&String> = grants.iter().filter(|g| g.contains("File(")).collect();
-    assert_eq!(to_chat.len(), 1, "{grants:?}");
-    assert!(to_chat[0].contains("FilesRead") && !to_chat[0].contains("FilesChange"));
+    let on_file: Vec<_> = grants
+        .iter()
+        .filter_map(|grant| grant.split_once(" on file "))
+        .collect();
+    assert_eq!(on_file.len(), 1, "{grants:?}");
+    assert!(on_file[0].0.ends_with(" files.read"), "{grants:?}");
+    assert!(
+        on_file[0].1.parse::<fileos_space::Id>().is_ok(),
+        "{grants:?}"
+    );
 }
