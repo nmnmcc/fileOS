@@ -5,10 +5,13 @@
 //! An app implements [`app::exports::fos::app::events::Guest`] and calls
 //! [`app::export_app!`]. The interfaces are in `wit/fos.wit`.
 
-#![allow(unsafe_code, reason = "the code that wit-bindgen makes uses unsafe")]
-
 /// Bindings for the `app` world.
-#[allow(missing_docs, clippy::pedantic, reason = "made by wit-bindgen")]
+#[allow(
+    unsafe_code,
+    missing_docs,
+    clippy::pedantic,
+    reason = "made by wit-bindgen"
+)]
 pub mod app {
     wit_bindgen::generate!({
         path: "../../wit",

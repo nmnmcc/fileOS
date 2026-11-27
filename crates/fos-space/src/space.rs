@@ -21,10 +21,10 @@
 //! came in, so every node with the same entries gets the same state.
 //!
 //! **Checkpoints** keep this small. A checkpoint signs a hash of the state
-//! in its past. A node can then [`compact`](Space::compact): it keeps the
-//! state at the checkpoint as a **base** (a [`Snapshot`]) and drops the
-//! entries before it. New nodes start from the snapshot, and check it
-//! against the signed hash.
+//! in its past. At an owner-signed checkpoint a node can
+//! [`compact`](Space::compact): it keeps the state as a [`Snapshot`] and
+//! drops the earlier entries. A new node can check the owner signature
+//! and start from that snapshot.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,9 +32,7 @@ use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
 use fos_id::{NodeCert, Op as DidOp};
 use serde::{Deserialize, Serialize};
 
-use crate::entry::{
-    Act, Content, Effect, Entry, Id, Permission, Principal, Resource, Retention, good_name,
-};
+use crate::entry::{Act, Content, Effect, Entry, Id, Permission, Principal, Resource, Retention};
 
 /// The place of what came from the base, before every entry.
 const BASE: usize = usize::MAX;
@@ -102,6 +100,7 @@ pub struct Summary {
     pub groups: Vec<(Id, Principal)>,
     /// For each identity: the operations of its DID log, and the node
     /// certificates that are still good.
+    #[serde(default)]
     pub identities: Vec<(Hash, Vec<Bytes>, Vec<Bytes>)>,
     /// For each author: its last entry and the place of it.
     pub logs: Vec<(PublicKey, Hash, u64)>,
@@ -110,6 +109,28 @@ pub struct Summary {
 impl Summary {
     pub fn hash(&self) -> Hash {
         Hash::of_value(self)
+    }
+
+    fn matches_hash(&self, expected: Hash) -> bool {
+        self.hash() == expected || (self.identities.is_empty() && self.legacy_hash() == expected)
+    }
+
+    // Checkpoints made before identities were part of a summary sign these
+    // four fields in this order. Keep their hash so that old logs still load.
+    fn legacy_hash(&self) -> Hash {
+        #[derive(Serialize)]
+        struct Legacy<'a> {
+            files: &'a [(Id, Vec<Version>)],
+            grants: &'a [Given],
+            groups: &'a [(Id, Principal)],
+            logs: &'a [(PublicKey, Hash, u64)],
+        }
+        Hash::of_value(&Legacy {
+            files: &self.files,
+            grants: &self.grants,
+            groups: &self.groups,
+            logs: &self.logs,
+        })
     }
 }
 
@@ -125,36 +146,18 @@ pub struct Snapshot {
     pub history: Vec<Entry>,
 }
 
-/// A set of bits, one for each entry in causal order.
-#[derive(Clone, Debug, Default)]
-struct Bits(Vec<u64>);
-
-impl Bits {
-    fn with_len(n: usize) -> Self {
-        Self(vec![0; n.div_ceil(64)])
-    }
-
-    fn set(&mut self, i: usize) {
-        self.0[i / 64] |= 1 << (i % 64);
-    }
-
-    fn has(&self, i: usize) -> bool {
-        self.0.get(i / 64).is_some_and(|w| w & (1 << (i % 64)) != 0)
-    }
-
-    fn add(&mut self, other: &Self) {
-        for (a, b) in self.0.iter_mut().zip(&other.0) {
-            *a |= b;
-        }
-    }
-}
-
 /// An entry that is in the graph.
 #[derive(Clone, Debug)]
 struct Known {
     entry: Entry,
     acts: Vec<Act>,
 }
+
+mod past;
+mod view;
+
+use past::Past;
+use view::View;
 
 /// A version, with the place of its entry in causal order.
 #[derive(Clone, Debug)]
@@ -180,8 +183,10 @@ struct State {
     order: Vec<Hash>,
     place: BTreeMap<Hash, usize>,
     /// The strict causal past of each entry.
-    past: Vec<Bits>,
+    past: Vec<Past>,
     versions: Vec<Ver>,
+    by_file: BTreeMap<Id, Vec<usize>>,
+    by_name: BTreeMap<String, BTreeSet<Id>>,
     gives: Vec<Giv>,
     /// (place of the entry, the grant taken back)
     takes: Vec<(usize, Id)>,
@@ -199,30 +204,6 @@ struct State {
     why: BTreeMap<Hash, String>,
 }
 
-/// What a permission is checked against.
-#[derive(Clone, Debug)]
-enum Target {
-    /// A name for a new file.
-    Name(String),
-    /// A file, with its names at that point.
-    File(Id, Vec<String>),
-    /// Everything under a prefix.
-    Prefix(String),
-    /// A group: who is in it, and who manages it.
-    Group(Id),
-}
-
-fn covers(on: &Resource, target: &Target) -> bool {
-    match (on, target) {
-        (Resource::Prefix(p), Target::Name(n) | Target::Prefix(n)) => n.starts_with(p.as_str()),
-        (Resource::Prefix(p), Target::File(_, names)) => {
-            !names.is_empty() && names.iter().all(|n| n.starts_with(p.as_str()))
-        }
-        (Resource::File(a), Target::File(b, _)) | (Resource::Group(a), Target::Group(b)) => a == b,
-        _ => false,
-    }
-}
-
 /// The base of a compacted space.
 #[derive(Clone, Debug)]
 struct Base {
@@ -230,456 +211,6 @@ struct Base {
     /// Hashes that entries may come after although they are not here: the
     /// past of the checkpoint, as far as new entries name it.
     gone: BTreeSet<Hash>,
-}
-
-/// A point in the graph to check at, and which entries count there.
-struct View<'s> {
-    space: &'s Space,
-    state: &'s State,
-    /// The entry being checked; `None` means after every entry.
-    at: Option<usize>,
-    /// Which entries have effect, as far as they are known.
-    valid: &'s [bool],
-    /// In step 3: the results of step 1, for takes that are concurrent.
-    causal: Option<&'s [bool]>,
-}
-
-impl View<'_> {
-    /// Says if entry `j` is in the past of the point.
-    fn before(&self, j: usize) -> bool {
-        j == BASE
-            || match self.at {
-                None => true,
-                Some(i) => self.state.past[i].has(j),
-            }
-    }
-
-    /// Says if entry `j` counts at this point.
-    fn counts(&self, j: usize) -> bool {
-        j == BASE || (self.valid[j] && self.before(j))
-    }
-
-    /// Says if `grant` is taken back at this point. A take-back that was
-    /// valid in its causal past always counts, also when strong removal
-    /// undid its author's other acts: taking away access is always safe. So
-    /// two managers who take each other's access at the same time both lose
-    /// it. In step 3, take-backs that are concurrent with the point count
-    /// too. Take-backs made at the same time as a checkpoint do not count.
-    fn taken(&self, grant: Id) -> bool {
-        let took = self.causal.unwrap_or(self.valid);
-        self.state.takes.iter().any(|&(k, g)| {
-            g == grant
-                && took[k]
-                && !self.state.stale.get(k).copied().unwrap_or(false)
-                && (self.before(k)
-                    || match (self.at, self.causal) {
-                        (Some(i), Some(_)) => k != i && !self.state.past[k].has(i),
-                        _ => false,
-                    })
-        })
-    }
-
-    /// The versions of a file that count at this point, without history
-    /// from the base.
-    fn versions(&self, file: Id) -> Vec<&Ver> {
-        self.state
-            .versions
-            .iter()
-            .filter(|v| v.file == file && !v.old && self.counts(v.at))
-            .collect()
-    }
-
-    /// The newest versions of a file at this point.
-    fn heads(&self, file: Id) -> Vec<&Version> {
-        let here = self.versions(file);
-        here.iter()
-            .filter(|v| {
-                !here
-                    .iter()
-                    .any(|w| w.version.parents.contains(&v.version.id))
-            })
-            .map(|v| &v.version)
-            .collect()
-    }
-
-    fn names(&self, file: Id) -> Vec<String> {
-        let mut names: Vec<String> = self.heads(file).iter().map(|v| v.name.clone()).collect();
-        names.sort();
-        names.dedup();
-        names
-    }
-
-    fn target(&self, on: &Resource) -> Target {
-        match on {
-            Resource::Prefix(p) => Target::Prefix(p.clone()),
-            Resource::File(id) => Target::File(*id, self.names(*id)),
-            Resource::Group(id) => Target::Group(*id),
-        }
-    }
-
-    /// Says if `who` has `permission` on `target` at this point.
-    fn holds(&self, who: Principal, permission: Permission, target: &Target) -> bool {
-        self.holds_inner(who, permission, target, 0)
-    }
-
-    /// Says if `who` acts as `as_`: it is `as_`, or `as_` is a group that
-    /// `who` is in (also through groups in groups), or that `who` manages.
-    fn acts_as(&self, who: Principal, as_: Principal, depth: u32) -> bool {
-        who == as_
-            || match as_ {
-                Principal::Group(g) => {
-                    self.holds_inner(who, Permission::Member, &Target::Group(g), depth + 1)
-                }
-                Principal::Identity(d) => match who {
-                    Principal::Key(k) => self.vouched(k, d),
-                    _ => false,
-                },
-                Principal::Key(_) => false,
-            }
-    }
-
-    /// The operations of the DID log of `did` that count at this point.
-    fn did_ops(&self, did: Hash) -> Vec<DidOp> {
-        let mut ops: Vec<DidOp> = Vec::new();
-        for (at, d, more, _) in &self.state.vouches {
-            if *d == did && self.counts(*at) {
-                for op in more {
-                    if !ops.contains(op) {
-                        ops.push(op.clone());
-                    }
-                }
-            }
-        }
-        ops
-    }
-
-    /// The signing key of `did` now, from the DID operations that count.
-    fn signing_key(&self, did: Hash, more: &[DidOp]) -> Option<PublicKey> {
-        let mut ops = self.did_ops(did);
-        ops.extend(more.iter().cloned());
-        fos_id::resolve(&fos_id::did_of(did), &ops)
-            .ok()?
-            .state?
-            .signing_key()
-    }
-
-    /// Says if `key` is a node of `did` at this point: a `Vouch` that counts
-    /// has a certificate for it, signed by the signing key of now. A new
-    /// signing key ends every certificate of the old one.
-    fn vouched(&self, key: PublicKey, did: Hash) -> bool {
-        let Some(signing) = self.signing_key(did, &[]) else {
-            return false;
-        };
-        self.state.vouches.iter().any(|(at, d, _, cert)| {
-            *d == did
-                && self.counts(*at)
-                && cert
-                    .as_ref()
-                    .is_some_and(|c| c.node == key && c.verify(signing))
-        })
-    }
-
-    /// Chains of grants and groups longer than this give nothing. So a cycle
-    /// (A gives to B, B gives to A) gives nothing unless it comes from the
-    /// owner in fewer steps.
-    const DEPTH: u32 = 12;
-
-    fn holds_inner(
-        &self,
-        who: Principal,
-        permission: Permission,
-        target: &Target,
-        depth: u32,
-    ) -> bool {
-        if depth > Self::DEPTH {
-            return false;
-        }
-        if self.acts_as(who, self.space.owner, depth) {
-            return true;
-        }
-        // The owner of a group has every permission on it.
-        if let Target::Group(g) = target
-            && let Some(owner) = self.group_owner(*g)
-            && self.acts_as(who, owner, depth)
-        {
-            return true;
-        }
-        let mut allowed = false;
-        let mut denied = false;
-        for g in &self.state.gives {
-            let given = &g.given;
-            if !given.permissions.contains(&permission)
-                || !covers(&given.on, target)
-                || !self.counts(g.at)
-                || !self.acts_as(who, given.to, depth)
-                || self.taken(given.id)
-            {
-                continue;
-            }
-            // A grant gives only what its giver still has.
-            let giver = self.holds_inner(given.giver, Permission::AccessGive, target, depth + 1)
-                && (given.effect == Effect::Deny
-                    || self.holds_inner(given.giver, permission, target, depth + 1));
-            if giver {
-                match given.effect {
-                    Effect::Allow => allowed = true,
-                    Effect::Deny => denied = true,
-                }
-            }
-        }
-        allowed && !denied
-    }
-
-    /// The owner of a group, if the group is there at this point.
-    fn group_owner(&self, group: Id) -> Option<Principal> {
-        self.state
-            .groups
-            .iter()
-            .find(|(at, id, _)| *id == group && self.counts(*at))
-            .map(|(_, _, owner)| *owner)
-    }
-
-    /// The grants given and not taken back at this point.
-    fn grants(&self) -> Vec<&Given> {
-        self.state
-            .gives
-            .iter()
-            .filter(|g| self.counts(g.at) && !self.taken(g.given.id))
-            .map(|g| &g.given)
-            .collect()
-    }
-
-    /// The state at this point, as a checkpoint made at `time` with
-    /// `retention` signs it. Files that were deleted longer ago than the
-    /// retention keeps deleted files are left out.
-    fn summary(&self, time: u64, retention: &Retention) -> Summary {
-        let ids: BTreeSet<Id> = self
-            .state
-            .versions
-            .iter()
-            .filter(|v| self.counts(v.at))
-            .map(|v| v.file)
-            .collect();
-        let files = ids
-            .into_iter()
-            .filter_map(|id| {
-                let mut heads: Vec<Version> = self.heads(id).into_iter().cloned().collect();
-                heads.sort_by_key(|v| v.id);
-                let gone = heads
-                    .iter()
-                    .all(|v| v.content.is_none() && !retention.keeps_deleted(v.time, time));
-                (!gone).then_some((id, heads))
-            })
-            .collect();
-        let mut grants: Vec<Given> = self.grants().into_iter().cloned().collect();
-        grants.sort_by_key(|g| g.id);
-        let mut logs: BTreeMap<PublicKey, (Hash, u64)> = self
-            .space
-            .base
-            .as_ref()
-            .map(|b| {
-                b.snapshot
-                    .summary
-                    .logs
-                    .iter()
-                    .map(|(k, h, s)| (*k, (*h, *s)))
-                    .collect()
-            })
-            .unwrap_or_default();
-        for (j, h) in self.state.order.iter().enumerate() {
-            if self.before(j) {
-                let header = &self.space.known[h].entry.header;
-                let last = logs.entry(header.author).or_insert((*h, header.seq));
-                if (header.seq, *h) > (last.1, last.0) {
-                    *last = (*h, header.seq);
-                }
-            }
-        }
-        let mut groups: Vec<(Id, Principal)> = self
-            .state
-            .groups
-            .iter()
-            .filter(|(at, _, _)| self.counts(*at))
-            .map(|(_, id, owner)| (*id, *owner))
-            .collect();
-        groups.sort();
-        let dids: BTreeSet<Hash> = self.state.vouches.iter().map(|v| v.1).collect();
-        let identities = dids
-            .into_iter()
-            .filter_map(|did| {
-                let ops = self.did_ops(did);
-                let signing = self.signing_key(did, &[])?;
-                let mut certs: Vec<Bytes> = self
-                    .state
-                    .vouches
-                    .iter()
-                    .filter(|(at, d, _, _)| *d == did && self.counts(*at))
-                    .filter_map(|(_, _, _, c)| c.clone())
-                    .filter(|c| c.verify(signing))
-                    .map(|c| Bytes(c.to_bytes()))
-                    .collect();
-                certs.sort_by(|a, b| a.0.cmp(&b.0));
-                certs.dedup();
-                let mut ops: Vec<Bytes> = ops.iter().map(|o| Bytes(o.to_bytes())).collect();
-                ops.sort_by(|a, b| a.0.cmp(&b.0));
-                Some((did, ops, certs))
-            })
-            .collect();
-        Summary {
-            files,
-            grants,
-            groups,
-            identities,
-            logs: logs.into_iter().map(|(k, (h, s))| (k, h, s)).collect(),
-        }
-    }
-
-    /// Says why the acts of `entry` are not allowed at this point, if they
-    /// are not.
-    fn check(&self, entry: &Entry, acts: &[Act], genesis: bool) -> Result<(), String> {
-        let author = entry.header.author;
-        let who = Principal::Key(author);
-        let need = |permission: Permission, target: &Target| {
-            if self.holds(who, permission, target) {
-                Ok(())
-            } else {
-                Err(format!(
-                    "{author} does not have {permission:?} on {target:?}"
-                ))
-            }
-        };
-        if acts.is_empty() {
-            return Err("an entry with no acts".into());
-        }
-        for act in acts {
-            match act {
-                Act::Genesis { .. } => {
-                    if !genesis || acts.len() != 1 {
-                        return Err("a genesis act that is not the first entry".into());
-                    }
-                }
-                Act::Create { name, .. } => {
-                    if !good_name(name) {
-                        return Err(format!("{name:?} is not a good name"));
-                    }
-                    need(Permission::FilesCreate, &Target::Name(name.clone()))?;
-                }
-                Act::Change {
-                    file,
-                    parents,
-                    name,
-                    content,
-                } => {
-                    if !good_name(name) {
-                        return Err(format!("{name:?} is not a good name"));
-                    }
-                    let versions: Vec<&Ver> = self
-                        .versions(*file)
-                        .into_iter()
-                        .filter(|v| parents.contains(&v.version.id))
-                        .collect();
-                    if parents.is_empty() || versions.len() != parents.len() {
-                        return Err("a change after versions that are not there".into());
-                    }
-                    let mut names: Vec<String> =
-                        versions.iter().map(|v| v.version.name.clone()).collect();
-                    names.sort();
-                    names.dedup();
-                    let old = Target::File(*file, names.clone());
-                    if content.is_none() {
-                        need(Permission::FilesDelete, &old)?;
-                    } else {
-                        need(Permission::FilesChange, &old)?;
-                        if !names.contains(name) {
-                            need(Permission::FilesCreate, &Target::Name(name.clone()))?;
-                        }
-                    }
-                }
-                Act::Give {
-                    effect,
-                    permissions,
-                    on,
-                    ..
-                } => {
-                    let target = self.target(on);
-                    if let Target::File(_, names) = &target
-                        && names.is_empty()
-                    {
-                        return Err("a grant on a file that is not there".into());
-                    }
-                    if let Target::Group(g) = &target
-                        && self.group_owner(*g).is_none()
-                    {
-                        return Err("a grant on a group that is not there".into());
-                    }
-                    need(Permission::AccessGive, &target)?;
-                    if *effect == Effect::Allow {
-                        // Give on only what you have: the same or less.
-                        for permission in permissions {
-                            need(*permission, &target)?;
-                        }
-                    }
-                }
-                Act::Take { grant } => {
-                    let Some(g) = self
-                        .state
-                        .gives
-                        .iter()
-                        .find(|g| g.given.id == *grant && self.counts(g.at))
-                    else {
-                        return Err("taking back a grant that is not there".into());
-                    };
-                    // The giver can always take back what it gave.
-                    if g.given.giver != who {
-                        need(Permission::AccessTake, &self.target(&g.given.on))?;
-                    }
-                }
-                Act::Group { owner } => {
-                    // You make groups that you own, or that a group you are
-                    // in owns. Owners are fixed, and must be there first, so
-                    // owners never make a cycle.
-                    if let Principal::Group(g) = owner
-                        && self.group_owner(*g).is_none()
-                    {
-                        return Err("a group owned by a group that is not there".into());
-                    }
-                    if !self.acts_as(who, *owner, 0) {
-                        return Err(format!("{author} does not act as the owner {owner:?}"));
-                    }
-                }
-                Act::Vouch { ops, cert } => {
-                    if ops.len() > 64 {
-                        return Err("a vouch with too many DID operations".into());
-                    }
-                    let ops: Vec<DidOp> = ops
-                        .iter()
-                        .map(|o| DidOp::from_bytes(&o.0))
-                        .collect::<Result<_, _>>()
-                        .map_err(|e| e.0)?;
-                    let cert = NodeCert::from_bytes(&cert.0).map_err(|e| e.0)?;
-                    let did = fos_id::did_hash(&cert.did).map_err(|e| e.0)?;
-                    let signing = self
-                        .signing_key(did, &ops)
-                        .ok_or("a vouch whose DID log has no signing key")?;
-                    if !cert.verify(signing) {
-                        return Err(
-                            "a vouch whose certificate is not signed by the signing key".into()
-                        );
-                    }
-                }
-                Act::Checkpoint { state, retention } => {
-                    if acts.len() != 1 {
-                        return Err("a checkpoint with other acts".into());
-                    }
-                    need(Permission::SpaceCheckpoint, &Target::Prefix(String::new()))?;
-                    if self.summary(entry.header.time, retention).hash() != *state {
-                        return Err("a checkpoint whose state is wrong".into());
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 /// One space: its entries and the state that comes from them.
@@ -728,7 +259,7 @@ impl Space {
             {
                 Ok(*owner)
             }
-            _ => Err(Error("not the first entry of a space".into())),
+            _ => Err(Error::invalid("not the first entry of a space".into())),
         }
     }
 
@@ -761,14 +292,32 @@ impl Space {
         Ok(space)
     }
 
-    /// Starts a space from a snapshot at a checkpoint.
+    /// Starts a space from a snapshot signed by its original owner key.
     ///
     /// # Errors
     ///
-    /// When the checkpoint is not signed well, does not sign this summary,
-    /// or its author may not make checkpoints.
+    /// When the snapshot is invalid or lacks an owner signature.
     pub fn from_snapshot(snapshot: Snapshot) -> Result<Self, Error> {
         let owner = Self::owner_of(&snapshot.genesis)?;
+        if owner != Principal::Key(snapshot.checkpoint.header.author) {
+            return Err(Error::invalid(
+                "a new snapshot needs the space owner's signature".into(),
+            ));
+        }
+        Self::with_base(snapshot, owner)
+    }
+
+    /// Restores a snapshot this node already checked and saved on disk.
+    ///
+    /// # Errors
+    ///
+    /// When the saved snapshot is invalid.
+    pub fn restore_local_snapshot(snapshot: Snapshot) -> Result<Self, Error> {
+        let owner = Self::owner_of(&snapshot.genesis)?;
+        Self::with_base(snapshot, owner)
+    }
+
+    fn with_base(snapshot: Snapshot, owner: Principal) -> Result<Self, Error> {
         let id = snapshot.genesis.hash();
         let mut space = Self {
             id,
@@ -788,14 +337,14 @@ impl Space {
     fn set_base(&mut self, snapshot: Snapshot) -> Result<(), Error> {
         let checkpoint = &snapshot.checkpoint;
         if checkpoint.header.space != Some(self.id) {
-            return Err(Error("a checkpoint of another space".into()));
+            return Err(Error::invalid("a checkpoint of another space".into()));
         }
         let acts = checkpoint.open()?;
         let [Act::Checkpoint { state, .. }] = acts.as_slice() else {
-            return Err(Error("not a checkpoint".into()));
+            return Err(Error::invalid("not a checkpoint".into()));
         };
-        if snapshot.summary.hash() != *state {
-            return Err(Error(
+        if !snapshot.summary.matches_hash(*state) {
+            return Err(Error::invalid(
                 "the snapshot is not the one the checkpoint signs".into(),
             ));
         }
@@ -807,7 +356,7 @@ impl Space {
         self.known = BTreeMap::from([(hash, Known { entry, acts })]);
         self.work_out();
         if !self.state.valid.first().copied().unwrap_or(false) {
-            return Err(Error(format!(
+            return Err(Error::invalid(format!(
                 "the checkpoint is not valid: {}",
                 self.state.why.get(&hash).cloned().unwrap_or_default()
             )));
@@ -880,10 +429,7 @@ impl Space {
 
     /// The entries that a node with `logs` does not have, in causal order.
     pub fn missing(&self, logs: &BTreeMap<PublicKey, u64>) -> Vec<Entry> {
-        self.state
-            .order
-            .iter()
-            .map(|h| &self.known[h].entry)
+        self.iter()
             .filter(|e| e.header.seq >= logs.get(&e.header.author).copied().unwrap_or(0))
             .cloned()
             .collect()
@@ -892,7 +438,12 @@ impl Space {
     /// Every entry here, in causal order: the first entry, or the checkpoint
     /// of the base, and the entries after it.
     pub fn entries(&self) -> Vec<Entry> {
-        self.missing(&BTreeMap::new())
+        self.iter().cloned().collect()
+    }
+
+    /// Borrows the entries in causal order.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Entry> {
+        self.state.order.iter().map(|hash| &self.known[hash].entry)
     }
 
     /// Takes entries from another node. Entries that come after entries this
@@ -908,6 +459,11 @@ impl Space {
     ///
     /// Never: only entries that were made ready are taken out.
     pub fn insert(&mut self, entries: Vec<Entry>) -> Result<Vec<Hash>, Error> {
+        let (added, error) = self.insert_batch(entries);
+        error.map_or(Ok(added), Err)
+    }
+
+    pub(crate) fn insert_batch(&mut self, entries: Vec<Entry>) -> (Vec<Hash>, Option<Error>) {
         let mut first_error = None;
         for entry in entries {
             let hash = entry.hash();
@@ -947,10 +503,11 @@ impl Space {
         if !added.is_empty() {
             self.work_out();
         }
-        match first_error {
-            Some(e) => Err(e),
-            None => Ok(added),
-        }
+        (added, first_error)
+    }
+
+    pub(crate) fn entry(&self, hash: Hash) -> Option<&Entry> {
+        self.known.get(&hash).map(|known| &known.entry)
     }
 
     /// Says if `entry` is in the past of the base, as far as the logs say.
@@ -971,16 +528,21 @@ impl Space {
     fn check_form(&self, entry: &Entry) -> Result<(), Error> {
         let h = &entry.header;
         if h.space != Some(self.id) {
-            return Err(Error(format!("an entry that is not of space {}", self.id)));
+            return Err(Error::invalid(format!(
+                "an entry that is not of space {}",
+                self.id
+            )));
         }
         if (h.seq == 0) != h.prev.is_none() {
-            return Err(Error("an entry whose place in its log is wrong".into()));
+            return Err(Error::invalid(
+                "an entry whose place in its log is wrong".into(),
+            ));
         }
         if h.prev.is_none() && h.deps.is_empty() {
-            return Err(Error("an entry that comes after nothing".into()));
+            return Err(Error::invalid("an entry that comes after nothing".into()));
         }
         if h.deps.len() > 256 {
-            return Err(Error("an entry with too many dependencies".into()));
+            return Err(Error::invalid("an entry with too many dependencies".into()));
         }
         entry.open().map(drop)
     }
@@ -995,10 +557,10 @@ impl Space {
                     .base()
                     .and_then(|b| b.summary.logs.iter().find(|(_, x, _)| *x == prev))
                     .map(|(k, _, s)| (*k, *s))
-                    .ok_or_else(|| Error("an entry after one that is gone".into()))?,
+                    .ok_or_else(|| Error::invalid("an entry after one that is gone".into()))?,
             };
             if author != h.author || seq + 1 != h.seq {
-                return Err(Error("an entry whose log is broken".into()));
+                return Err(Error::invalid("an entry whose log is broken".into()));
             }
         }
         entry.open()
@@ -1040,13 +602,12 @@ impl Space {
             }
         }
         let n = state.order.len();
+        state.past.reserve(n);
         for i in 0..n {
-            let mut past = Bits::with_len(n);
+            let mut past = Past::default();
             for p in self.known[&state.order[i]].entry.header.parents() {
                 if let Some(&j) = state.place.get(&p) {
-                    past.set(j);
-                    let pj = state.past[j].clone();
-                    past.add(&pj);
+                    past.add_parent(j, &state.past[j]);
                 }
             }
             state.past.push(past);
@@ -1138,6 +699,16 @@ impl Space {
                 }
             }
         }
+        for (index, version) in state.versions.iter().enumerate() {
+            state.by_file.entry(version.file).or_default().push(index);
+            if !version.old && version.version.content.is_some() {
+                state
+                    .by_name
+                    .entry(version.version.name.clone())
+                    .or_default()
+                    .insert(version.file);
+            }
+        }
         // Step 1.
         state.stale = vec![false; n];
         let mut causal = vec![false; n];
@@ -1167,7 +738,7 @@ impl Space {
             match self.check_at(&state, i, &valid, Some(&causal)) {
                 Ok(()) => valid[i] = true,
                 Err(why) => {
-                    state.why.insert(state.order[i], why);
+                    state.why.insert(state.order[i], why.to_string());
                 }
             }
         }
@@ -1189,7 +760,7 @@ impl Space {
         i: usize,
         valid: &[bool],
         causal: Option<&[bool]>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Error> {
         let h = state.order[i];
         let k = &self.known[&h];
         let view = View {
@@ -1262,7 +833,7 @@ impl Space {
             &acts,
             author,
         );
-        self.now().check(&entry, &acts, false).map_err(Error)?;
+        self.now().check(&entry, &acts, false)?;
         self.insert(vec![entry.clone()])?;
         Ok(entry)
     }
@@ -1320,6 +891,9 @@ impl Space {
         let Some(c) = (0..n).rev().find(|&c| {
             self.state.valid[c]
                 && self.is_checkpoint(&self.state, c)
+                // Keep the proof of a delegated checkpoint in the log. A
+                // node that lacks the log can verify an owner signature.
+                && self.owner == Principal::Key(self.known[&self.state.order[c]].entry.header.author)
                 && (0..n).all(|j| {
                     j == c
                         || self.state.stale[j]
@@ -1383,10 +957,15 @@ impl Space {
             summary,
             history,
         };
-        if self.set_base(snapshot).is_err() {
+        let Ok(mut compacted) = Self::from_snapshot(snapshot) else {
+            return false;
+        };
+        if compacted.insert(after).is_err() {
             return false;
         }
-        let _ = self.insert(after);
+        std::mem::swap(&mut compacted.waiting, &mut self.waiting);
+        std::mem::swap(&mut compacted.rebased, &mut self.rebased);
+        *self = compacted;
         true
     }
 
@@ -1403,8 +982,20 @@ impl Space {
         snapshot: Snapshot,
         author: PublicKey,
     ) -> Result<Vec<(u64, Vec<Act>)>, Error> {
+        if snapshot.genesis.hash() != self.id {
+            return Err(Error::invalid("a snapshot of another space".into()));
+        }
         if self.has(snapshot.checkpoint.hash()) {
             return Ok(Vec::new());
+        }
+        if let Some(base) = self.base() {
+            let current = &base.checkpoint.header;
+            let incoming = &snapshot.checkpoint.header;
+            if incoming.author == current.author && incoming.seq <= current.seq {
+                return Err(Error::invalid(
+                    "a snapshot is older than the current base".into(),
+                ));
+            }
         }
         let mut fresh = Self::from_snapshot(snapshot)?;
         let ours: Vec<Entry> = self.known.values().map(|k| k.entry.clone()).collect();
@@ -1454,8 +1045,10 @@ impl Space {
     /// Every file that is not deleted, with its newest versions.
     pub fn files(&self) -> Vec<File> {
         let view = self.now();
-        let ids: BTreeSet<Id> = self.state.versions.iter().map(|v| v.file).collect();
-        ids.into_iter()
+        self.state
+            .by_file
+            .keys()
+            .copied()
             .filter_map(|id| Self::file_in(&view, id))
             .filter(|f| !f.deleted())
             .collect()
@@ -1480,9 +1073,12 @@ impl Space {
         let view = self.now();
         let mut versions: Vec<Version> = self
             .state
-            .versions
-            .iter()
-            .filter(|v| v.file == id && view.counts(v.at))
+            .by_file
+            .get(&id)
+            .into_iter()
+            .flatten()
+            .map(|&i| &self.state.versions[i])
+            .filter(|v| view.counts(v.at))
             .map(|v| v.version.clone())
             .collect();
         versions.sort_by_key(|v| (v.time, v.id));
@@ -1492,8 +1088,13 @@ impl Space {
     /// The files that have `name` now. More than one when two files got the
     /// same name at the same time.
     pub fn find(&self, name: &str) -> Vec<File> {
-        self.files()
+        let view = self.now();
+        self.state
+            .by_name
+            .get(name)
             .into_iter()
+            .flatten()
+            .filter_map(|&id| Self::file_in(&view, id))
             .filter(|f| {
                 f.versions
                     .iter()
@@ -1628,4 +1229,24 @@ fn version_of(entry: &Entry, index: usize, act: &Act, at: usize) -> Option<Ver> 
             parents,
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_checkpoint_made_before_identity_grants_still_loads() {
+        let owner = SecretKey::from_seed(&[7; 32]);
+        let (mut space, _) = Space::create(Principal::Key(owner.public()), &owner, 1, 2);
+        let time = 3;
+        let retention = Retention::default();
+        let state = space.now().summary(time, &retention).legacy_hash();
+        space
+            .write(&owner, time, vec![Act::Checkpoint { state, retention }])
+            .unwrap();
+        assert!(space.compact());
+        let restored = Space::from_snapshot(space.base().unwrap().clone()).unwrap();
+        assert_eq!(restored.digest(), space.digest());
+    }
 }

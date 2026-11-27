@@ -39,7 +39,8 @@ def main() -> None:
                 [
                     "cargo",
                     "rustc",
-                    "--release",
+                    "--profile",
+                    "wasm",
                     "--locked",
                     "--manifest-path",
                     str(crate / "Cargo.toml"),
@@ -51,7 +52,7 @@ def main() -> None:
                     "cdylib",
                 ]
             )
-            module = BUILD / TARGET / "release" / f"{crate.name.replace('-', '_')}.wasm"
+            module = BUILD / TARGET / "wasm" / f"{crate.name.replace('-', '_')}.wasm"
             out = OUT / bundle.name
             if out.exists():
                 shutil.rmtree(out)

@@ -14,7 +14,7 @@
 //! is no login. It reads the address and the token of the gateway from the
 //! data directory of the node.
 
-use std::io::{Read as _, Write as _};
+use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -23,6 +23,9 @@ use clap::{Parser, Subcommand};
 use fos_core::Error;
 use fos_node::{NetConfig, Node};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[derive(Parser)]
 #[command(
@@ -225,9 +228,9 @@ fn run(cli: Cli) -> Result<(), Error> {
                 .write(true)
                 .create_new(true)
                 .open(&file)
-                .map_err(|e| Error(format!("{}: {e}", file.display())))?;
+                .map_err(|e| Error::invalid(format!("{}: {e}", file.display())))?;
             out.write_all(&data)
-                .map_err(|e| Error(format!("{}: {e}", file.display())))?;
+                .map_err(|e| Error::invalid(format!("{}: {e}", file.display())))?;
             println!("packed {} ({} bytes)", file.display(), data.len());
             Ok(())
         }
@@ -235,7 +238,7 @@ fn run(cli: Cli) -> Result<(), Error> {
             command: AppCommand::Install { app },
         } => {
             let app = std::fs::canonicalize(&app)
-                .map_err(|e| Error(format!("{}: {e}", app.display())))?;
+                .map_err(|e| Error::invalid(format!("{}: {e}", app.display())))?;
             let client = Client::new(&dir)?;
             let answer = client.call(
                 "POST",
@@ -280,17 +283,21 @@ fn fs(client: &Client, command: FsCommand) -> Result<(), Error> {
         FsCommand::Ls { path } => {
             print(&client.call("GET", &format!("/v0/fs{}?list", url_path(&path)), &[])?)
         }
-        FsCommand::Cat { path } => {
-            print(&client.call("GET", &format!("/v0/fs{}", url_path(&path)), &[])?)
-        }
+        FsCommand::Cat { path } => client.call_into(
+            "GET",
+            &format!("/v0/fs{}", url_path(&path)),
+            &[],
+            &mut std::io::stdout().lock(),
+        ),
         FsCommand::Put { path, file } => {
             let data = if let Some(file) = file {
-                std::fs::read(&file).map_err(|e| Error(format!("{}: {e}", file.display())))?
+                std::fs::read(&file)
+                    .map_err(|e| Error::invalid(format!("{}: {e}", file.display())))?
             } else {
                 let mut data = Vec::new();
                 std::io::stdin()
                     .read_to_end(&mut data)
-                    .map_err(|e| Error(e.to_string()))?;
+                    .map_err(|e| Error::invalid(e.to_string()))?;
                 data
             };
             client
@@ -409,7 +416,7 @@ fn curl(dir: &Path, mut args: Vec<String>) -> Result<(), Error> {
         .ok()
         .filter(|_| config.exists())
         .ok_or_else(|| {
-            Error(format!(
+            Error::invalid(format!(
                 "no node is running for {}: start it with `fos node run`",
                 dir.display()
             ))
@@ -425,14 +432,14 @@ fn curl(dir: &Path, mut args: Vec<String>) -> Result<(), Error> {
         .arg(&config)
         .args(&args)
         .status()
-        .map_err(|e| Error(format!("fos curl needs curl: {e}")))?;
+        .map_err(|e| Error::invalid(format!("fos curl needs curl: {e}")))?;
     std::process::exit(status.code().unwrap_or(1));
 }
 
 fn print(data: &[u8]) -> Result<(), Error> {
     std::io::stdout()
         .write_all(data)
-        .map_err(|e| Error(e.to_string()))
+        .map_err(|e| Error::invalid(e.to_string()))
 }
 
 fn serve(
@@ -442,20 +449,12 @@ fn serve(
     port: u16,
     mdns: bool,
 ) -> Result<(), Error> {
-    let parse = |list: Vec<String>| {
-        list.iter()
-            .map(|a| {
-                a.parse()
-                    .map_err(|e| Error(format!("{a} is not a multiaddr: {e}")))
-            })
-            .collect::<Result<Vec<_>, _>>()
-    };
     let config = NetConfig {
-        listen: parse(listen)?,
-        peers: parse(peers)?,
+        listen,
+        peers,
         mdns,
     };
-    let runtime = tokio::runtime::Runtime::new().map_err(|e| Error(e.to_string()))?;
+    let runtime = tokio::runtime::Runtime::new().map_err(|e| Error::invalid(e.to_string()))?;
     runtime.block_on(async {
         let node = Node::open(dir)?;
         let token = fos_node::token(dir)?;
@@ -480,7 +479,7 @@ struct Client {
 impl Client {
     fn new(dir: &Path) -> Result<Self, Error> {
         let addr = std::fs::read_to_string(dir.join("gateway.addr")).map_err(|e| {
-            Error(format!(
+            Error::invalid(format!(
                 "no node is running for {} ({e}): start it with `fos node run`",
                 dir.display()
             ))
@@ -492,7 +491,19 @@ impl Client {
     }
 
     fn call(&self, method: &str, target: &str, body: &[u8]) -> Result<Vec<u8>, Error> {
-        let io = |e: std::io::Error| Error(format!("gateway {}: {e}", self.addr));
+        let mut response = Vec::new();
+        self.call_into(method, target, body, &mut response)?;
+        Ok(response)
+    }
+
+    fn call_into(
+        &self,
+        method: &str,
+        target: &str,
+        body: &[u8],
+        out: &mut dyn std::io::Write,
+    ) -> Result<(), Error> {
+        let io = |e: std::io::Error| Error::from(e).context(format_args!("gateway {}", self.addr));
         let mut stream = TcpStream::connect(&self.addr).map_err(io)?;
         let head = format!(
             "{method} {target} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -504,23 +515,49 @@ impl Client {
             .write_all(head.as_bytes())
             .and_then(|()| stream.write_all(body))
             .map_err(io)?;
-        let mut response = Vec::new();
-        stream.read_to_end(&mut response).map_err(io)?;
-        let split = response
-            .windows(4)
-            .position(|w| w == b"\r\n\r\n")
-            .ok_or_else(|| Error("a broken answer".into()))?;
-        let head = String::from_utf8_lossy(&response[..split]);
-        let body = response[split + 4..].to_vec();
-        let status: u16 = head
+        let mut response = BufReader::new(stream);
+        let mut line = String::new();
+        response.read_line(&mut line).map_err(io)?;
+        let broken = || Error::internal("a broken answer from the node".into());
+        let status = line
             .split_whitespace()
             .nth(1)
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
+            .and_then(|s| s.parse::<u16>().ok())
+            .ok_or_else(broken)?;
+        let mut length = None;
+        loop {
+            line.clear();
+            if response.read_line(&mut line).map_err(io)? == 0 {
+                return Err(broken());
+            }
+            if line == "\r\n" {
+                break;
+            }
+            if let Some((name, value)) = line.split_once(':')
+                && name.eq_ignore_ascii_case("content-length")
+            {
+                length = Some(
+                    value
+                        .trim()
+                        .parse::<u64>()
+                        .map_err(|e| broken().with_source(e))?,
+                );
+            }
+        }
         if status == 200 {
-            Ok(body)
+            let read = if let Some(length) = length {
+                std::io::copy(&mut response.take(length), out).map_err(io)?
+            } else {
+                std::io::copy(&mut response, out).map_err(io)?
+            };
+            if length.is_some_and(|length| length != read) {
+                return Err(broken());
+            }
+            Ok(())
         } else {
-            Err(Error(String::from_utf8_lossy(&body).trim().to_string()))
+            let mut message = String::new();
+            response.read_to_string(&mut message).map_err(io)?;
+            Err(Error::invalid(message.trim().to_string()))
         }
     }
 }

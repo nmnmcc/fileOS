@@ -114,9 +114,10 @@ Details: [The model](../access/).
 The owner of a space, or a principal with `space.checkpoint`, signs a
 **checkpoint**: the hash of the state in its past. Then:
 
-- a node can **compact**: it keeps the state at the checkpoint as a base and
-  drops the entries before it;
-- a new node starts from the signed **snapshot**, not from the whole history;
+- at an owner-signed checkpoint, a node can **compact**. It keeps the state
+  at that point as a base and drops the entries before it;
+- a new node can start from an owner-signed **snapshot**. It needs the log
+  to check the right to sign a checkpoint made with a grant;
 - old versions get **thinner with age**, as the retention in the checkpoint
   says, and deleted files go after a time;
 - changes made offline at the same time as a checkpoint are **written again
@@ -158,8 +159,9 @@ How sync works:
   entries that the other does not have, only for spaces the other may keep.
 - New entries go to every connected node that may keep the space, and are
   sent on from there.
-- A node that is far behind gets the snapshot of the last checkpoint.
-- Content is asked for by hash from the node that sent the entry.
+- A node that is far behind can start from the last owner-signed snapshot.
+- A node asks for content by hash. If the request fails or takes too long,
+  the node can ask again.
 - The sync protocol is sans-IO. `fos-net` connects it to libp2p, and
   `fos-sim` to a simulation in memory.
 

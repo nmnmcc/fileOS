@@ -328,6 +328,11 @@ fn only_the_owner_or_a_holder_of_space_checkpoint_makes_checkpoints() {
         .give(ming, space, mom, &[Permission::SpaceCheckpoint], all())
         .unwrap();
     world.checkpoint(mom, space).unwrap();
+    assert!(!world.compact(mom, space));
+
+    world.checkpoint(ming, space).unwrap();
+    assert!(world.compact(ming, space));
+    assert_eq!(digest(&world, ming, space), digest(&world, mom, space));
 }
 
 #[test]

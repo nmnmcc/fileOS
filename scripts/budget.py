@@ -24,10 +24,10 @@ console = Console()
 
 
 def timed_build(*extra: str) -> float:
-    """Build the whole workspace in debug mode and return the wall-clock time."""
+    """Build the native workspace crates in debug mode and return the wall-clock time."""
     start = time.perf_counter()
     result = subprocess.run(
-        ["cargo", "build", "--workspace", "--locked", *extra],
+        ["cargo", "build", "--locked", *extra],
         check=False,
         cwd=ROOT,
         capture_output=True,

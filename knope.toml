@@ -11,7 +11,7 @@
 # the tag and the GitHub release.
 
 [package]
-versioned_files = ["Cargo.toml", "apps/Cargo.toml"]
+versioned_files = ["Cargo.toml"]
 changelog = "CHANGELOG.md"
 assets = "release/*"
 

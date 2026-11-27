@@ -26,7 +26,7 @@ use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
 
 use crate::content;
-use crate::entry::{Act, Entry, Permission, Principal, Resource, Retention};
+use crate::entry::{Act, Content, Entry, Permission, Principal, Resource, Retention};
 use crate::space::{Snapshot, Space};
 
 /// A message between two nodes.
@@ -60,7 +60,7 @@ pub enum Event {
     /// The state of a space changed.
     Changed(Hash),
     /// Content came. The caller keeps it.
-    Content(Vec<u8>),
+    Content { from: PublicKey, data: Vec<u8> },
     /// Acts of this node made at the same time as a checkpoint had no
     /// effect, and were written again on top. The person is told.
     Again { space: Hash, entries: usize },
@@ -83,6 +83,19 @@ pub trait Contents {
 /// its DID log, and the node's certificate.
 type Proof = (Hash, Vec<Bytes>, Bytes);
 
+/// The most content requests in flight on one node. Leave room in the
+/// transport for entries and for replies to other nodes.
+const CONTENT_IN_FLIGHT: usize = 16;
+/// A request can take three retry ticks. The host gives a tick every five seconds.
+const REQUEST_TICKS: u64 = 3;
+
+#[derive(Debug)]
+struct Request {
+    from: PublicKey,
+    deadline: u64,
+    list: Option<Content>,
+}
+
 /// The spaces on one node, and its peers.
 #[derive(Debug)]
 pub struct Node {
@@ -91,10 +104,10 @@ pub struct Node {
     /// Spaces to get, whose first entry this node does not have yet.
     wanted: BTreeSet<Hash>,
     peers: BTreeSet<PublicKey>,
-    /// Pieces of content asked for and not yet here.
-    asked: BTreeSet<Hash>,
-    /// The ones of them that are lists of chunks.
-    lists: BTreeSet<Hash>,
+    /// Peers that have offered entries for a space.
+    sources: BTreeMap<PublicKey, BTreeSet<Hash>>,
+    asked: BTreeMap<Hash, Request>,
+    ticks: u64,
     nonce: u64,
     /// The identity this node is a node of: its DID operations and the
     /// certificate of this node.
@@ -115,8 +128,9 @@ impl Node {
             spaces: BTreeMap::new(),
             wanted: BTreeSet::new(),
             peers: BTreeSet::new(),
-            asked: BTreeSet::new(),
-            lists: BTreeSet::new(),
+            sources: BTreeMap::new(),
+            asked: BTreeMap::new(),
+            ticks: 0,
             nonce,
             identity: None,
             proofs: BTreeMap::new(),
@@ -215,9 +229,11 @@ impl Node {
         let signing = fos_id::resolve(&cert.did, &ops)?
             .state
             .and_then(|s| s.signing_key())
-            .ok_or_else(|| Error("the identity has no signing key".into()))?;
+            .ok_or_else(|| Error::invalid("the identity has no signing key".into()))?;
         if cert.node != node || !cert.verify(signing) {
-            return Err(Error("the certificate is not good for this node".into()));
+            return Err(Error::denied(
+                "the certificate is not good for this node".into(),
+            ));
         }
         Ok(did)
     }
@@ -322,7 +338,7 @@ impl Node {
         let s = self
             .spaces
             .get_mut(&space)
-            .ok_or_else(|| Error(format!("space {space} is not here")))?;
+            .ok_or_else(|| Error::invalid(format!("space {space} is not here")))?;
         self.time = self.time.max(time);
         let mut new = Vec::new();
         // This node shows first that it is a node of its identity, when the
@@ -368,7 +384,7 @@ impl Node {
         let s = self
             .spaces
             .get_mut(&space)
-            .ok_or_else(|| Error(format!("space {space} is not here")))?;
+            .ok_or_else(|| Error::invalid(format!("space {space} is not here")))?;
         let entry = s.checkpoint(&self.key, time, retention)?;
         let mut step = Step::default();
         step.events.push(Event::Changed(space));
@@ -444,6 +460,15 @@ impl Node {
     pub fn connected(&mut self, peer: PublicKey) -> Step {
         let mut step = Step::default();
         self.peers.insert(peer);
+        self.announce_identity(peer, &mut step);
+        step.out.push((peer, self.have_for(peer)));
+        for id in &self.wanted {
+            step.out.push((peer, Msg::Want(*id)));
+        }
+        step
+    }
+
+    fn announce_identity(&self, peer: PublicKey, step: &mut Step) {
         if let Some((_, ops, cert)) = &self.identity {
             step.out.push((
                 peer,
@@ -453,16 +478,70 @@ impl Node {
                 },
             ));
         }
-        step.out.push((peer, self.have_for(peer)));
-        for id in &self.wanted {
-            step.out.push((peer, Msg::Want(*id)));
-        }
-        step
     }
 
     pub fn disconnected(&mut self, peer: PublicKey) {
         self.peers.remove(&peer);
         self.proofs.remove(&peer);
+        self.sources.remove(&peer);
+        self.asked.retain(|_, request| request.from != peer);
+    }
+
+    /// Releases a request after the transport reports a failure.
+    pub fn content_failed(&mut self, to: PublicKey, hash: Hash) {
+        if self
+            .asked
+            .get(&hash)
+            .is_some_and(|request| request.from == to)
+        {
+            self.asked.remove(&hash);
+        }
+    }
+
+    /// Gives a new set of offers and requests for peers after a queue fills.
+    pub fn announce(&self) -> Step {
+        let mut step = Step::default();
+        for &peer in &self.peers {
+            self.announce_identity(peer, &mut step);
+            step.out.push((peer, self.have_for(peer)));
+            step.out
+                .extend(self.wanted.iter().map(|&id| (peer, Msg::Want(id))));
+        }
+        step
+    }
+
+    /// Advances the retry clock and asks for content that is still missing.
+    pub fn retry_contents(&mut self, contents: &dyn Contents) -> Step {
+        self.ticks = self.ticks.wrapping_add(1);
+        self.asked.retain(|_, request| {
+            request.deadline.wrapping_sub(self.ticks) <= REQUEST_TICKS
+                && request.deadline != self.ticks
+        });
+        let mut step = Step::default();
+        let mut sources: Vec<_> = self.sources.iter().collect();
+        if sources.is_empty() {
+            return step;
+        }
+        let start = (self.ticks / REQUEST_TICKS) as usize % sources.len();
+        sources.rotate_left(start);
+        for (&peer, spaces) in sources {
+            for &id in spaces {
+                if self.asked.len() >= CONTENT_IN_FLIGHT {
+                    return step;
+                }
+                if let Some(space) = self.spaces.get(&id) {
+                    ask_contents(
+                        &mut self.asked,
+                        self.ticks,
+                        peer,
+                        space,
+                        contents,
+                        &mut step,
+                    );
+                }
+            }
+        }
+        step
     }
 
     /// Takes a message from a peer.
@@ -502,6 +581,7 @@ impl Node {
                     {
                         ask.push((id, ours));
                     }
+                    self.ask_contents(from, id, contents, &mut step);
                 }
                 if !ask.is_empty() {
                     step.out.push((from, Msg::Have(ask)));
@@ -557,17 +637,28 @@ impl Node {
             }
             Msg::Content(bytes) => {
                 let hash = Hash::of(&bytes.0);
-                if self.asked.remove(&hash) {
-                    if self.lists.remove(&hash)
-                        && let Ok(list) = fos_core::decode::<Vec<(Hash, u64)>>(&bytes.0)
-                    {
-                        for (chunk, _) in list {
-                            if !contents.has(chunk) && self.asked.insert(chunk) {
-                                step.out.push((from, Msg::WantContent(chunk)));
+                if let Some(request) = self.asked.remove(&hash) {
+                    if let Some(list) = request.list {
+                        let Some(parts) = content::chunk_list(&list, &bytes.0) else {
+                            return step;
+                        };
+                        for (chunk, _) in parts {
+                            if !contents.has(chunk) {
+                                request_content(
+                                    &mut self.asked,
+                                    self.ticks,
+                                    request.from,
+                                    chunk,
+                                    None,
+                                    &mut step,
+                                );
                             }
                         }
                     }
-                    step.events.push(Event::Content(bytes.0));
+                    step.events.push(Event::Content {
+                        from: request.from,
+                        data: bytes.0,
+                    });
                 }
             }
         }
@@ -606,7 +697,7 @@ impl Node {
         self.again(space, stale, step);
     }
 
-    /// Asks `from` for the content of `space` that is not here.
+    /// Remembers a source and asks it for missing content.
     fn ask_contents(
         &mut self,
         from: PublicKey,
@@ -614,21 +705,30 @@ impl Node {
         contents: &dyn Contents,
         step: &mut Step,
     ) {
-        let Some(s) = self.spaces.get(&space) else {
-            return;
-        };
-        let mut wanted = Vec::new();
-        for c in s.contents() {
-            if let Some(hashes) = content::chunks(&c, contents) {
-                wanted.extend(hashes.into_iter().filter(|h| !contents.has(*h)));
-            } else {
-                self.lists.insert(c.hash);
-                wanted.push(c.hash);
+        if let Some(s) = self.spaces.get(&space) {
+            if self.peers.contains(&from) {
+                self.sources.entry(from).or_default().insert(space);
             }
+            ask_contents(&mut self.asked, self.ticks, from, s, contents, step);
         }
-        for hash in wanted {
-            if self.asked.insert(hash) {
-                step.out.push((from, Msg::WantContent(hash)));
+    }
+
+    /// Fills slots freed by replies after the caller has stored their bytes.
+    pub fn content_saved(&mut self, peer: PublicKey, contents: &dyn Contents) -> Step {
+        let mut step = Step::default();
+        self.fill_from(peer, contents, &mut step);
+        step
+    }
+
+    fn fill_from(&mut self, from: PublicKey, contents: &dyn Contents, step: &mut Step) {
+        if let Some(spaces) = self.sources.get(&from) {
+            for id in spaces {
+                if self.asked.len() >= CONTENT_IN_FLIGHT {
+                    break;
+                }
+                if let Some(space) = self.spaces.get(id) {
+                    ask_contents(&mut self.asked, self.ticks, from, space, contents, step);
+                }
             }
         }
     }
@@ -662,14 +762,14 @@ impl Node {
             step.out.push((from, self.have_for(from)));
         }
         let s = self.spaces.get_mut(&space).expect("the space is here");
-        let added = s.insert(entries.clone()).unwrap_or_default();
+        let (added, _) = s.insert_batch(entries);
         if added.is_empty() {
             return;
         }
         step.events.push(Event::Changed(space));
-        let new: Vec<Entry> = entries
+        let new: Vec<Entry> = added
             .into_iter()
-            .filter(|e| added.contains(&e.hash()))
+            .filter_map(|hash| s.entry(hash).cloned())
             .collect();
         if let Some(t) = new.iter().map(|e| e.header.time).max() {
             self.time = self.time.max(t);
@@ -678,5 +778,50 @@ impl Node {
         self.send_on(space, &new, Some(from), step);
         self.vouch_peers(step);
         self.again(space, Vec::new(), step);
+    }
+}
+
+fn ask_contents(
+    asked: &mut BTreeMap<Hash, Request>,
+    ticks: u64,
+    from: PublicKey,
+    space: &Space,
+    contents: &dyn Contents,
+    step: &mut Step,
+) {
+    for content in space.contents() {
+        if asked.len() >= CONTENT_IN_FLIGHT {
+            break;
+        }
+        if let Some(hashes) = content::chunks(&content, contents) {
+            for hash in hashes.into_iter().filter(|h| !contents.has(*h)) {
+                request_content(asked, ticks, from, hash, None, step);
+                if asked.len() >= CONTENT_IN_FLIGHT {
+                    break;
+                }
+            }
+        } else if content.chunks && !contents.has(content.hash) {
+            request_content(asked, ticks, from, content.hash, Some(content), step);
+        }
+    }
+}
+
+fn request_content(
+    asked: &mut BTreeMap<Hash, Request>,
+    ticks: u64,
+    from: PublicKey,
+    hash: Hash,
+    list: Option<Content>,
+    step: &mut Step,
+) {
+    if asked.len() < CONTENT_IN_FLIGHT
+        && let std::collections::btree_map::Entry::Vacant(entry) = asked.entry(hash)
+    {
+        entry.insert(Request {
+            from,
+            deadline: ticks.wrapping_add(REQUEST_TICKS),
+            list,
+        });
+        step.out.push((from, Msg::WantContent(hash)));
     }
 }

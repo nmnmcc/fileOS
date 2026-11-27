@@ -255,10 +255,11 @@ may sign is online for a long time, checkpoints wait, and so does compaction:
 data is right, it only takes more space for a time. A checkpoint says:
 "the state up to these heads is final".
 
-- **Compaction.** History before a checkpoint becomes a snapshot. Only the
-  entries that the retention policy keeps stay, deletes ("tombstones") go,
-  and access control keeps only the members at that point, as Kafka does for
-  each key. New nodes start from the signed snapshot. Old bodies can be
+- **Compaction.** History before an owner-signed checkpoint becomes a
+  snapshot. Other checkpoints keep the log that shows the right to sign.
+  Only the entries that the retention policy keeps stay, deletes
+  ("tombstones") go, and access control keeps only the members at that point,
+  as Kafka does for each key. New nodes can start from the snapshot. Old bodies can be
   deleted first, and the small headers at the next checkpoint. Loro can cut
   history in the same way (shallow snapshots).
 - **Finality.** An entry that comes after a checkpoint but says it is older is

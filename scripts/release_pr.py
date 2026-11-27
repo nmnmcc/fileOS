@@ -9,6 +9,7 @@ GitHub and opens a pull request into main. When the pull request is merged,
 the Release workflow makes the tag and the GitHub release.
 """
 
+import re
 import subprocess
 from pathlib import Path
 from typing import Annotated
@@ -45,6 +46,13 @@ def main(
     """Commit the release changes and open a pull request for VERSION."""
     branch = f"release/v{version}"
     title = f"Release {version}"
+    manifest = ROOT / "Cargo.toml"
+    text = re.sub(
+        r'(path = "(?:apps|crates)/[^"]+", version = ")[^"]+(")',
+        rf"\g<1>{version}\g<2>",
+        manifest.read_text(),
+    )
+    manifest.write_text(text)
     # Only the versions of workspace crates change; nothing is fetched.
     run("cargo", "update", "--workspace", "--offline")
     run("git", "switch", "--create", branch)

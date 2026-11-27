@@ -106,26 +106,77 @@ pub fn split(data: &[u8]) -> (Content, Vec<(Hash, Vec<u8>)>) {
     )
 }
 
+/// Checks a chunk list and gives the hashes and sizes that it names.
+pub(crate) fn chunk_list(content: &Content, bytes: &[u8]) -> Option<Vec<(Hash, u64)>> {
+    if Hash::of(bytes) != content.hash {
+        return None;
+    }
+    let list: Vec<(Hash, u64)> = decode(bytes).ok()?;
+    if list.len() < 2 {
+        return None;
+    }
+    let size = list.iter().try_fold(0_u64, |total, &(_, size)| {
+        if size == 0 || size > MAX as u64 {
+            return None;
+        }
+        total.checked_add(size)
+    })?;
+    (size == content.size).then_some(list)
+}
+
+/// The hashes and sizes of the chunks, if their list is here.
+fn parts(content: &Content, store: &dyn Contents) -> Option<Vec<(Hash, u64)>> {
+    if !content.chunks {
+        return (content.size <= MAX as u64).then(|| vec![(content.hash, content.size)]);
+    }
+    chunk_list(content, &store.get(content.hash)?)
+}
+
 /// The hashes of the chunks of `content`, if its list is here.
 pub fn chunks(content: &Content, store: &dyn Contents) -> Option<Vec<Hash>> {
-    if !content.chunks {
-        return Some(vec![content.hash]);
+    Some(
+        parts(content, store)?
+            .into_iter()
+            .map(|(hash, _)| hash)
+            .collect(),
+    )
+}
+
+/// Passes verified chunks to `write`, in order. Returns `None` if a chunk
+/// is missing or invalid, or if `write` stops. Earlier chunks may have
+/// already been passed to `write`.
+pub fn read(
+    content: &Content,
+    store: &dyn Contents,
+    mut write: impl FnMut(Vec<u8>) -> Option<()>,
+) -> Option<()> {
+    for (hash, size) in parts(content, store)? {
+        let chunk = store.get(hash)?;
+        if chunk.len() as u64 != size || Hash::of(&chunk) != hash {
+            return None;
+        }
+        write(chunk)?;
     }
-    let list: Vec<(Hash, u64)> = decode(&store.get(content.hash)?).ok()?;
-    Some(list.into_iter().map(|(h, _)| h).collect())
+    Some(())
 }
 
 /// The bytes of `content`, if all of it is here and good.
 pub fn join(content: &Content, store: &dyn Contents) -> Option<Vec<u8>> {
-    let mut out = Vec::with_capacity(usize::try_from(content.size).ok()?);
-    for hash in chunks(content, store)? {
-        let chunk = store.get(hash)?;
-        if Hash::of(&chunk) != hash {
-            return None;
-        }
-        out.extend_from_slice(&chunk);
+    if !content.chunks {
+        let mut bytes = None;
+        read(content, store, |chunk| {
+            bytes = Some(chunk);
+            Some(())
+        })?;
+        return bytes;
     }
-    (out.len() as u64 == content.size).then_some(out)
+    let mut out = Vec::new();
+    read(content, store, |chunk| {
+        out.try_reserve(chunk.len()).ok()?;
+        out.extend_from_slice(&chunk);
+        Some(())
+    })?;
+    Some(out)
 }
 
 /// Says if every piece of `content` is here.

@@ -2,8 +2,8 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/*"]
-exclude = ["apps"]
+members = ["crates/*", "apps/*"]
+default-members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -15,17 +15,22 @@ publish = false
 # Internal crates. Dependencies go down only; see CONTRIBUTING.md.
 # Every external dependency must be added here, with `default-features = false`,
 # after review (see "Dependency policy" in CONTRIBUTING.md).
-#
-# The WebAssembly apps and engines are in their own workspace, in apps/.
 [workspace.dependencies]
-fos-core = { path = "crates/fos-core" }
-fos-id = { path = "crates/fos-id" }
-fos-space = { path = "crates/fos-space" }
-fos-store = { path = "crates/fos-store" }
-fos-runtime = { path = "crates/fos-runtime" }
-fos-net = { path = "crates/fos-net" }
-fos-gateway = { path = "crates/fos-gateway" }
-fos-node = { path = "crates/fos-node" }
+fos-core = { path = "crates/fos-core", version = "0.1.0" }
+fos-id = { path = "crates/fos-id", version = "0.1.0" }
+fos-space = { path = "crates/fos-space", version = "0.1.0" }
+fos-store = { path = "crates/fos-store", version = "0.1.0" }
+fos-runtime = { path = "crates/fos-runtime", version = "0.1.0" }
+fos-net = { path = "crates/fos-net", version = "0.1.0" }
+fos-gateway = { path = "crates/fos-gateway", version = "0.1.0" }
+fos-node = { path = "crates/fos-node", version = "0.1.0" }
+fos-app = { path = "apps/fos-app", version = "0.1.0" }
+
+# The Wasm app SDK uses WIT. Native code uses Wasmtime on the host side.
+wit-bindgen = { version = "0.63.0", default-features = false, features = [
+  "macros",
+  "realloc",
+] }
 
 # Formats and keys. All of them build for wasm32-unknown-unknown.
 blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
@@ -131,6 +136,8 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
   "fmt",
   "env-filter",
 ] }
+# Only the native program picks an allocator. It builds with cc.
+mimalloc = { version = "0.1.52", default-features = false }
 tempfile = { version = "3.27.0", default-features = false }
 
 [workspace.lints.rust]
@@ -219,6 +226,14 @@ opt-level = 0
 [profile.release]
 lto = "thin"
 strip = true
+
+# Keep shipped WebAssembly components small.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
 
 [profile.bench]
 debug = "line-tables-only"

@@ -9,22 +9,25 @@
 //! is no ordering node: every node can write at any time, also when offline,
 //! and every node that has the same entries gets the same state.
 //!
-//! - [`entry`]: the signed entries and what they do ([`Act`]).
+//! - [`Entry`] holds signed acts such as a write or a grant.
 //! - [`content`]: content in chunks, cut at points the content picks.
-//! - [`space`]: one space, and the state that comes from its entries.
-//! - [`sync`]: a node with many spaces, and the messages between nodes.
+//! - [`Space`] gives the state that comes from its entries.
+//! - [`Node`] moves entries and content between nodes.
 //!
 //! This crate is portable: no threads, files, sockets or clocks.
 
 pub mod content;
-pub mod entry;
-pub mod space;
-pub mod sync;
+mod entry;
+mod space;
+mod sync;
 
+#[doc(inline)]
 pub use entry::{
-    Act, Content, Effect, Entry, Header, Id, Permission, Principal, Resource, Retention,
+    Act, Content, Effect, Entry, Header, Id, Permission, Principal, Resource, Retention, good_name,
 };
+#[doc(inline)]
 pub use space::{File, Given, Grant, Snapshot, Space, Summary, Version};
+#[doc(inline)]
 pub use sync::{Contents, Event, Msg, Node, Step};
 
 #[cfg(test)]

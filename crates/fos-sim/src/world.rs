@@ -214,7 +214,7 @@ impl World {
         let parents = self
             .space(node, space)
             .and_then(|s| s.file(file))
-            .ok_or_else(|| Error("no such file".into()))?
+            .ok_or_else(|| Error::invalid("no such file".into()))?
             .versions
             .iter()
             .map(|v| v.id)
@@ -328,11 +328,12 @@ impl World {
             self.queue.push_back((node, to, msg));
         }
         for event in step.events {
-            if let Event::Content(bytes) = &event {
-                self.nodes[node]
-                    .contents
-                    .0
-                    .insert(Hash::of(bytes), bytes.clone());
+            if let Event::Content { from, data } = &event {
+                let n = &mut self.nodes[node];
+                n.contents.0.insert(Hash::of(data), data.clone());
+                let more = n.node.content_saved(*from, &n.contents);
+                self.queue
+                    .extend(more.out.into_iter().map(|(to, msg)| (node, to, msg)));
             }
             self.nodes[node].events.push(event);
         }

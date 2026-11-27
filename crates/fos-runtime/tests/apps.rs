@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use std::sync::Mutex;
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
-use super::*;
+use fos_runtime::{AppHost, Bundle, FsError, Runtime};
 
 /// The .app folders that `apps` (scripts/apps.py) builds.
 fn bundle(name: &str) -> Bundle {
@@ -71,7 +73,7 @@ fn the_photos_app_indexes_a_photo() {
     let host = Arc::new(host);
 
     let mut app = runtime
-        .app(&bundle("Photos.app"), Arc::<Host>::clone(&host))
+        .app(&bundle("Photos.app"), Arc::<Host>::clone(&host).into())
         .unwrap();
     assert_eq!(app.manifest().name, "Photos");
     assert!(app.watches("/photos/a.png"));
@@ -112,7 +114,7 @@ async fn the_photos_app_answers_http() {
     let host = Arc::new(Host::default());
     host.kv_set("photos", "photo:/photos/a.png", b"64x32".to_vec());
     let app = runtime
-        .http_app(&bundle("Photos.app"), Arc::<Host>::clone(&host))
+        .http_app(&bundle("Photos.app"), Arc::<Host>::clone(&host).into())
         .unwrap();
 
     let response = app.handle(get("/", Some("did:fos:abc"))).await.unwrap();

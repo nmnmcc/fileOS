@@ -48,7 +48,7 @@ An ordinary laptop should be enough to contribute. Most of Rust's compile time d
 
 | Measure                                | Budget  |
 | -------------------------------------- | ------- |
-| Clean debug build of the workspace     | ≤ 360 s |
+| Clean debug build of the native crates | ≤ 360 s |
 | Rebuild after a change to a leaf crate | ≤ 5 s   |
 | Rebuild after a change to `fos-core`   | ≤ 20 s  |
 
@@ -84,6 +84,11 @@ The budgets are for a laptop with 4 cores and 8 GB of RAM. We will change the bu
 - On Linux, use the `lld` or `mold` linker. New versions of Rust use `lld` on x86_64 Linux by default.
 - Give rust-analyzer its own target directory (`"rust-analyzer.cargo.targetDir": true`), so it does not make command-line builds wait.
 
+To time file writes, sync, and reads in a fixed test world, run
+`cargo bench -p fos-sim --features test-util --bench sync`. Use the same
+machine and build profile when comparing runs. If a run gets slower,
+profile the work in `fos-space` that checks the causal graph.
+
 ## Workspace layout
 
 ```
@@ -98,7 +103,7 @@ crates/
   fos-id          identities: did:fos, node certificates, identity links (portable)
   fos-core        formats: CBOR, ed25519, BLAKE3 (bottom of the graph, portable)
   fos-sim         deterministic multi-node simulation, for tests
-apps/             a second workspace, built for wasm32-unknown-unknown by `apps`
+apps/             guest crates, built for wasm32-unknown-unknown by `apps`
   fos-app         the SDK for apps (MIT OR Apache-2.0)
   photos          the photos app
   chat            the chat app
@@ -232,6 +237,6 @@ A maintainer makes a release from an up-to-date `main` with no uncommitted chang
 knope prepare-release
 ```
 
-Knope works out the new version from the change files. It puts that version in `Cargo.toml` and `apps/Cargo.toml`, puts the change files into `CHANGELOG.md` under the new version, and deletes them. Then [`scripts/release_pr.py`](scripts/release_pr.py) makes the branch `release/v<version>` with one commit, and opens a pull request.
+Knope works out the new version from the change files. It puts that version in the workspace `Cargo.toml`, puts the change files into `CHANGELOG.md` under the new version, and deletes them. Then [`scripts/release_pr.py`](scripts/release_pr.py) makes the branch `release/v<version>` with one commit, and opens a pull request.
 
 When that pull request is merged, the [Release workflow](.github/workflows/release.yml) sees a version in `Cargo.toml` that has no tag. It makes the release files (`fos-<version>-linux-x86_64.tar.gz` with `fos` and the `.app` folders, the documentation, and `SHA256SUMS`) and runs `knope release`. Knope makes the tag `v<version>` and the GitHub release, with the part of `CHANGELOG.md` for that version as the release notes.

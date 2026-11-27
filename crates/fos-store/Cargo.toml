@@ -14,7 +14,6 @@ fos-core.workspace = true
 fos-space.workspace = true
 getrandom.workspace = true
 
-[dev-dependencies]
 tempfile.workspace = true
 
 [lints]

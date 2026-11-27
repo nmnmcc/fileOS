@@ -9,12 +9,23 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+test-util = ["dep:fos-core", "dep:fos-space"]
+
 [dependencies]
+fos-core = { workspace = true, optional = true }
+fos-space = { workspace = true, optional = true }
+
+[dev-dependencies]
 fos-core.workspace = true
 fos-space.workspace = true
 
-[dev-dependencies]
 fos-id.workspace = true
+
+[[bench]]
+name = "sync"
+harness = false
+required-features = ["test-util"]
 
 [lints]
 workspace = true

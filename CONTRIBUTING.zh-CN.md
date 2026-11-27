@@ -46,11 +46,11 @@ direnv allow
 
 一台普通笔记本应当足以参与开发。Rust 的编译时间主要取决于代码的写法。CI 会对每个 PR 运行 [`scripts/budget.py`](scripts/budget.py)，强制执行以下预算：
 
-| 指标                          | 预算     |
-| ----------------------------- | -------- |
-| 全新 debug 编译整个 workspace | ≤ 360 秒 |
-| 改动叶子 crate 后重新编译     | ≤ 5 秒   |
-| 改动 `fos-core` 后重新编译    | ≤ 20 秒  |
+| 指标                       | 预算     |
+| -------------------------- | -------- |
+| 全新 debug 编译原生 crate  | ≤ 360 秒 |
+| 改动叶子 crate 后重新编译  | ≤ 5 秒   |
+| 改动 `fos-core` 后重新编译 | ≤ 20 秒  |
 
 参考机器是一台 4 核、8GB 内存的笔记本。预算会随代码增长重新校准。
 
@@ -84,6 +84,8 @@ direnv allow
 - Linux 上使用 `lld` 或 `mold` 链接器。新版 Rust 在 x86_64 Linux 上已默认使用 `lld`。
 - 给 rust-analyzer 单独的 target 目录（`"rust-analyzer.cargo.targetDir": true`），避免阻塞命令行编译。
 
+运行 `cargo bench -p fos-sim --features test-util --bench sync`，可以在固定的模拟环境中测量写入、同步和读取文件的用时。比较结果时使用同一台机器和相同的构建配置。如果变慢，先分析 `fos-space` 检查因果图的开销。
+
 ## Workspace 结构
 
 ```
@@ -98,7 +100,7 @@ crates/
   fos-id          身份：did:fos、节点证书、身份链接（可移植）
   fos-core        格式：CBOR、ed25519、BLAKE3（依赖图最底层，可移植）
   fos-sim         用于测试的确定性多节点模拟
-apps/             第二个 workspace，由 `apps` 编译成 wasm32-unknown-unknown
+apps/             App crate，由 `apps` 编译成 wasm32-unknown-unknown
   fos-app         App 的 SDK（MIT OR Apache-2.0）
   photos          照片 App
   chat            聊天 App
@@ -232,6 +234,6 @@ Knope 会询问改动类型和一句摘要：
 knope prepare-release
 ```
 
-Knope 根据变更文件算出新版本号，写入 `Cargo.toml` 和 `apps/Cargo.toml`，把变更文件写进 `CHANGELOG.md` 中新版本的小节，然后删除这些文件。随后 [`scripts/release_pr.py`](scripts/release_pr.py) 建立分支 `release/v<版本>`，提交一个 commit 并开 PR。
+Knope 根据变更文件算出新版本号，写入工作区的 `Cargo.toml`，把变更文件写进 `CHANGELOG.md` 中新版本的小节，然后删除这些文件。随后 [`scripts/release_pr.py`](scripts/release_pr.py) 建立分支 `release/v<版本>`，提交一个 commit 并开 PR。
 
 该 PR 合并后，[Release 工作流](.github/workflows/release.yml) 发现 `Cargo.toml` 中的版本还没有对应标签，于是构建发布文件（包含 `fos` 和各个 `.app` 文件夹的 `fos-<版本>-linux-x86_64.tar.gz`、文档和 `SHA256SUMS`）并执行 `knope release`。Knope 创建标签 `v<版本>` 和 GitHub Release，发布说明取自 `CHANGELOG.md` 中该版本的小节。
