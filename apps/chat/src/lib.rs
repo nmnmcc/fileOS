@@ -30,6 +30,13 @@ struct Chat;
 
 impl Guest for Chat {
     fn on_change(path: String) {
+        // A picture that another app shared with this one: keep a note, so
+        // that the first page can show it.
+        if path.starts_with("/granted/") {
+            kv::set(&format!("shared:{path}"), b"1");
+            log::info(&format!("got {path} from another app"));
+            return;
+        }
         let Some(room) = path
             .strip_prefix("/chat/")
             .and_then(|r| r.split('/').next())

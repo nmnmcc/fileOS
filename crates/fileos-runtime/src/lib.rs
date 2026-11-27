@@ -155,6 +155,15 @@ pub struct Ask {
     pub reason: String,
 }
 
+/// Files that an app takes when other apps share them (see
+/// `fos:app/access.share`).
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct Receive {
+    /// Name patterns, such as `*.jpg`. Any file when empty.
+    #[serde(default)]
+    pub filter: Vec<String>,
+}
+
 /// Where the kernel sends the request for a schedule of an app:
 /// `POST /.well-known/fileos/schedule/<name>`, with `fileos-event: schedule`.
 /// Requests from outside never reach paths under `/.well-known/fileos/`.
@@ -219,6 +228,9 @@ pub struct Manifest {
     /// The most the app may ask for at run time, through the picker.
     #[serde(default)]
     pub asks: Vec<Ask>,
+    /// What other apps may share with this app.
+    #[serde(default)]
+    pub receives: Vec<Receive>,
 }
 
 /// The WIT version this runtime gives.
@@ -423,6 +435,16 @@ pub trait AppHost: Send + Sync {
         let _ = (app, purpose, permissions);
         Err("this node cannot ask the person".into())
     }
+    /// Files an offer of a file by the app to another app, for the person
+    /// to answer. Gives its ID.
+    ///
+    /// # Errors
+    ///
+    /// When the app may not share the file, or the node cannot ask.
+    fn share(&self, app: &str, path: &str) -> Result<String, String> {
+        let _ = (app, path);
+        Err("this node cannot ask the person".into())
+    }
 }
 
 struct AppCtx {
@@ -544,6 +566,10 @@ impl wit_fs::Host for AppCtx {
 impl wit_access::Host for AppCtx {
     fn ask(&mut self, purpose: String, permissions: String) -> Result<String, String> {
         self.host.ask(&self.app, &purpose, &permissions)
+    }
+
+    fn share(&mut self, path: String) -> Result<String, String> {
+        self.host.share(&self.app, &path)
     }
 }
 

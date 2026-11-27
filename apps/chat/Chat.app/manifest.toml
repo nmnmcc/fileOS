@@ -15,3 +15,10 @@ reason = "reason.chat"
 
 [[watch]]
 path = "/chat"
+
+# Pictures that other apps share with the chat app.
+[[watch]]
+path = "/granted"
+
+[[receives]]
+filter = ["*.jpg", "*.jpeg", "*.png"]

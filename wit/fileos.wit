@@ -53,6 +53,12 @@ interface access {
   /// `purpose` is shown to the person. Gives the ID of the request; the
   /// call does not wait for the answer.
   ask: func(purpose: string, permissions: string) -> result<string, string>;
+
+  /// Offers the file at `path` (in the app's view) to another app that the
+  /// person picks, as Android's share sheet does. The app needs
+  /// `share.send` on the file. Gives the ID of the request; the call does
+  /// not wait for the answer.
+  share: func(path: string) -> result<string, string>;
 }
 
 /// What the core calls in an app.

@@ -65,8 +65,13 @@ pub struct AccessRequest {
     pub app: String,
     /// What the app says it is for.
     pub purpose: String,
-    /// What it asks for: exact permissions or templates.
+    /// What it asks for: exact permissions or templates, or `share` when
+    /// it offers a file to another app.
     pub permissions: String,
+    /// The name of the file it offers, for a share.
+    pub file: Option<String>,
+    /// Where that file is: its space and its ID.
+    share: Option<(Hash, Id)>,
 }
 
 /// One mount in the view of an app.
@@ -117,6 +122,8 @@ struct Shared {
     schedules: Mutex<BTreeMap<String, Vec<fileos_runtime::Schedule>>>,
     /// The most each app may ask for, by the ID in its manifest.
     asks: Mutex<BTreeMap<String, BTreeSet<Permission>>>,
+    /// What each app takes from others, by the ID in its manifest.
+    receives: Mutex<BTreeMap<String, Vec<fileos_runtime::Receive>>>,
     /// True once `start_schedules` ran: apps started later get their
     /// timers at once.
     scheduling: std::sync::atomic::AtomicBool,
@@ -434,6 +441,7 @@ impl Node {
                 changed: Mutex::new(VecDeque::new()),
                 schedules: Mutex::new(BTreeMap::new()),
                 asks: Mutex::new(BTreeMap::new()),
+                receives: Mutex::new(BTreeMap::new()),
                 scheduling: std::sync::atomic::AtomicBool::new(false),
                 runtime: Runtime::new()?,
                 key: key.public(),
@@ -744,6 +752,12 @@ impl Node {
             .into_iter()
             .find(|r| r.id == id)
             .ok_or_else(|| Error(format!("no request {id:?}")))?;
+        if let Some((space, file)) = request.share {
+            // A share: `path` names the app to give the file to.
+            let at = self.share_to(path, space, file)?;
+            self.refuse(id)?;
+            return Ok(at);
+        }
         let at = self.app_grant(
             &request.app,
             path,
@@ -752,6 +766,58 @@ impl Node {
         )?;
         self.refuse(id)?;
         Ok(at)
+    }
+
+    /// Gives the app `to` read access to one file, by its ID, mounted at
+    /// `granted/<handle>/<name>` in its view.
+    fn share_to(&self, to: &str, space: Hash, file: Id) -> Result<String, Error> {
+        let mut inner = self.inner();
+        let s = inner
+            .node
+            .space(space)
+            .ok_or_else(|| Error("the space of the file is not here".into()))?;
+        let f = s
+            .file(file)
+            .filter(|f| !f.deleted())
+            .ok_or_else(|| Error("the file is not there any more".into()))?;
+        let name = f.versions[0].name.clone();
+        let short = name.rsplit('/').next().unwrap_or(&name).to_string();
+        let takes = lock(&self.shared.receives).get(to).is_some_and(|list| {
+            list.iter().any(|r| {
+                r.filter.is_empty() || r.filter.iter().any(|g| fileos_runtime::glob(g, &short))
+            })
+        });
+        if !takes {
+            return Err(Error(format!("the app {to} does not take {short:?}")));
+        }
+        let key = inner.app_key(to).public();
+        let grant = inner.write(
+            None,
+            space,
+            vec![Act::Give {
+                to: Principal::Key(key),
+                effect: Effect::Allow,
+                permissions: vec![Permission::FilesRead],
+                on: Resource::File(file),
+            }],
+            &self.shared.changed,
+        )?;
+        let handle = &grant.entry.to_string()[..12];
+        let mount = format!("granted/{handle}/{short}");
+        let home = inner.home;
+        let text = format!("{space}\n{name}\n{}", grant_text(grant));
+        inner.put_name(
+            None,
+            home,
+            &format!("{VIEWS}{to}/{mount}"),
+            text.as_bytes(),
+            &self.shared.changed,
+        )?;
+        let at: Vec<String> = inner.node_paths(space, &name);
+        drop(inner);
+        lock(&self.shared.changed).extend(at.into_iter().map(|p| (p, ChangeKind::Made)));
+        self.pump();
+        Ok(format!("/{mount}"))
     }
 
     /// Says no to a request of an app: it goes away, and the app gets
@@ -1071,6 +1137,8 @@ impl Node {
             asks.extend(parse_permissions(&ask.permissions)?);
         }
         lock(&self.shared.asks).insert(bundle.manifest.id.clone(), asks);
+        lock(&self.shared.receives)
+            .insert(bundle.manifest.id.clone(), bundle.manifest.receives.clone());
         if self
             .shared
             .scheduling
@@ -1582,12 +1650,27 @@ impl Inner {
                     .find_map(|v| v.name.strip_prefix(REQUESTS))?
                     .to_string();
                 let text = String::from_utf8(self.bytes(self.home, f)?).ok()?;
-                let mut lines = text.splitn(3, '\n');
+                let mut lines = text.split('\n');
+                let app = lines.next()?.to_string();
+                let permissions = lines.next()?.to_string();
+                let purpose = lines.next().unwrap_or_default().to_string();
+                let share = match (lines.next(), lines.next()) {
+                    (Some(space), Some(file)) => {
+                        Some((space.parse().ok()?, parse_grant(file).ok()?))
+                    }
+                    _ => None,
+                };
+                let file = share.and_then(|(space, file)| {
+                    let f = self.node.space(space)?.file(file)?;
+                    Some(f.versions.first()?.name.clone())
+                });
                 Some(AccessRequest {
                     id,
-                    app: lines.next()?.to_string(),
-                    permissions: lines.next()?.to_string(),
-                    purpose: lines.next().unwrap_or_default().to_string(),
+                    app,
+                    purpose,
+                    permissions,
+                    file,
+                    share,
                 })
             })
             .collect()
@@ -2330,6 +2413,40 @@ impl AppHost for Host {
         .ok_or("the node stopped")?
         .map_err(|e| e.0)?;
         Ok(id)
+    }
+
+    fn share(&self, app: &str, path: &str) -> Result<String, String> {
+        self.with(|inner, changed| {
+            let key = inner.app_key(app).public();
+            let (space, name) = inner.resolve_app(app, path).map_err(|e| format!("{e:?}"))?;
+            let s = inner.node.space(space).ok_or("the file is not here")?;
+            let file = s.find(&name).into_iter().next().ok_or("no such file")?;
+            if !s.may(
+                Principal::Key(key),
+                Permission::ShareSend,
+                &Resource::File(file.id),
+            ) {
+                return Err(format!("{app} may not share {path} (it needs share.send)"));
+            }
+            let id = Hash::of_value(&(app, space, file.id, now())).to_string()[..12].to_string();
+            let short = name.rsplit('/').next().unwrap_or(&name);
+            let text = format!(
+                "{app}\nshare\nShare {short}\n{space}\n{}",
+                grant_text(file.id)
+            );
+            let home = inner.home;
+            inner
+                .put_name(
+                    None,
+                    home,
+                    &format!("{REQUESTS}{id}"),
+                    text.as_bytes(),
+                    changed,
+                )
+                .map_err(|e| e.0)?;
+            Ok(id)
+        })
+        .ok_or("the node stopped")?
     }
 }
 

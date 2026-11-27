@@ -10,7 +10,7 @@ main = "bin/app.wasm"
 
 [[permissions]]
 path = "/photos"
-access = "read-write"
+access = "read-write,share.send"
 reason = "reason.photos"
 
 [[watch]]

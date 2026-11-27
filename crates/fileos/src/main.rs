@@ -192,8 +192,13 @@ enum AppCommand {
     /// The requests of apps for access, waiting for you.
     Requests,
     /// Answer a request: give the app what it asked for, on the path you
-    /// pick. It sees it at `/granted/<handle>`, never the path itself.
-    Answer { id: String, path: String },
+    /// pick. It sees it at `/granted/<handle>`, never the path itself. For
+    /// a share, give the ID of the app to send the file to.
+    Answer {
+        id: String,
+        /// A path, or for a share, an app.
+        path: String,
+    },
     /// Say no to a request.
     Refuse { id: String },
 }
