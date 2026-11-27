@@ -19,13 +19,13 @@ interfaces in [`wit/fileos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/
 
 An app is a component of the `app` world.
 
-| The core gives (imports) | What it does                                                   |
-| ------------------------ | -------------------------------------------------------------- |
-| `fs`                     | `read`, `write`, `append`, `delete`, `list-dir`, on node paths |
-| `kv`                     | A cache on this node only, for indexes that can be made again  |
-| `log`                    | Messages for the node's status and log                         |
-| `wasi:clocks/wall-clock` | The time, for names that sort by time                          |
-| `access`                 | `ask`: ask the person for a file or folder, through the picker |
+| The core gives (imports) | What it does                                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `fs`                     | `read`, `write`, `append`, `delete`, `list-dir`, on node paths                                       |
+| `kv`                     | A cache on this node only, for indexes that can be made again                                        |
+| `log`                    | Messages for the node's status and log                                                               |
+| `wasi:clocks/wall-clock` | The time, for names that sort by time                                                                |
+| `access`                 | `ask`: ask the person for a file or folder, through the picker; `share`: offer a file to another app |
 
 | The app gives (exports)             | When the core calls it                       |
 | ----------------------------------- | -------------------------------------------- |

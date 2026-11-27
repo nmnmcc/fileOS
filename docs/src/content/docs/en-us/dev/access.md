@@ -234,6 +234,14 @@ kernel gives the receiving app a grant from the sender's own (read only, one
 file, until it is taken back), mounts it, and sends the person to the receiving
 app's path, which is a normal `fetch` for it.
 
+Built today: an app calls `fileos:app/access.share(path)` on a file it has
+`share.send` on. The offer waits with the other requests; the person gives it
+to an app with `fileos app answer <id> <app>`. The receiving app must take that
+kind of file (`[[receives]]` with name patterns). It gets read access to that
+one file, by its ID, at `/granted/<handle>/<name>` in its view, and hears of
+it with `on-change`. Actions and types, and sending the person to the
+receiving app, come with the share sheet page.
+
 ### The command line
 
 The command line is a way in for the owner, as the picker is, and can see real

@@ -40,6 +40,17 @@ fn route(req: &Request) -> Response {
         ("GET", "/photo") => photo(query),
         // Asks the person, through the kernel's picker, for a folder of
         // photos to show. The answer comes as a mount under /granted.
+        // Offers one photo to another app that the person picks.
+        ("POST", "/share") => {
+            let path = query
+                .split('&')
+                .find_map(|p| p.strip_prefix("path="))
+                .map_or_else(String::new, percent_decode);
+            match access::share(&path) {
+                Ok(id) => Response::text(202, format!("offered: {id}\n")),
+                Err(e) => Response::text(403, format!("cannot share: {e}\n")),
+            }
+        }
         ("POST", "/import") => {
             match access::ask("Show the photos in a folder that you pick", "read") {
                 Ok(id) => Response::text(202, format!("asked: {id}\n")),

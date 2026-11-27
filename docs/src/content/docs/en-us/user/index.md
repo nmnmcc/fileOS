@@ -129,7 +129,9 @@ Each app also has its own private data, which other apps cannot read.
 
 An app can also ask you for something, such as a folder of photos to show.
 `fileos app requests` lists what apps ask for; `fileos app answer <id> /holiday`
-gives it, and `fileos app refuse <id>` says no.
+gives it, and `fileos app refuse <id>` says no. When an app offers a file to
+another app (such as a photo to the chat app), answer with the app:
+`fileos app answer <id> chat`. That app gets that one file only.
 
 Two apps come with fileOS:
 
