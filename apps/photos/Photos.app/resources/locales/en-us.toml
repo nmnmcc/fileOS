@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 name = "Photos"
+"reason.import" = "Photos asks for a folder that you pick, to show the photos in it. It can only read them."
 "reason.photos" = "Photos reads your photos to find their size and make an index, shows them, and puts the photos you upload into /photos."

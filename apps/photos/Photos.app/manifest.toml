@@ -17,6 +17,15 @@ reason = "reason.photos"
 path = "/photos"
 filter = ["*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"]
 
+# Folders that the person picks, when the app asks (POST /import).
+[[watch]]
+path = "/granted"
+filter = ["*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"]
+
+[[asks]]
+permissions = "read"
+reason = "reason.import"
+
 # Once a day, index every photo again, in case a change was missed.
 [[schedule]]
 name = "reindex"

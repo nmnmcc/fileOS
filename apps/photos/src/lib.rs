@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 
 use fos_app::app::exports::fos::app::events::Guest;
 use fos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
-use fos_app::app::fos::app::{fs, kv, log};
+use fos_app::app::fos::app::{access, fs, kv, log};
 use fos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
 use fos_app::http::{Request, Response};
 
@@ -38,6 +38,14 @@ fn route(req: &Request) -> Response {
         ("GET", "/style.css") => Response::new(200, "text/css; charset=utf-8", STYLE),
         ("GET", "/app.js") => Response::new(200, "text/javascript; charset=utf-8", SCRIPT),
         ("GET", "/photo") => photo(query),
+        // Asks the person, through the kernel's picker, for a folder of
+        // photos to show. The answer comes as a mount under /granted.
+        ("POST", "/import") => {
+            match access::ask("Show the photos in a folder that you pick", "read") {
+                Ok(id) => Response::text(202, format!("asked: {id}\n")),
+                Err(e) => Response::text(403, format!("cannot ask: {e}\n")),
+            }
+        }
         ("POST", "/.well-known/fos/schedule/reindex")
             if req.header("fos-event") == Some("schedule") =>
         {
@@ -107,13 +115,16 @@ fn photo(query: &str) -> Response {
         .split('&')
         .find_map(|p| p.strip_prefix("path="))
         .map_or_else(String::new, percent_decode);
-    let inside = path.strip_prefix("/photos/").is_some_and(|rest| {
-        !rest
-            .split('/')
-            .any(|part| part.is_empty() || part == "." || part == "..")
-    });
+    let inside = path
+        .strip_prefix("/photos/")
+        .or_else(|| path.strip_prefix("/granted/"))
+        .is_some_and(|rest| {
+            !rest
+                .split('/')
+                .any(|part| part.is_empty() || part == "." || part == "..")
+        });
     if !inside {
-        return Response::text(400, "only photos under /photos\n");
+        return Response::text(400, "only photos under /photos or /granted\n");
     }
     let content_type = if path.to_ascii_lowercase().ends_with(".png") {
         "image/png"
