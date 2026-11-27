@@ -27,8 +27,8 @@ App 不会一直运行。它被一个事件唤醒，完成工作，然后停止�
 | 事件       | 什么时候                         | 接口                                 |
 | ---------- | -------------------------------- | ------------------------------------ |
 | `fetch`    | 有发给它的 origin 的 HTTP 请求   | `wasi:http/incoming-handler`（标准） |
-| `watch`    | 它监听的文件或前缀发生变化       | `fos:app/events`                     |
-| `schedule` | manifest 中写明的时间，类似 cron | `fos:app/events`                     |
+| `watch`    | 它监听的文件或前缀发生变化       | `fileos:app/events`                  |
+| `schedule` | manifest 中写明的时间，类似 cron | `fileos:app/events`                  |
 
 时间不是数据，所以它不是文件：`schedule` 写在 manifest 里，就像 Cloudflare 的 Cron Triggers。其他所有 “事件” 都是对文件的监听：
 
@@ -81,7 +81,7 @@ name  = "reindex"
 every = "1d"        # s、m、h 或 d；最短一分钟
 ```
 
-到了这些时间，内核向 App 自己的 `wasi:http` 处理函数发送 `POST /.well-known/fos/schedule/<name>`，并带上 `fos-event: schedule` 头。所以定时任务不需要在 App 接口里加任何东西。外部的请求永远到不了 `/.well-known/fos/` 下的路径，网关也会删掉它们的 `fos-event` 头。定时任务在节点启动一个周期后第一次运行；节点关闭期间错过的时间不会补上，和 cron 一样。目前每个节点运行它自己的 App 的定时任务。
+到了这些时间，内核向 App 自己的 `wasi:http` 处理函数发送 `POST /.well-known/fileos/schedule/<name>`，并带上 `fileos-event: schedule` 头。所以定时任务不需要在 App 接口里加任何东西。外部的请求永远到不了 `/.well-known/fileos/` 下的路径，网关也会删掉它们的 `fileos-event` 头。定时任务在节点启动一个周期后第一次运行；节点关闭期间错过的时间不会补上，和 cron 一样。目前每个节点运行它自己的 App 的定时任务。
 
 ### 用文件作为回应
 

@@ -110,10 +110,10 @@ in
   # `treefmt --ci` in CI. So it is off; run `treefmt` yourself.
   tasks."devenv:treefmt:run".before = lib.mkForce [ ];
 
-  # Build artifacts: `devenv build outputs.hs` or `devenv build outputs.docs`.
+  # Build artifacts: `devenv build outputs.fileos` or `devenv build outputs.docs`.
   outputs = {
-    fos = rustPlatform.buildRustPackage {
-      pname = "fos";
+    fileos = rustPlatform.buildRustPackage {
+      pname = "fileos";
       inherit version;
       src = lib.fileset.toSource {
         root = ./.;
@@ -127,7 +127,7 @@ in
       cargoLock.lockFile = ./Cargo.lock;
       cargoBuildFlags = [
         "--package"
-        "fos"
+        "fileos"
       ];
       # The tests need the WebAssembly apps in target/apps/, which are built
       # outside Nix. `check` runs every test.
@@ -135,7 +135,7 @@ in
       meta = {
         description = "fileOS";
         license = lib.licenses.agpl3Only;
-        mainProgram = "fos";
+        mainProgram = "fileos";
       };
     };
 

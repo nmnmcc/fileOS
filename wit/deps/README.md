@@ -8,5 +8,5 @@ they come with `wasmtime-wasi-http` 51.0.0. We do not change them. They are
 from the [WASI project](https://github.com/WebAssembly/WASI), under
 Apache-2.0 WITH LLVM-exception.
 
-`wit/fos.wit` uses `wasi:http/incoming-handler`, so that apps are HTTP
+`wit/fileos.wit` uses `wasi:http/incoming-handler`, so that apps are HTTP
 servers. The other packages are here because `wasi:http` names them.

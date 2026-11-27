@@ -13,7 +13,7 @@ made today keep working.
 
 Apps are WebAssembly components. The kernel runs them with
 [wasmtime](https://wasmtime.dev). They talk to the core only through the
-interfaces in [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit).
+interfaces in [`wit/fileos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fileos.wit).
 
 ## Apps
 
@@ -39,7 +39,7 @@ from its own key. Each call into an app has limits on fuel and memory.
 
 - Each permission in the manifest is mounted in the view at the path the
   manifest gives: the photos app asks for `/photos`, and sees `/photos`.
-- The person can give more at run time (`fos app grant`); it comes at
+- The person can give more at run time (`fileos app grant`); it comes at
   `/granted/<handle>/`, or at a name the person picks. The person can also
   point a name at another place: the app's `/photos` can be the space at
   `/pictures`. The app never sees where a mount really is.
@@ -59,11 +59,11 @@ at the same time on different nodes, and nothing is lost. When two nodes
 change the same file at the same time, both versions are kept; `read` gives
 the newest. See [Data in apps](../app-data/).
 
-A small app, with the Rust SDK in `apps/fos-app`:
+A small app, with the Rust SDK in `apps/fileos-app`:
 
 ```rust
-use fos_app::app::exports::fos::app::events::Guest;
-use fos_app::app::fos::app::{fs, kv};
+use fileos_app::app::exports::fileos::app::events::Guest;
+use fileos_app::app::fileos::app::{fs, kv};
 
 struct Sizes;
 
@@ -75,30 +75,30 @@ impl Guest for Sizes {
     }
 }
 
-fos_app::app::export_app!(Sizes);
+fileos_app::app::export_app!(Sizes);
 ```
 
 ### HTTP
 
 Every app is an HTTP server for its own origin,
 `http://<app-id>.localhost:7341/`, with the standard `wasi:http` (WASI 0.2).
-`fos app install` prints the address. Each request gets a new instance of
+`fileos app install` prints the address. Each request gets a new instance of
 the app, with limits on fuel, memory and time (30 seconds). The kernel takes
-the `cookie`, `authorization` and `fos-user` headers away from requests,
-puts in `fos-user` with the DID of the person when someone is signed in, and
+the `cookie`, `authorization` and `fileos-user` headers away from requests,
+puts in `fileos-user` with the DID of the person when someone is signed in, and
 takes `set-cookie` away from responses. An app has no files, sockets or
 outgoing HTTP of its own: only `fs`, `kv` and `log`.
 
 The SDK reads the request and writes the response for you:
 
 ```rust
-use fos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
-use fos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
-use fos_app::http::Response;
+use fileos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
+use fileos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
+use fileos_app::http::Response;
 
 impl Http for Sizes {
     fn handle(request: IncomingRequest, out: ResponseOutparam) {
-        fos_app::http::serve(request, out, |req| {
+        fileos_app::http::serve(request, out, |req| {
             Response::text(200, format!("hello, {}", req.user().unwrap_or("no one")))
         });
     }
@@ -124,7 +124,7 @@ name = "Photos"
 kind = "app"
 version = "0.1.0"
 build = 1
-requires = "fos:app@0.1.0"
+requires = "fileos:app@0.1.0"
 main = "bin/app.wasm"
 
 [[permissions]]           # given to the app's key when it is installed
@@ -139,13 +139,13 @@ filter = ["*.jpg", "*.png"] # optional: names to hear of
 kinds = ["made", "changed", "deleted"] # optional
 recursive = true          # optional: also paths under it (the default)
 
-[[schedule]]              # the kernel sends POST /.well-known/fos/schedule/reindex
-name = "reindex"          # with fos-event: schedule, once a day
+[[schedule]]              # the kernel sends POST /.well-known/fileos/schedule/reindex
+name = "reindex"          # with fileos-event: schedule, once a day
 every = "1d"
 ```
 
 To give the app to others, pack the folder into an `.app` file:
-`fos app pack Photos.app/ out/Photos.app`. It needs no running node. An
+`fileos app pack Photos.app/ out/Photos.app`. It needs no running node. An
 `.app` file is a zip with no compression in the zip itself:
 
 | Entry             | What it is                                                     |
@@ -154,7 +154,7 @@ To give the app to others, pack the folder into an `.app` file:
 | `payload.tar.zst` | Every other file, in a tar, compressed with zstd               |
 
 The same folder always gives the same file: the tar has no times or owners.
-`fos app install` takes an `.app` file, or an `.app` folder while you make
+`fileos app install` takes an `.app` file, or an `.app` folder while you make
 it.
 
 When an app is installed, its files go into a new space mounted at
@@ -166,4 +166,4 @@ Put the crate in `apps/`, with a `<Name>.app/` folder next to its
 `Cargo.toml`. Then run `apps` (`scripts/apps.py`). It builds every crate in
 `apps/` for `wasm32-unknown-unknown`, makes a component of it with
 `wasm-tools component new`, and puts the `.app` folder in `target/apps/`.
-`fos app pack` makes an `.app` file of it.
+`fileos app pack` makes an `.app` file of it.

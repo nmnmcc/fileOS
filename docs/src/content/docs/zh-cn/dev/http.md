@@ -19,7 +19,7 @@ description: App 和插件怎样通过 HTTP 提供服务，每个都有自己的
 浏览器的安全边界是 origin：协议、主机名和端口。两个同 origin 的 App 可以互相读取存储，也能冒充对方发请求。所以每个 App 都有自己的 origin：
 
 ```
-http://fos.localhost:<端口>/            内核：界面、登录、API
+http://fileos.localhost:<端口>/            内核：界面、登录、API
 http://<app>.localhost:<端口>/       每个 App 一个 origin
 http://<plugin-id>.localhost:<端口>/    带界面的插件
 ```
@@ -43,10 +43,10 @@ http://<plugin-id>.localhost:<端口>/    带界面的插件
 所有登录都由内核用标准协议完成。App 看不到密码、会话和令牌。
 
 1. 用户打开 `http://photos.localhost/`。App 的静态文件不需要登录：它们是 App 的代码，不是数据。
-2. App 没有令牌，就带着 PKCE challenge 把浏览器转到 `http://fos.localhost/authorize`。
+2. App 没有令牌，就带着 PKCE challenge 把浏览器转到 `http://fileos.localhost/authorize`。
 3. 内核的页面让用户登录（用 passkey），并询问是否允许这个 App 代表用户行事。这个页面在内核自己的 origin 上，App 伪造不了。
-4. 内核带着一个授权码把浏览器转回 App。App 在 `http://fos.localhost/token` 用授权码换取令牌（CORS 只允许这个 App 的 origin）。
-5. App 在 `Authorization` 头里带上令牌。内核验证后删掉这个头，加上 `Fos-User: did:fos:…`，再把请求交给 App。
+4. 内核带着一个授权码把浏览器转回 App。App 在 `http://fileos.localhost/token` 用授权码换取令牌（CORS 只允许这个 App 的 origin）。
+5. App 在 `Authorization` 头里带上令牌。内核验证后删掉这个头，加上 `FileOS-User: did:fileos:…`，再把请求交给 App。
 
 所用的标准是 OAuth 2.0（RFC 6749）加 PKCE（RFC 7636），做法和 “OAuth 2.0 for Browser-Based Applications” 一样。令牌用 DPoP（RFC 9449）绑定到一把无法从浏览器中取出的密钥上，所以被偷的令牌在别处没有用。刷新令牌每用一次就更换，也可以撤销（RFC 7009）。内核同时也是其他服务的 OpenID Connect 身份提供方。
 
@@ -55,7 +55,7 @@ http://<plugin-id>.localhost:<端口>/    带界面的插件
 ## 网关做什么
 
 - 只在本机（127.0.0.1 和 ::1）监听，使用一个用户可以修改的固定端口。其他设备通过 libp2p 连接，而不是通过这个端口。
-- 只接受已知的主机名（`fos.localhost`、`*.localhost`），防止 DNS rebinding。
+- 只接受已知的主机名（`fileos.localhost`、`*.localhost`），防止 DNS rebinding。
 - 按主机名把请求交给对应的组件。
 - 删掉 App 回应里的 `Set-Cookie`，也从不把 `Cookie` 头发给 App。
 - 加上安全的默认头：`Content-Security-Policy`、`X-Content-Type-Options: nosniff`、`Cross-Origin-Opener-Policy`、`Cross-Origin-Resource-Policy` 和 `Referrer-Policy`。App 可以把它们收得更紧；能否放宽是一项有默认值的策略。
@@ -73,7 +73,7 @@ HTTP API 遵循 RFC 9110：用 `ETag` 和 `If-Match` 处理版本，用 `Range` 
 
 ### 增强模式：设备上有节点
 
-节点自己提供网页界面，界面文件打包在 `fos` 程序里。代码来自你安装在自己机器上的程序，而不是每次从服务器下载。其他节点上的 App 由本机节点通过 libp2p 转发过来。项目的网页只负责找到本机节点，并把用户交给它。
+节点自己提供网页界面，界面文件打包在 `fileos` 程序里。代码来自你安装在自己机器上的程序，而不是每次从服务器下载。其他节点上的 App 由本机节点通过 libp2p 转发过来。项目的网页只负责找到本机节点，并把用户交给它。
 
 ### 没有节点的设备：项目的共享域名
 
@@ -97,8 +97,8 @@ HTTP API 遵循 RFC 9110：用 `ETag` 和 `If-Match` 处理版本，用 `Range` 
 
 1. **网关：** 固定端口，只在本机，只接受已知的主机名，安全的默认头。
 2. **App 成为 HTTP 服务器：** 运行时支持 `wasi:http`，按主机名转发请求。
-3. **登录：** `/authorize`、`/token` 和 `/revoke`，passkey，DPoP，`Fos-User` 头，以及签名 URL。
-4. **把网页界面打包进 `fos`**，以及把用户转到本机节点的项目网页。
+3. **登录：** `/authorize`、`/token` 和 `/revoke`，passkey，DPoP，`FileOS-User` 头，以及签名 URL。
+4. **把网页界面打包进 `fileos`**，以及把用户转到本机节点的项目网页。
 5. **为没有节点的设备提供共享域名。**
 6. **浏览器里的节点。**
 

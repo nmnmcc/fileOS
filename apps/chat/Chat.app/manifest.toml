@@ -5,7 +5,7 @@ name = "Chat"
 kind = "app"
 version = "0.1.0"
 build = 1
-requires = "fos:app@0.1.0"
+requires = "fileos:app@0.1.0"
 main = "bin/app.wasm"
 
 [[permissions]]

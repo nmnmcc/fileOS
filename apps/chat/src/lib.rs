@@ -14,11 +14,11 @@
 
 use std::fmt::Write as _;
 
-use fos_app::app::exports::fos::app::events::Guest;
-use fos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
-use fos_app::app::fos::app::{fs, kv, log};
-use fos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
-use fos_app::http::{Request, Response};
+use fileos_app::app::exports::fileos::app::events::Guest;
+use fileos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
+use fileos_app::app::fileos::app::{fs, kv, log};
+use fileos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
+use fileos_app::http::{Request, Response};
 
 /// Where the rooms are.
 const ROOT: &str = "/chat";
@@ -45,11 +45,11 @@ impl Guest for Chat {
 
 impl Http for Chat {
     fn handle(request: IncomingRequest, out: ResponseOutparam) {
-        fos_app::http::serve(request, out, route);
+        fileos_app::http::serve(request, out, route);
     }
 }
 
-fos_app::app::export_app!(Chat);
+fileos_app::app::export_app!(Chat);
 
 fn route(req: &Request) -> Response {
     let (path, query) = req.path.split_once('?').unwrap_or((&req.path, ""));
@@ -139,7 +139,7 @@ fn send(room: &str, req: &Request) -> Response {
         return Response::text(400, "a message needs a name and a text\n");
     }
     let record = format!("{}\t{}\n", escape_field(&from), escape_field(&text));
-    let now = fos_app::app::wasi::clocks::wall_clock::now();
+    let now = fileos_app::app::wasi::clocks::wall_clock::now();
     let name = format!(
         "{:012}.{:09}-{:016x}",
         now.seconds,

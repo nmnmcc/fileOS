@@ -7,7 +7,7 @@
 
 [workspace]
 resolver = "3"
-members = ["fos-app", "photos", "chat"]
+members = ["fileos-app", "photos", "chat"]
 
 [workspace.package]
 version = "0.1.0"
@@ -17,7 +17,7 @@ license = "AGPL-3.0-only"
 publish = false
 
 [workspace.dependencies]
-fos-app = { path = "fos-app" }
+fileos-app = { path = "fileos-app" }
 wit-bindgen = { version = "0.63.0", default-features = false, features = [
   "macros",
   "realloc",

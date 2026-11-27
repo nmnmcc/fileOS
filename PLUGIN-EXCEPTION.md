@@ -8,7 +8,7 @@ This Additional Permission applies to fileOS (the "Program") as distributed by i
 
 ## 0. Definitions
 
-"Plugin Interface" means the interface through which the Program loads and communicates with Plugins, as documented and published by the Program's maintainers. It consists of (a) the WebAssembly host functions, imports, exports and data formats that the Program makes available to Plugins; (b) the user-interface extension API that the Program makes available to user-interface extensions; and (c) the software development kits for these interfaces that are distributed under permissive licenses, including the `fos-app` crate and the WIT files in the `wit` directory.
+"Plugin Interface" means the interface through which the Program loads and communicates with Plugins, as documented and published by the Program's maintainers. It consists of (a) the WebAssembly host functions, imports, exports and data formats that the Program makes available to Plugins; (b) the user-interface extension API that the Program makes available to user-interface extensions; and (c) the software development kits for these interfaces that are distributed under permissive licenses, including the `fileos-app` crate and the WIT files in the `wit` directory.
 
 "Plugin" means a work that is designed to be loaded by the Program, that interacts with the Program exclusively through the Plugin Interface (for example, a WebAssembly module executed in the Program's plugin sandbox, or a user-interface extension running in the Program's sandboxed extension frame), and that does not incorporate any part of the Program other than material from the Plugin Interface that is licensed under permissive terms.
 

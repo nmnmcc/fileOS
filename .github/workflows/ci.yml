@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.package.outputs.version }}
-      fos: ${{ steps.fos.outputs.artifact-id }}
+      fileos: ${{ steps.fileos.outputs.artifact-id }}
       docs: ${{ steps.docs.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v7
@@ -88,16 +88,16 @@ jobs:
           version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          name="fos-$version-linux-x86_64"
+          name="fileos-$version-linux-x86_64"
           mkdir "$name" release
-          cp -rP artifacts/fos artifacts/apps LICENSE PLUGIN-EXCEPTION.md README.md CHANGELOG.md "$name/"
+          cp -rP artifacts/fileos artifacts/apps LICENSE PLUGIN-EXCEPTION.md README.md CHANGELOG.md "$name/"
           tar -czf "release/$name.tar.gz" "$name"
           tar -czf "release/fileos-docs-$version.tar.gz" -C artifacts docs
       - uses: actions/upload-artifact@v7
-        id: fos
+        id: fileos
         with:
-          name: fos-linux-x86_64
-          path: release/fos-${{ steps.package.outputs.version }}-linux-x86_64.tar.gz
+          name: fileos-linux-x86_64
+          path: release/fileos-${{ steps.package.outputs.version }}-linux-x86_64.tar.gz
           if-no-files-found: error
           compression-level: 0
           overwrite: true
@@ -142,4 +142,4 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       version: ${{ needs.artifacts.outputs.version }}
-      artifact-ids: ${{ needs.artifacts.outputs.fos }},${{ needs.artifacts.outputs.docs }}
+      artifact-ids: ${{ needs.artifacts.outputs.fileos }},${{ needs.artifacts.outputs.docs }}

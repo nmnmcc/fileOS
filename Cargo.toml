@@ -18,14 +18,14 @@ publish = false
 #
 # The WebAssembly apps and engines are in their own workspace, in apps/.
 [workspace.dependencies]
-fos-core = { path = "crates/fos-core" }
-fos-id = { path = "crates/fos-id" }
-fos-space = { path = "crates/fos-space" }
-fos-store = { path = "crates/fos-store" }
-fos-runtime = { path = "crates/fos-runtime" }
-fos-net = { path = "crates/fos-net" }
-fos-gateway = { path = "crates/fos-gateway" }
-fos-node = { path = "crates/fos-node" }
+fileos-core = { path = "crates/fileos-core" }
+fileos-id = { path = "crates/fileos-id" }
+fileos-space = { path = "crates/fileos-space" }
+fileos-store = { path = "crates/fileos-store" }
+fileos-runtime = { path = "crates/fileos-runtime" }
+fileos-net = { path = "crates/fileos-net" }
+fileos-gateway = { path = "crates/fileos-gateway" }
+fileos-node = { path = "crates/fileos-node" }
 
 # Formats and keys. All of them build for wasm32-unknown-unknown.
 blake3 = { version = "1.8.7", default-features = false, features = ["std"] }

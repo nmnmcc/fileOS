@@ -4,7 +4,7 @@ description: How a person has one identity, and how anyone who knows it finds al
 ---
 
 :::note[Status: design, partly built]
-`did:fos`, the identity space, node certificates and identity links are
+`did:fileos`, the identity space, node certificates and identity links are
 built (step 1 of the [plan](#plan)). The rest is not built yet.
 :::
 
@@ -17,16 +17,16 @@ company, server or global network is needed for this.
 ## Identity and node are different things
 
 - An **identity** is a person. It is a [W3C DID](https://www.w3.org/TR/did-core/)
-  of the method `did:fos`, for example `did:fos:4kq…`.
+  of the method `did:fileos`, for example `did:fileos:4kq…`.
 - A **node** is a machine. It has its own ed25519 key, `N`, which is also its
   libp2p PeerId.
 
 An identity may have many nodes, and its nodes may change. The keys of the
 identity may change too. The DID does not change.
 
-## did:fos: the did:plc method, with no directory
+## did:fileos: the did:plc method, with no directory
 
-We do not make a new kind of identity. `did:fos` is the
+We do not make a new kind of identity. `did:fileos` is the
 [`did:plc`](https://web.plc.directory/spec/v0.1/did-plc) method of AT
 Protocol, which millions of Bluesky accounts use, and we keep its rules:
 
@@ -36,11 +36,11 @@ Protocol, which millions of Bluesky accounts use, and we keep its rules:
 - **Each operation gives the whole state of the identity:**
   - `rotationKeys`: 1 to 5 keys that control the identity. The first one has
     the highest priority.
-  - `verificationMethods`: keys for other work, by name. The key `fos` is the
+  - `verificationMethods`: keys for other work, by name. The key `fileos` is the
     **signing key** of the identity in fileOS.
   - `alsoKnownAs`: other names of the identity, such as a domain (see
     [Names](#names-a-domain-as-another-name)).
-  - `services`: where to find things. `fos_identity` names the identity space.
+  - `services`: where to find things. `fileos_identity` names the identity space.
 - **Every operation after the first is signed by a rotation key of the state
   before it**, and names the operation before it by its hash.
 - **Keys are `did:key`**, and an operation has at most 7500 bytes and 10
@@ -57,7 +57,7 @@ DID names the person, and the spaces they own have IDs of their own (see
 
 We change three things, each for a reason:
 
-| `did:plc`                                                                                                               | `did:fos`                                                                                                                                                                                          | Why                                                                                                                                          |
+| `did:plc`                                                                                                               | `did:fileos`                                                                                                                                                                                       | Why                                                                                                                                          |
 | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rotation keys are secp256k1 or P-256                                                                                    | All keys are ed25519; the hash is BLAKE3                                                                                                                                                           | These are the key and hash of the rest of fileOS                                                                                             |
 | The DID is the first 120 bits of the hash                                                                               | The DID is the full hash (52 characters of base32)                                                                                                                                                 | Names are for people; the DID is for machines, so it does not need to be short                                                               |
@@ -80,7 +80,7 @@ The operations check themselves. The signing key could delete one, but it
 cannot make one, because only rotation keys sign operations.
 
 A **node certificate** names the DID and the node, and is signed by the
-signing key. It is good while that key is the `fos` key of the identity. To
+signing key. It is good while that key is the `fileos` key of the identity. To
 take a node away, the signing key deletes its certificate.
 
 The nodes of an identity keep a copy of its space, and so can people who
@@ -93,15 +93,15 @@ signing key makes a new identity space, and the operation names it.
 
 ### Making an identity and adding a node
 
-1. `fos identity new` makes a rotation key and a signing key on this node, the
+1. `fileos identity new` makes a rotation key and a signing key on this node, the
    identity space, and the first operation. It prints the DID.
-2. On the node that holds the signing key: `fos identity add-node <node key>`. It
+2. On the node that holds the signing key: `fileos identity add-node <node key>`. It
    puts the certificate of the node into the identity space, lets the node
    read and keep the space, and prints the ID of the space.
-3. On the new node: `fos identity join <space ID>`. It mounts the space at
+3. On the new node: `fileos identity join <space ID>`. It mounts the space at
    `/identity`, and gets it from the first node.
 
-`fos identity remove-node <node key>` deletes the certificate, takes back the
+`fileos identity remove-node <node key>` deletes the certificate, takes back the
 node's grant on the identity space, and puts a revocation signed by the
 signing key at `/revoked/<node>`. Every node of the identity writes the
 revocation into the spaces it has, so the removed node loses what it had as a
@@ -110,10 +110,10 @@ signing key.
 
 ### A grant to a person
 
-`fos space grant /family did:fos:… read-write` gives the permissions to the
+`fileos space grant /family did:fileos:… read-write` gives the permissions to the
 person, so to every node of their identity, also to nodes added later. Each
 node shows its certificate when it connects; a node that has the space writes
-a vouch for it (see [The model](../access/#principals)). `fos identity
+a vouch for it (see [The model](../access/#principals)). `fileos identity
 remove-node` takes one device away from every space; a new signing key takes
 all old certificates away at once.
 
@@ -122,7 +122,7 @@ all old certificates away at once.
 A person gives their identity as a DID URL with hints:
 
 ```
-did:fos:<id>?r=<multiaddr>&r=<multiaddr>
+did:fileos:<id>?r=<multiaddr>&r=<multiaddr>
 ```
 
 The `r` values are **hints**: rendezvous nodes or nodes of the identity. They
@@ -134,14 +134,14 @@ finding nodes (below) do not need them.
 We take the handles of AT Protocol as they are. A person who has a domain,
 such as `alice.example`, can use it as the name of their identity:
 
-- The domain points to the DID, with a DNS TXT record at `_fos.alice.example`
-  with the text `did=did:fos:…`, or with the file
-  `https://alice.example/.well-known/fos-did`.
-- The DID points back to the domain: `alsoKnownAs` has `fos://alice.example`.
+- The domain points to the DID, with a DNS TXT record at `_fileos.alice.example`
+  with the text `did=did:fileos:…`, or with the file
+  `https://alice.example/.well-known/fileos-did`.
+- The DID points back to the domain: `alsoKnownAs` has `fileos://alice.example`.
 - A name is good only when both point to each other.
 
-The only change is the names of the record and the file (`_fos` and
-`fos-did`, not `_atproto` and `atproto-did`), because one domain may also be
+The only change is the names of the record and the file (`_fileos` and
+`fileos-did`, not `_atproto` and `atproto-did`), because one domain may also be
 the handle of a Bluesky account, which has a different DID.
 
 ## Two kinds of record
@@ -191,7 +191,7 @@ These are rules. New features may not break them:
   goes with it.
 - **It works from memory only.** It needs no disk. After a restart, nodes
   send their records again in a few minutes.
-- **It is part of `fos`.** Any node with a public address can be one, with no
+- **It is part of `fileos`.** Any node with a public address can be one, with no
   other program and no config. A node can also be only a rendezvous node.
 - **It has limits.** A small number of records for each key, a size limit for
   each record, a limit on how often a node may write, and records that end.
@@ -214,10 +214,10 @@ of their records take about a tenth of one CPU core.
 
 It is not special:
 
-- It runs the normal `fos`, with the same code and protocol as any other
+- It runs the normal `fileos`, with the same code and protocol as any other
   rendezvous node. Its address is not in the kernel.
 - It is a default in the policy. A new identity has
-  it in its rendezvous list. `fos identity` shows it, and one command takes it away.
+  it in its rendezvous list. `fileos identity` shows it, and one command takes it away.
 - The nodes of the owner come first. When an identity has a node with a public
   address, that node comes first in the list and in the hints of its link.
 - When it is down, nobody is lost. People who know you already have your
@@ -231,8 +231,8 @@ the DID. For each day (a **period** `p`, of 24 hours), the nodes of the
 identity make:
 
 ```
-name = BLAKE3 derive_key("fos rendezvous name v1", DID || p)
-key  = BLAKE3 derive_key("fos rendezvous key v1",  DID || p)
+name = BLAKE3 derive_key("fileos rendezvous name v1", DID || p)
+key  = BLAKE3 derive_key("fileos rendezvous key v1",  DID || p)
 ```
 
 - The record is kept under `name`. The name is new every day, and it cannot
@@ -296,25 +296,25 @@ always hints.
 
 ## The protocol
 
-A libp2p request-response protocol, `/fos/rendezvous/1`, with CBOR messages:
+A libp2p request-response protocol, `/fileos/rendezvous/1`, with CBOR messages:
 
 - `Publish(record)`: the answer is `Ok` or `Refused(reason)`.
 - `Find(name)`: the answer is the records under `name`.
 
 The logic (records, checks, limits, what a rendezvous node keeps, the steps of
-a look) is sans-IO, in a portable crate, so it runs in `fos-sim`.
+a look) is sans-IO, in a portable crate, so it runs in `fileos-sim`.
 
 ## Plan
 
-1. **Identity:** `did:fos` (the DID log, rotation keys, the signing key),
+1. **Identity:** `did:fileos` (the DID log, rotation keys, the signing key),
    the identity space, node certificates, identity links, and adding a node
-   (`fos identity`, `fos identity new`, `fos identity add-node`, `fos identity join`). Built.
+   (`fileos identity`, `fileos identity new`, `fileos identity add-node`, `fileos identity join`). Built.
 2. **More keys and names:** add and change rotation keys and the signing key,
-   a recovery key kept on paper, and domain names (`_fos` and
-   `/.well-known/fos-did`).
+   a recovery key kept on paper, and domain names (`_fileos` and
+   `/.well-known/fileos-did`).
 3. **Address records:** nodes sign their addresses, and the nodes of one
    identity send them to each other.
 4. **Rendezvous:** names and encryption by period, the rendezvous store with
    its limits, the order of a look, and the project's rendezvous node as a
-   default. Tests in `fos-sim`.
+   default. Tests in `fileos-sim`.
 5. **The project's rendezvous node:** put it on a server.

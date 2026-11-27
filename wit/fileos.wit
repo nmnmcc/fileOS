@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+/// The interfaces between the fileOS core and WebAssembly apps.
+///
+/// An app is a component of the `app` world, in an `.app` file. The WASI
+/// interfaces that the `app` world uses are in `deps/`.
+package fileos:app@0.1.0;
+
+/// The file system, as an app sees it. Paths start with "/". The first part
+/// of a path is a space mounted in the home space of the node, for example
+/// "/photos/2026/a.jpg". The kernel checks every call against the grants of
+/// the app's key.
+interface fs {
+  variant error {
+    /// The app's key has no grant for this.
+    denied(string),
+    not-found,
+    invalid(string),
+  }
+
+  /// The bytes of a file.
+  read: func(path: string) -> result<list<u8>, error>;
+  /// Put a file.
+  write: func(path: string, data: list<u8>) -> result<_, error>;
+  /// Add bytes to the end of a file, as a new version.
+  append: func(path: string, data: list<u8>) -> result<_, error>;
+  /// Take a file away. Its old versions stay in the history.
+  delete: func(path: string) -> result<_, error>;
+  /// The names directly under a path.
+  list-dir: func(path: string) -> result<list<string>, error>;
+}
+
+/// A key-value store on this node only. It does not sync. Use it for indexes
+/// and caches that can be made again.
+interface kv {
+  get: func(key: string) -> option<list<u8>>;
+  set: func(key: string, value: list<u8>);
+  delete: func(key: string);
+  /// All keys that start with `prefix`, in order.
+  keys: func(prefix: string) -> list<string>;
+}
+
+interface log {
+  info: func(message: string);
+}
+
+/// Asking the person for access at run time, through the kernel's picker.
+/// The app never sees where the files really are: the answer comes as a new
+/// mount at `/granted/<handle>` in the app's view, with `on-change` for it.
+interface access {
+  /// Asks for `permissions` (exact names or templates, within the `asks`
+  /// of the manifest) on a file or directory that the person picks.
+  /// `purpose` is shown to the person. Gives the ID of the request; the
+  /// call does not wait for the answer.
+  ask: func(purpose: string, permissions: string) -> result<string, string>;
+}
+
+/// What the core calls in an app.
+interface events {
+  /// A path that the app watches has changed.
+  on-change: func(path: string);
+}
+
+/// An app. It may also give a service over HTTP: the kernel gives it the
+/// requests for its own origin, `<app-id>.localhost`, as `wasi:http`. The
+/// kernel signs people in, and puts the person in the `fileos-user` header.
+/// Requests have no `cookie` or `authorization` header, and an app may set
+/// no cookies.
+world app {
+  import fs;
+  import kv;
+  import log;
+  import access;
+  /// The time of day, for names that sort by time.
+  import wasi:clocks/wall-clock@0.2.12;
+  export events;
+  export wasi:http/incoming-handler@0.2.12;
+}

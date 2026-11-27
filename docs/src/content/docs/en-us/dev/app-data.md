@@ -115,7 +115,7 @@ has been one of the safest mail formats to sync for decades.
 
 ## Help from the SDK
 
-The `fos-app` SDK is to give these, so that each app does not make them
+The `fileos-app` SDK is to give these, so that each app does not make them
 again: records by ID (with new IDs, a schema version, and unknown fields
 kept), fractional indexes, Loro documents, and a helper that keeps a SQLite
 index in cache files up to date with files.

@@ -1054,6 +1054,129 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
+name = "fileos"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fileos-core",
+ "fileos-gateway",
+ "fileos-node",
+ "percent-encoding",
+ "tokio",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "fileos-core"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "cbor4ii",
+ "ed25519-dalek",
+ "serde",
+]
+
+[[package]]
+name = "fileos-gateway"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "fileos-core",
+ "fileos-node",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "percent-encoding",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "fileos-id"
+version = "0.1.0"
+dependencies = [
+ "bs58",
+ "fileos-core",
+ "serde",
+]
+
+[[package]]
+name = "fileos-net"
+version = "0.1.0"
+dependencies = [
+ "fileos-core",
+ "fileos-space",
+ "libp2p",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "fileos-node"
+version = "0.1.0"
+dependencies = [
+ "fileos-core",
+ "fileos-id",
+ "fileos-net",
+ "fileos-runtime",
+ "fileos-space",
+ "fileos-store",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "fileos-runtime"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "fileos-core",
+ "http-body-util",
+ "hyper",
+ "rawzip",
+ "ruzstd",
+ "serde",
+ "tar",
+ "tokio",
+ "toml",
+ "wasmtime",
+ "wasmtime-wasi",
+ "wasmtime-wasi-http",
+]
+
+[[package]]
+name = "fileos-sim"
+version = "0.1.0"
+dependencies = [
+ "fileos-core",
+ "fileos-id",
+ "fileos-space",
+]
+
+[[package]]
+name = "fileos-space"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305 0.11.0",
+ "fileos-core",
+ "fileos-id",
+ "hpke",
+ "serde",
+]
+
+[[package]]
+name = "fileos-store"
+version = "0.1.0"
+dependencies = [
+ "fileos-core",
+ "fileos-space",
+ "getrandom 0.3.4",
+ "tempfile",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1088,129 +1211,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
-]
-
-[[package]]
-name = "fos"
-version = "0.1.0"
-dependencies = [
- "clap",
- "fos-core",
- "fos-gateway",
- "fos-node",
- "percent-encoding",
- "tokio",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "fos-core"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "cbor4ii",
- "ed25519-dalek",
- "serde",
-]
-
-[[package]]
-name = "fos-gateway"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "fos-core",
- "fos-node",
- "http-body-util",
- "hyper",
- "hyper-util",
- "percent-encoding",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "fos-id"
-version = "0.1.0"
-dependencies = [
- "bs58",
- "fos-core",
- "serde",
-]
-
-[[package]]
-name = "fos-net"
-version = "0.1.0"
-dependencies = [
- "fos-core",
- "fos-space",
- "libp2p",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "fos-node"
-version = "0.1.0"
-dependencies = [
- "fos-core",
- "fos-id",
- "fos-net",
- "fos-runtime",
- "fos-space",
- "fos-store",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "fos-runtime"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "fos-core",
- "http-body-util",
- "hyper",
- "rawzip",
- "ruzstd",
- "serde",
- "tar",
- "tokio",
- "toml",
- "wasmtime",
- "wasmtime-wasi",
- "wasmtime-wasi-http",
-]
-
-[[package]]
-name = "fos-sim"
-version = "0.1.0"
-dependencies = [
- "fos-core",
- "fos-id",
- "fos-space",
-]
-
-[[package]]
-name = "fos-space"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "chacha20poly1305 0.11.0",
- "fos-core",
- "fos-id",
- "hpke",
- "serde",
-]
-
-[[package]]
-name = "fos-store"
-version = "0.1.0"
-dependencies = [
- "fos-core",
- "fos-space",
- "getrandom 0.3.4",
- "tempfile",
 ]
 
 [[package]]

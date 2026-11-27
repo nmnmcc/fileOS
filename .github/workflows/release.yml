@@ -47,7 +47,7 @@ jobs:
       - name: Write the checksums
         if: steps.version.outputs.new == 'true'
         working-directory: release
-        run: sha256sum "./fileos-docs-$VERSION.tar.gz" "./fos-$VERSION-linux-x86_64.tar.gz" > SHA256SUMS
+        run: sha256sum "./fileos-docs-$VERSION.tar.gz" "./fileos-$VERSION-linux-x86_64.tar.gz" > SHA256SUMS
       - uses: ./.github/actions/devenv
         if: steps.version.outputs.new == 'true'
       - run: devenv shell -- knope release

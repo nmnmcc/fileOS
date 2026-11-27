@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "fileos"
+description = "fileOS: a file system that syncs between your nodes, with apps and rules in WebAssembly"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "fileos"
+path = "src/main.rs"
+
+[dependencies]
+fileos-core.workspace = true
+fileos-node.workspace = true
+fileos-gateway.workspace = true
+clap.workspace = true
+percent-encoding.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

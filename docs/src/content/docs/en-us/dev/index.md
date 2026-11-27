@@ -13,7 +13,7 @@ Everything on top of the kernel is an app: a WebAssembly component in an
 
 - [Writing apps](apps/): the interfaces, the SDK, the `.app`
   folder and the manifest.
-- The interfaces are in [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit).
+- The interfaces are in [`wit/fileos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fileos.wit).
 
 ## Working on fileOS
 

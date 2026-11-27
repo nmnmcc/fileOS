@@ -4,7 +4,7 @@ description: How data is kept and synced with no ordering node, how conflicts ar
 ---
 
 :::note[Status: built in part]
-Most of this page is built, in `fos-space`, and the node runs on it: the
+Most of this page is built, in `fileos-space`, and the node runs on it: the
 data model, conflicts, strong removal, content in chunks, checkpoints,
 retention and [encryption](#encryption). Not built yet: bookmarks, the
 authority path, budgets and CRDT files. [Building it](#building-it-a-new-kernel) says
@@ -110,7 +110,7 @@ calls **strong removal**:
 Strong removal has one bad case: two managers who remove each other at the
 same time are both removed, and the group may have no manager. So every
 identity has an **owner root key**: the rotation key with the highest
-priority in its [`did:fos`](../identity/) DID. It can never be removed, and it
+priority in its [`did:fileos`](../identity/) DID. It can never be removed, and it
 wins any conflict. Family and friends get access through groups, under it.
 
 Strong removal is the one rule of the kernel, the same on every node.
@@ -137,7 +137,7 @@ We take the way of [Cloudflare D1's Sessions API](https://developers.cloudflare.
 - **Stickiness:** a session stays on one node, usually the node on your
   device. That node puts its own writes into its view at once, so you see
   them.
-- **Bookmarks:** each answer has a `Fos-Bookmark` header: the heads of the
+- **Bookmarks:** each answer has a `FileOS-Bookmark` header: the heads of the
   graph that the answer was made from. The app sends it back with its next
   request. A node that has not yet seen those entries waits for them, or
   sends the request to a node that has.
@@ -181,7 +181,7 @@ settled by a fixed rule. These still happen:
 
 ### What people see: a simple page and an advanced page
 
-The kernel's interface (`fos.localhost`) shows conflicts and rollbacks in the
+The kernel's interface (`fileos.localhost`) shows conflicts and rollbacks in the
 same way for every app and file:
 
 - **The simple page** says what to do: for versions side by side, "keep mine",
@@ -271,7 +271,7 @@ data is right, it only takes more space for a time. A checkpoint says:
 
 ### A budget that people can see
 
-- `fos node status` says where the space goes: content, old versions,
+- `fileos node status` says where the space goes: content, old versions,
   metadata, caches, and data kept for others.
 - People can set a budget. When it is nearly full, the kernel makes room in
   this order: caches first, then thinner old versions, then no new data for
@@ -385,22 +385,22 @@ The design on this page, [The model](../access/) and [Apps as workers](../worker
 is too far from the prototype to change it a step at a time, and a state
 between the two would mean nothing. So the kernel is written again:
 
-- **Kept:** `fos-core` (formats), `fos-id` (`did:fos`), the simulation in
-  `fos-sim` as the way to test, `.app` files, the gateway, and the `wasi:http`
+- **Kept:** `fileos-core` (formats), `fileos-id` (`did:fileos`), the simulation in
+  `fileos-sim` as the way to test, `.app` files, the gateway, and the `wasi:http`
   runtime.
 - **New:** signed logs in a causal graph, spaces with flat names, files with
   fixed IDs, grants and views, strong removal, checks on writes, chunks,
   checkpoints, keys that follow prefixes, `wasi:filesystem` for apps, and watch.
-- **Order:** first the data model in `fos-sim`, starting from the first test,
+- **Order:** first the data model in `fileos-sim`, starting from the first test,
   "a node reads its own write while it is offline"; then storage, network and
-  the runtime; last, the old `fos-fs`, `fos-sync` and engine are taken away.
-- **Done:** the data model is in the crate `fos-space` (sans-IO, portable),
-  with tests in `fos-sim`: signed logs in a causal graph, spaces with flat
+  the runtime; last, the old `fileos-fs`, `fileos-sync` and engine are taken away.
+- **Done:** the data model is in the crate `fileos-space` (sans-IO, portable),
+  with tests in `fileos-sim`: signed logs in a causal graph, spaces with flat
   names, files with fixed IDs and versions side by side, grants with strong
   removal, groups (owned by keys or by groups, and in groups), content in
   chunks cut where the content says, checkpoints with compaction, snapshots
   and retention, and sync between nodes. The store, the network, the node and
-  the runtime use it, and the old `fos-fs`, `fos-sync` and engine are gone.
+  the runtime use it, and the old `fileos-fs`, `fileos-sync` and engine are gone.
   Encryption is built too: keys that follow prefixes, data keys wrapped
   under them, HPKE, new epochs when access is taken back, and keys dropped
   at checkpoints. Next: checks on writes, views and `wasi:filesystem`.

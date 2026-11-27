@@ -9,7 +9,7 @@ fileOS 是一个面向个人及其所属小群体的复制文件系统。系统�
 
 ## 系统模型
 
-**主体。** 设备、节点和 App 以 ed25519 公钥标识。组是没有密钥的主体，由成员代表它行事，它的所有者是一个密钥或另一个组。一个人是一个身份（`did:fos`），拥有若干节点。
+**主体。** 设备、节点和 App 以 ed25519 公钥标识。组是没有密钥的主体，由成员代表它行事，它的所有者是一个密钥或另一个组。一个人是一个身份（`did:fileos`），拥有若干节点。
 
 **空间。** 空间是复制、所有权和保留的基本单位，它的 ID 是第一条记录的哈希。每个写入者在空间中有一条签名的、只能追加的日志；每条记录写明它在哪些记录之后，因此所有日志构成一个因果图。状态只由记录的集合决定，所以拥有相同记录的副本处于相同状态（强最终一致性），每个节点离线时也能写入。
 
@@ -28,23 +28,23 @@ fileOS 是一个面向个人及其所属小群体的复制文件系统。系统�
 使用 devenv shell（`direnv allow`）：
 
 ```sh
-cargo build -p fos                       # 程序
+cargo build -p fileos                       # 程序
 apps                                     # App，放在 target/apps/
-fos node init                            # 在 ~/.fileos 创建节点
-fos node run                             # 网络、App 和网关
+fileos node init                            # 在 ~/.fileos 创建节点
+fileos node run                             # 网络、App 和网关
 ```
 
 在另一个终端里：
 
 ```sh
-fos space new /photos                    # 创建空间，挂载到 /photos
-fos app install target/apps/Photos.app   # 安装照片 App
-fos fs put /photos/cat.png cat.png
-fos fs ls /photos
-fos node status
+fileos space new /photos                    # 创建空间，挂载到 /photos
+fileos app install target/apps/Photos.app   # 安装照片 App
+fileos fs put /photos/cat.png cat.png
+fileos fs ls /photos
+fileos node status
 ```
 
-把 `/photos` 分享给另一个节点：在这里运行 `fos space grant /photos <对方节点密钥> read-write`，在对方那里运行 `fos space mount <空间 ID> /photos`。
+把 `/photos` 分享给另一个节点：在这里运行 `fileos space grant /photos <对方节点密钥> read-write`，在对方那里运行 `fileos space mount <空间 ID> /photos`。
 
 ## 已有功能
 
@@ -61,7 +61,7 @@ fos node status
 - [ ] **App**
   - [x] App 以 `.app` 文件提供（本身不压缩的 zip：manifest，加上 `tar.zst` 里的其余文件）
   - [x] 每个 App 有自己的密钥，只得到 manifest 申请的权限，运行时有 fuel 和内存限制
-  - [x] 每个 App 只能看到自己的视图：它知道的名字下的挂载、私有数据，以及运行时授予的授权（`fos app grant`）
+  - [x] 每个 App 只能看到自己的视图：它知道的名字下的挂载、私有数据，以及运行时授予的授权（`fileos app grant`）
   - [x] App 通过 `wasi:http` 在自己的 origin（`<app-id>.localhost`）上响应 HTTP
   - [x] 照片 App：图库、上传，以及图片尺寸的索引
   - [x] 聊天 App：聊天室中每条消息一个文件，放在你所分享的空间里
@@ -73,19 +73,21 @@ fos node status
   - [x] 加密：跟着前缀的密钥、HPKE（RFC 9180）、收回访问时换新密钥、删除时销毁密钥
   - [ ] QUIC
 - [ ] **身份**
-  - [x] 一个人一个身份：一个 DID（`did:fos`，即没有目录服务器的 `did:plc` 方法），与节点的密钥分开
+  - [x] 一个人一个身份：一个 DID（`did:fileos`，即没有目录服务器的 `did:plc` 方法），与节点的密钥分开
   - [x] 轮换密钥和签名密钥；节点证书保存在身份空间中
-  - [x] 一个身份代表它的所有设备：给一个 `did:fos` 的授权，就是给它每个节点的授权
+  - [x] 一个身份代表它的所有设备：给一个 `did:fileos` 的授权，就是给它每个节点的授权
   - [ ] 用域名作为身份的另一个名字（和 AT Protocol 的 handle 一样）
   - [ ] 通过会合节点找到一个身份的所有节点
 - [x] **运行节点**
-  - [x] 一个程序（`fos`）加一个数据目录
+  - [x] 一个程序（`fileos`）加一个数据目录
   - [x] 本地网关和命令行
 
 ## 文档
+
+阅读 [fileOS 文档](https://docs.fileos.app/zh-cn/)。
 
 [用户手册](docs/src/content/docs/zh-cn/user/index.md) · [运行节点](docs/src/content/docs/zh-cn/admin/index.md) · [架构](docs/src/content/docs/zh-cn/dev/fileos.md) · [编写 App](docs/src/content/docs/zh-cn/dev/apps.md) · [参与贡献](CONTRIBUTING.zh-CN.md)
 
 ## 许可证
 
-[AGPL-3.0-only](LICENSE)，附[插件例外](PLUGIN-EXCEPTION.zh-CN.md)。App SDK（`apps/fos-app`）和 `wit/` 里的接口采用 MIT OR Apache-2.0。
+[AGPL-3.0-only](LICENSE)，附[插件例外](PLUGIN-EXCEPTION.zh-CN.md)。App SDK（`apps/fileos-app`）和 `wit/` 里的接口采用 MIT OR Apache-2.0。

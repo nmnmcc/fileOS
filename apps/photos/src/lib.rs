@@ -12,11 +12,11 @@
 
 use std::fmt::Write as _;
 
-use fos_app::app::exports::fos::app::events::Guest;
-use fos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
-use fos_app::app::fos::app::{access, fs, kv, log};
-use fos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
-use fos_app::http::{Request, Response};
+use fileos_app::app::exports::fileos::app::events::Guest;
+use fileos_app::app::exports::wasi::http::incoming_handler::Guest as Http;
+use fileos_app::app::fileos::app::{access, fs, kv, log};
+use fileos_app::app::wasi::http::types::{IncomingRequest, ResponseOutparam};
+use fileos_app::http::{Request, Response};
 
 struct Photos;
 
@@ -24,7 +24,7 @@ struct Photos;
 /// themselves, and upload.
 impl Http for Photos {
     fn handle(request: IncomingRequest, out: ResponseOutparam) {
-        fos_app::http::serve(request, out, route);
+        fileos_app::http::serve(request, out, route);
     }
 }
 
@@ -46,8 +46,8 @@ fn route(req: &Request) -> Response {
                 Err(e) => Response::text(403, format!("cannot ask: {e}\n")),
             }
         }
-        ("POST", "/.well-known/fos/schedule/reindex")
-            if req.header("fos-event") == Some("schedule") =>
+        ("POST", "/.well-known/fileos/schedule/reindex")
+            if req.header("fileos-event") == Some("schedule") =>
         {
             reindex()
         }
@@ -238,7 +238,7 @@ fn index(path: &str) {
     }
 }
 
-fos_app::app::export_app!(Photos);
+fileos_app::app::export_app!(Photos);
 
 /// The width and height of a PNG or JPEG image, from its header.
 #[must_use]

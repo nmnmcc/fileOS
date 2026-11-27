@@ -5,8 +5,7 @@ import sitemap from "@astrojs/sitemap";
 import starlight from "@astrojs/starlight";
 import starlightSidebarTopics from "starlight-sidebar-topics";
 
-// An empty value, as in a pull request build, is the same as no value.
-const site = process.env.DOCS_SITE_URL || undefined;
+const site = process.env.DOCS_SITE_URL || "https://docs.fileos.app";
 // The path the site is served under, such as /<repository> on GitHub Pages.
 const base = process.env.DOCS_BASE || undefined;
 const defaultLocale = "en-us";
