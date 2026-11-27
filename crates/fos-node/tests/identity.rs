@@ -119,6 +119,22 @@ async fn an_identity_has_its_nodes() {
     .await;
     laptop.identity_remove_node(vps.key()).unwrap();
     assert_eq!(laptop.identity().unwrap().nodes, [laptop.key()]);
+    // The VPS is no longer a node of the identity in the shared space: its
+    // own node refuses its write once the revocation comes, and a write
+    // that went out before has no effect on the laptop.
+    let rejected = |node: &Node| {
+        node.status()
+            .spaces
+            .iter()
+            .find(|s| s.id == shared)
+            .map_or(0, |s| s.rejected)
+    };
+    let before = rejected(&laptop);
+    until("the VPS's write is refused", || {
+        vps.put("/shared/after.txt", b"x").is_err() || rejected(&laptop) > before
+    })
+    .await;
+    laptop.read("/shared/after.txt").unwrap_err();
     until("the VPS sees that it was taken away", || {
         vps.identity().is_some_and(|id| id.nodes == [laptop.key()])
     })

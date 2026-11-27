@@ -496,6 +496,14 @@ impl Person {
         }
     }
 
+    /// The revocation of `node`.
+    fn unvouch(&self, node: &SecretKey) -> Act {
+        let r = fos_id::NodeRevocation::sign(&self.did(), &self.signing, node.public());
+        Act::Unvouch {
+            revocation: fos_core::Bytes(r.to_bytes()),
+        }
+    }
+
     /// A new signing key, as after a phone was lost.
     fn new_signing_key(&mut self, n: u8) {
         self.signing = key(n);
@@ -575,4 +583,56 @@ fn a_grant_to_a_person_is_for_every_node_of_that_person() {
     assert!(fresh.may(who(&laptop), Permission::FilesRead, &all));
     assert!(!fresh.may(who(&phone), Permission::FilesRead, &all));
     assert_eq!(fresh.digest(), space.digest());
+}
+
+#[test]
+fn one_device_is_taken_back_and_the_others_keep_access() {
+    let mom = key(1);
+    let ming = Person::new(10);
+    let (laptop, phone) = (key(20), key(21));
+    let (mut space, _) = Space::create(who(&mom), &mom, 0, 1);
+    space
+        .write(
+            &mom,
+            0,
+            vec![Act::Give {
+                to: ming.principal(),
+                effect: Effect::Allow,
+                permissions: vec![Permission::FilesRead],
+                on: prefix(""),
+            }],
+        )
+        .unwrap();
+    space
+        .write(&mom, 0, vec![ming.vouch(&laptop), ming.vouch(&phone)])
+        .unwrap();
+    let all = prefix("");
+    assert!(space.may(who(&phone), Permission::FilesRead, &all));
+
+    // A revocation signed by someone else is not taken.
+    let fake = fos_id::NodeRevocation::sign(&ming.did(), &mom, phone.public());
+    space
+        .write(
+            &mom,
+            0,
+            vec![Act::Unvouch {
+                revocation: fos_core::Bytes(fake.to_bytes()),
+            }],
+        )
+        .unwrap_err();
+
+    space.write(&laptop, 0, vec![ming.unvouch(&phone)]).unwrap();
+    assert!(!space.may(who(&phone), Permission::FilesRead, &all));
+    assert!(space.may(who(&laptop), Permission::FilesRead, &all));
+    // The old certificate does not bring it back.
+    space.write(&phone, 0, vec![ming.vouch(&phone)]).unwrap();
+    assert!(!space.may(who(&phone), Permission::FilesRead, &all));
+
+    space.checkpoint(&mom, 1, Retention::default()).unwrap();
+    assert!(space.compact());
+    let fresh = Space::from_snapshot(space.base().unwrap().clone()).unwrap();
+    let mut fresh2 = fresh.clone();
+    fresh2.write(&mom, 2, vec![ming.vouch(&phone)]).unwrap();
+    assert!(!fresh2.may(who(&phone), Permission::FilesRead, &all));
+    assert!(fresh.may(who(&laptop), Permission::FilesRead, &all));
 }

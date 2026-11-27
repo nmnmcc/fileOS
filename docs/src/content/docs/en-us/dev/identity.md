@@ -101,17 +101,21 @@ signing key makes a new identity space, and the operation names it.
 3. On the new node: `fos identity join <space ID>`. It mounts the space at
    `/identity`, and gets it from the first node.
 
-`fos identity remove-node <node key>` deletes the certificate and takes back
-the node's grant on the identity space.
+`fos identity remove-node <node key>` deletes the certificate, takes back the
+node's grant on the identity space, and puts a revocation signed by the
+signing key at `/revoked/<node>`. Every node of the identity writes the
+revocation into the spaces it has, so the removed node loses what it had as a
+node of the person, everywhere. To add it again, the identity needs a new
+signing key.
 
 ### A grant to a person
 
 `fos space grant /family did:fos:… read-write` gives the permissions to the
 person, so to every node of their identity, also to nodes added later. Each
 node shows its certificate when it connects; a node that has the space writes
-a vouch for it (see [The model](../access/#principals)). To take a lost device
-away from every space at once, the identity gets a new signing key, and gives
-new certificates to the nodes it keeps.
+a vouch for it (see [The model](../access/#principals)). `fos identity
+remove-node` takes one device away from every space; a new signing key takes
+all old certificates away at once.
 
 ### Identity links
 

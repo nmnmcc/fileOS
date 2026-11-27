@@ -90,8 +90,10 @@ shows that it is one of the person's nodes: the operations of the DID log and
 the node's certificate, signed by the signing key of the identity. A vouch
 proves itself, so anyone may write it. When a node connects, it shows its
 proof, and a node that has a space naming that person writes the vouch, so
-the new node gets the space. A new signing key ends every certificate of the
-old one (for example after a phone is lost).
+the new node gets the space. To take one device back, the identity signs a
+**revocation**; nodes write it into each space as an unvouch, and the old
+certificate never counts again there. A new signing key ends every
+certificate of the old one at once.
 
 **Ownership is recursive.** Every space has exactly one owner, a person or a
 group. Every group has exactly one owner and has members. The chain ends at a

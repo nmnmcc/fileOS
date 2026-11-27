@@ -149,6 +149,9 @@ pub enum Act {
     /// log, and a node certificate signed by the signing key of the identity.
     /// Every node checks it with nothing else, so anyone may write it.
     Vouch { ops: Vec<Bytes>, cert: Bytes },
+    /// Shows that a node is no longer a node of an identity: a revocation
+    /// signed by the signing key of the identity. Anyone may write it.
+    Unvouch { revocation: Bytes },
     /// Makes the state in the past of this entry final, and signs its hash
     /// (see `space::Summary`). Made by the owner, or by a principal with
     /// `space.checkpoint` on the whole space. It is alone in its entry.

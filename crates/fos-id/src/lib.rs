@@ -457,6 +457,64 @@ impl NodeCert {
     }
 }
 
+/// A statement, signed by the signing key of an identity, that a node is no
+/// longer one of its nodes.
+///
+/// It ends the certificate of that node for good; to take the node back, the
+/// identity uses a new signing key.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeRevocation {
+    pub version: u64,
+    pub did: String,
+    pub node: PublicKey,
+    pub sig: Signature,
+}
+
+fn revocation_message(version: u64, did: &str, node: PublicKey) -> Vec<u8> {
+    encode(&("fileOS node revocation", version, did, node))
+}
+
+impl NodeRevocation {
+    /// The revocation of `node` as a node of `did`, signed by the signing
+    /// key of the identity.
+    pub fn sign(did: &str, signing_key: &SecretKey, node: PublicKey) -> Self {
+        Self {
+            version: VERSION,
+            did: did.to_string(),
+            node,
+            sig: signing_key.sign(&revocation_message(VERSION, did, node)),
+        }
+    }
+
+    /// Says if `signing_key` signed this revocation.
+    pub fn verify(&self, signing_key: PublicKey) -> bool {
+        self.version == VERSION
+            && signing_key.verify(
+                &revocation_message(self.version, &self.did, self.node),
+                &self.sig,
+            )
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        encode(self)
+    }
+
+    /// # Errors
+    ///
+    /// When the bytes are not a revocation.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        decode(bytes)
+    }
+}
+
+/// The directory of node revocations, in the identity space.
+pub const REVOKED: &str = "/revoked";
+
+/// The path of the revocation of `node` in the identity space.
+pub fn revocation_path(node: PublicKey) -> String {
+    format!("{REVOKED}/{node}")
+}
+
 // Links
 
 /// An identity as people give it to each other: a DID URL with hints,

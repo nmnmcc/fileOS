@@ -29,7 +29,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
-use fos_id::{NodeCert, Op as DidOp};
+use fos_id::{NodeCert, NodeRevocation, Op as DidOp};
 use serde::{Deserialize, Serialize};
 
 use crate::entry::{
@@ -103,6 +103,8 @@ pub struct Summary {
     /// For each identity: the operations of its DID log, and the node
     /// certificates that are still good.
     pub identities: Vec<(Hash, Vec<Bytes>, Vec<Bytes>)>,
+    /// Node revocations that are good.
+    pub revocations: Vec<Bytes>,
     /// For each author: its last entry and the place of it.
     pub logs: Vec<(PublicKey, Hash, u64)>,
 }
@@ -189,6 +191,8 @@ struct State {
     groups: Vec<(usize, Id, Principal)>,
     /// (place of the entry, the identity, its DID operations, a certificate)
     vouches: Vec<(usize, Hash, Vec<DidOp>, Option<NodeCert>)>,
+    /// (place of the entry, the identity, a node revocation)
+    unvouches: Vec<(usize, Hash, NodeRevocation)>,
     /// The result of step 1.
     causal: Vec<bool>,
     /// Entries made at the same time as a checkpoint (step 2).
@@ -338,6 +342,15 @@ impl View<'_> {
             }
     }
 
+    /// Says if a revocation that counts, signed by `signing`, ends `key` as a
+    /// node of `did`.
+    fn revoked(&self, key: PublicKey, did: Hash, signing: PublicKey) -> bool {
+        self.state
+            .unvouches
+            .iter()
+            .any(|(at, d, r)| *d == did && r.node == key && self.counts(*at) && r.verify(signing))
+    }
+
     /// The operations of the DID log of `did` that count at this point.
     fn did_ops(&self, did: Hash) -> Vec<DidOp> {
         let mut ops: Vec<DidOp> = Vec::new();
@@ -370,6 +383,9 @@ impl View<'_> {
         let Some(signing) = self.signing_key(did, &[]) else {
             return false;
         };
+        if self.revoked(key, did, signing) {
+            return false;
+        }
         self.state.vouches.iter().any(|(at, d, _, cert)| {
             *d == did
                 && self.counts(*at)
@@ -525,11 +541,23 @@ impl View<'_> {
                 Some((did, ops, certs))
             })
             .collect();
+        let mut revocations: Vec<Bytes> = self
+            .state
+            .unvouches
+            .iter()
+            .filter(|(at, d, r)| {
+                self.counts(*at) && self.signing_key(*d, &[]).is_some_and(|s| r.verify(s))
+            })
+            .map(|(_, _, r)| Bytes(r.to_bytes()))
+            .collect();
+        revocations.sort_by(|a, b| a.0.cmp(&b.0));
+        revocations.dedup();
         Summary {
             files,
             grants,
             groups,
             identities,
+            revocations,
             logs: logs.into_iter().map(|(k, (h, s))| (k, h, s)).collect(),
         }
     }
@@ -665,6 +693,16 @@ impl View<'_> {
                         return Err(
                             "a vouch whose certificate is not signed by the signing key".into()
                         );
+                    }
+                }
+                Act::Unvouch { revocation } => {
+                    let r = NodeRevocation::from_bytes(&revocation.0).map_err(|e| e.0)?;
+                    let did = fos_id::did_hash(&r.did).map_err(|e| e.0)?;
+                    let signing = self
+                        .signing_key(did, &[])
+                        .ok_or("a revocation for an identity that is not shown here")?;
+                    if !r.verify(signing) {
+                        return Err("a revocation not signed by the signing key".into());
                     }
                 }
                 Act::Checkpoint { state, retention } => {
@@ -1075,6 +1113,13 @@ impl Space {
             for (id, owner) in &base.snapshot.summary.groups {
                 state.groups.push((BASE, *id, *owner));
             }
+            for r in &base.snapshot.summary.revocations {
+                if let Ok(r) = NodeRevocation::from_bytes(&r.0)
+                    && let Ok(did) = fos_id::did_hash(&r.did)
+                {
+                    state.unvouches.push((BASE, did, r));
+                }
+            }
             for (did, ops, certs) in &base.snapshot.summary.identities {
                 let ops: Vec<DidOp> = ops
                     .iter()
@@ -1123,6 +1168,13 @@ impl Space {
                     }),
                     Act::Take { grant } => state.takes.push((at, *grant)),
                     Act::Group { owner } => state.groups.push((at, id, *owner)),
+                    Act::Unvouch { revocation } => {
+                        if let Ok(r) = NodeRevocation::from_bytes(&revocation.0)
+                            && let Ok(did) = fos_id::did_hash(&r.did)
+                        {
+                            state.unvouches.push((at, did, r));
+                        }
+                    }
                     Act::Vouch { ops, cert } => {
                         let cert = NodeCert::from_bytes(&cert.0).ok();
                         if let Some(did) = cert.as_ref().and_then(|c| fos_id::did_hash(&c.did).ok())

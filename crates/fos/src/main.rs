@@ -376,8 +376,8 @@ fn identity(client: &Client, command: Option<IdentityCommand>, dir: &Path) -> Re
         Some(IdentityCommand::RemoveNode { key }) => {
             client.call("DELETE", &format!("/v0/id/node?key={}", enc(&key)), &[])?;
             println!(
-                "took away node {key}\nIts certificate is deleted, and its grant on the \
-                 identity space is taken back."
+                "took away node {key}\nIts certificate is deleted and revoked: it is no \
+                 longer a node of the identity in any space."
             );
             Ok(())
         }
