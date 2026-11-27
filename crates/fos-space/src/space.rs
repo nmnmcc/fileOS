@@ -28,7 +28,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use fos_core::{Error, Hash, PublicKey, SecretKey};
+use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
+use fos_id::{NodeCert, Op as DidOp};
 use serde::{Deserialize, Serialize};
 
 use crate::entry::{
@@ -99,6 +100,9 @@ pub struct Summary {
     pub grants: Vec<Given>,
     /// Every group, with its owner.
     pub groups: Vec<(Id, Principal)>,
+    /// For each identity: the operations of its DID log, and the node
+    /// certificates that are still good.
+    pub identities: Vec<(Hash, Vec<Bytes>, Vec<Bytes>)>,
     /// For each author: its last entry and the place of it.
     pub logs: Vec<(PublicKey, Hash, u64)>,
 }
@@ -183,6 +187,8 @@ struct State {
     takes: Vec<(usize, Id)>,
     /// (place of the entry, the group, its owner)
     groups: Vec<(usize, Id, Principal)>,
+    /// (place of the entry, the identity, its DID operations, a certificate)
+    vouches: Vec<(usize, Hash, Vec<DidOp>, Option<NodeCert>)>,
     /// The result of step 1.
     causal: Vec<bool>,
     /// Entries made at the same time as a checkpoint (step 2).
@@ -324,8 +330,53 @@ impl View<'_> {
                 Principal::Group(g) => {
                     self.holds_inner(who, Permission::Member, &Target::Group(g), depth + 1)
                 }
+                Principal::Identity(d) => match who {
+                    Principal::Key(k) => self.vouched(k, d),
+                    _ => false,
+                },
                 Principal::Key(_) => false,
             }
+    }
+
+    /// The operations of the DID log of `did` that count at this point.
+    fn did_ops(&self, did: Hash) -> Vec<DidOp> {
+        let mut ops: Vec<DidOp> = Vec::new();
+        for (at, d, more, _) in &self.state.vouches {
+            if *d == did && self.counts(*at) {
+                for op in more {
+                    if !ops.contains(op) {
+                        ops.push(op.clone());
+                    }
+                }
+            }
+        }
+        ops
+    }
+
+    /// The signing key of `did` now, from the DID operations that count.
+    fn signing_key(&self, did: Hash, more: &[DidOp]) -> Option<PublicKey> {
+        let mut ops = self.did_ops(did);
+        ops.extend(more.iter().cloned());
+        fos_id::resolve(&fos_id::did_of(did), &ops)
+            .ok()?
+            .state?
+            .signing_key()
+    }
+
+    /// Says if `key` is a node of `did` at this point: a `Vouch` that counts
+    /// has a certificate for it, signed by the signing key of now. A new
+    /// signing key ends every certificate of the old one.
+    fn vouched(&self, key: PublicKey, did: Hash) -> bool {
+        let Some(signing) = self.signing_key(did, &[]) else {
+            return false;
+        };
+        self.state.vouches.iter().any(|(at, d, _, cert)| {
+            *d == did
+                && self.counts(*at)
+                && cert
+                    .as_ref()
+                    .is_some_and(|c| c.node == key && c.verify(signing))
+        })
     }
 
     /// Chains of grants and groups longer than this give nothing. So a cycle
@@ -452,10 +503,33 @@ impl View<'_> {
             .map(|(_, id, owner)| (*id, *owner))
             .collect();
         groups.sort();
+        let dids: BTreeSet<Hash> = self.state.vouches.iter().map(|v| v.1).collect();
+        let identities = dids
+            .into_iter()
+            .filter_map(|did| {
+                let ops = self.did_ops(did);
+                let signing = self.signing_key(did, &[])?;
+                let mut certs: Vec<Bytes> = self
+                    .state
+                    .vouches
+                    .iter()
+                    .filter(|(at, d, _, _)| *d == did && self.counts(*at))
+                    .filter_map(|(_, _, _, c)| c.clone())
+                    .filter(|c| c.verify(signing))
+                    .map(|c| Bytes(c.to_bytes()))
+                    .collect();
+                certs.sort_by(|a, b| a.0.cmp(&b.0));
+                certs.dedup();
+                let mut ops: Vec<Bytes> = ops.iter().map(|o| Bytes(o.to_bytes())).collect();
+                ops.sort_by(|a, b| a.0.cmp(&b.0));
+                Some((did, ops, certs))
+            })
+            .collect();
         Summary {
             files,
             grants,
             groups,
+            identities,
             logs: logs.into_iter().map(|(k, (h, s))| (k, h, s)).collect(),
         }
     }
@@ -571,6 +645,26 @@ impl View<'_> {
                     }
                     if !self.acts_as(who, *owner, 0) {
                         return Err(format!("{author} does not act as the owner {owner:?}"));
+                    }
+                }
+                Act::Vouch { ops, cert } => {
+                    if ops.len() > 64 {
+                        return Err("a vouch with too many DID operations".into());
+                    }
+                    let ops: Vec<DidOp> = ops
+                        .iter()
+                        .map(|o| DidOp::from_bytes(&o.0))
+                        .collect::<Result<_, _>>()
+                        .map_err(|e| e.0)?;
+                    let cert = NodeCert::from_bytes(&cert.0).map_err(|e| e.0)?;
+                    let did = fos_id::did_hash(&cert.did).map_err(|e| e.0)?;
+                    let signing = self
+                        .signing_key(did, &ops)
+                        .ok_or("a vouch whose DID log has no signing key")?;
+                    if !cert.verify(signing) {
+                        return Err(
+                            "a vouch whose certificate is not signed by the signing key".into()
+                        );
                     }
                 }
                 Act::Checkpoint { state, retention } => {
@@ -981,6 +1075,18 @@ impl Space {
             for (id, owner) in &base.snapshot.summary.groups {
                 state.groups.push((BASE, *id, *owner));
             }
+            for (did, ops, certs) in &base.snapshot.summary.identities {
+                let ops: Vec<DidOp> = ops
+                    .iter()
+                    .filter_map(|o| DidOp::from_bytes(&o.0).ok())
+                    .collect();
+                state.vouches.push((BASE, *did, ops, None));
+                for c in certs {
+                    state
+                        .vouches
+                        .push((BASE, *did, Vec::new(), NodeCert::from_bytes(&c.0).ok()));
+                }
+            }
             for given in &base.snapshot.summary.grants {
                 state.gives.push(Giv {
                     at: BASE,
@@ -1017,6 +1123,17 @@ impl Space {
                     }),
                     Act::Take { grant } => state.takes.push((at, *grant)),
                     Act::Group { owner } => state.groups.push((at, id, *owner)),
+                    Act::Vouch { ops, cert } => {
+                        let cert = NodeCert::from_bytes(&cert.0).ok();
+                        if let Some(did) = cert.as_ref().and_then(|c| fos_id::did_hash(&c.did).ok())
+                        {
+                            let ops = ops
+                                .iter()
+                                .filter_map(|o| DidOp::from_bytes(&o.0).ok())
+                                .collect();
+                            state.vouches.push((at, did, ops, cert));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1396,6 +1513,27 @@ impl Space {
     /// as its owner).
     pub fn is_in(&self, who: Principal, group: Id) -> bool {
         self.now().acts_as(who, Principal::Group(group), 0)
+    }
+
+    /// Says if `key` is a node of the identity `did` now, as a `Vouch` in
+    /// this space shows.
+    pub fn is_node_of(&self, key: PublicKey, did: Hash) -> bool {
+        self.now().vouched(key, did)
+    }
+
+    /// The identities that this space names: its owner, and the receivers of
+    /// its grants.
+    pub fn identities(&self) -> BTreeSet<Hash> {
+        let mut out = BTreeSet::new();
+        if let Principal::Identity(d) = self.owner {
+            out.insert(d);
+        }
+        for g in &self.state.gives {
+            if let Principal::Identity(d) = g.given.to {
+                out.insert(d);
+            }
+        }
+        out
     }
 
     /// Says if `who` may read `file` now.

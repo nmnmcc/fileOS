@@ -443,3 +443,136 @@ fn groups_in_groups_and_cycles() {
     assert!(space.is_in(who(&ann), a), "Ann is in b, which is in a");
     assert!(!space.is_in(who(&stranger), a), "the cycle gives nothing");
 }
+
+/// A person: a DID log with one rotation key and a signing key.
+struct Person {
+    rotation: SecretKey,
+    ops: Vec<fos_id::Op>,
+    signing: SecretKey,
+}
+
+impl Person {
+    fn new(n: u8) -> Self {
+        let rotation = key(n);
+        let signing = key(n + 100);
+        let genesis = fos_id::Op::genesis(Self::state(&rotation, &signing), &rotation).unwrap();
+        Self {
+            rotation,
+            ops: vec![genesis],
+            signing,
+        }
+    }
+
+    fn state(rotation: &SecretKey, signing: &SecretKey) -> fos_id::State {
+        fos_id::State {
+            rotation_keys: vec![fos_id::did_key(rotation.public())],
+            verification_methods: [(
+                fos_id::SIGNING_METHOD.to_string(),
+                fos_id::did_key(signing.public()),
+            )]
+            .into(),
+            ..fos_id::State::default()
+        }
+    }
+
+    fn did(&self) -> String {
+        self.ops[0].did()
+    }
+
+    fn principal(&self) -> Principal {
+        Principal::Identity(self.ops[0].hash())
+    }
+
+    /// A vouch that `node` is a node of this person.
+    fn vouch(&self, node: &SecretKey) -> Act {
+        let cert = fos_id::NodeCert::sign(&self.did(), &self.signing, node.public());
+        Act::Vouch {
+            ops: self
+                .ops
+                .iter()
+                .map(|o| fos_core::Bytes(o.to_bytes()))
+                .collect(),
+            cert: fos_core::Bytes(cert.to_bytes()),
+        }
+    }
+
+    /// A new signing key, as after a phone was lost.
+    fn new_signing_key(&mut self, n: u8) {
+        self.signing = key(n);
+        let prev = self.ops.last().unwrap().hash();
+        let op = fos_id::Op::sign(
+            fos_id::Change::Update(Self::state(&self.rotation, &self.signing)),
+            Some(prev),
+            &self.rotation,
+        );
+        self.ops.push(op);
+    }
+}
+
+#[test]
+fn a_grant_to_a_person_is_for_every_node_of_that_person() {
+    let mom = key(1);
+    let mut ming = Person::new(10);
+    let (laptop, phone, stranger) = (key(20), key(21), key(22));
+    let (mut space, _) = Space::create(who(&mom), &mom, 0, 1);
+    space
+        .write(
+            &mom,
+            0,
+            vec![Act::Give {
+                to: ming.principal(),
+                effect: Effect::Allow,
+                permissions: vec![Permission::FilesRead, Permission::FilesCreate],
+                on: prefix(""),
+            }],
+        )
+        .unwrap();
+    let all = prefix("");
+    assert!(!space.may(who(&laptop), Permission::FilesRead, &all));
+
+    // Anyone may write a vouch: it proves itself.
+    space.write(&mom, 0, vec![ming.vouch(&laptop)]).unwrap();
+    space.write(&laptop, 0, vec![ming.vouch(&phone)]).unwrap();
+    assert!(space.may(who(&laptop), Permission::FilesRead, &all));
+    assert!(space.may(who(&phone), Permission::FilesRead, &all));
+    assert!(!space.may(who(&stranger), Permission::FilesRead, &all));
+    space
+        .write(&phone, 0, vec![create("from-phone", b"hi")])
+        .unwrap();
+
+    // A certificate signed by someone else is not taken.
+    let fake = fos_id::NodeCert::sign(&ming.did(), &stranger, stranger.public());
+    space
+        .write(
+            &stranger,
+            0,
+            vec![Act::Vouch {
+                ops: ming
+                    .ops
+                    .iter()
+                    .map(|o| fos_core::Bytes(o.to_bytes()))
+                    .collect(),
+                cert: fos_core::Bytes(fake.to_bytes()),
+            }],
+        )
+        .unwrap_err();
+
+    // A new signing key ends the old certificates: the phone was lost.
+    ming.new_signing_key(30);
+    space.write(&laptop, 0, vec![ming.vouch(&laptop)]).unwrap();
+    assert!(space.may(who(&laptop), Permission::FilesRead, &all));
+    assert!(!space.may(who(&phone), Permission::FilesRead, &all));
+    space
+        .write(&phone, 0, vec![create("after", b"x")])
+        .unwrap_err();
+
+    // It all stays after compaction.
+    space.checkpoint(&mom, 1, Retention::default()).unwrap();
+    assert!(space.compact());
+    assert!(space.may(who(&laptop), Permission::FilesRead, &all));
+    assert!(!space.may(who(&phone), Permission::FilesRead, &all));
+    let fresh = Space::from_snapshot(space.base().unwrap().clone()).unwrap();
+    assert!(fresh.may(who(&laptop), Permission::FilesRead, &all));
+    assert!(!fresh.may(who(&phone), Permission::FilesRead, &all));
+    assert_eq!(fresh.digest(), space.digest());
+}

@@ -5,7 +5,7 @@ description: Seven ideas (content, files, spaces, principals, grants, views and 
 
 :::note[Status: built in part]
 Built: content, files, spaces, principals (keys and groups) and grants, with
-strong removal (in `fos-space`). Not built yet: people as principals, views,
+strong removal, and people as principals (in `fos-space`). Not built yet: views,
 asking at run time, sharing between apps, checks on writes, and the `watch`
 options and `schedule` events. Today an app gets the paths of its manifest
 when it is installed.
@@ -83,6 +83,15 @@ kept apart. Inside, all principals share one model:
 The state of a principal (a DID log, the members of a group) is kept and
 synced as data, but it is signed by the principal's own keys and checked by
 the kernel.
+
+**A person acts through their nodes.** A grant can name a person by their
+DID. A node acts for that person in a space once a **vouch** in the space
+shows that it is one of the person's nodes: the operations of the DID log and
+the node's certificate, signed by the signing key of the identity. A vouch
+proves itself, so anyone may write it. When a node connects, it shows its
+proof, and a node that has a space naming that person writes the vouch, so
+the new node gets the space. A new signing key ends every certificate of the
+old one (for example after a phone is lost).
 
 **Ownership is recursive.** Every space has exactly one owner, a person or a
 group. Every group has exactly one owner and has members. The chain ends at a

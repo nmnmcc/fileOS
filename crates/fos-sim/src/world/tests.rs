@@ -349,3 +349,63 @@ fn old_versions_get_thinner_with_age() {
     // About one an hour for a day, then one a day: about 24 + 3 + 1.
     assert!((20..=40).contains(&kept), "{kept} versions kept");
 }
+
+#[test]
+fn a_grant_to_a_person_reaches_every_device_of_that_person() {
+    let mut world = World::default();
+    let (mom, laptop, phone) = (world.add(1), world.add(2), world.add(3));
+    // Ming's identity, with the laptop and the phone as its nodes.
+    let rotation = fos_core::SecretKey::from_seed(&[50; 32]);
+    let signing = fos_core::SecretKey::from_seed(&[51; 32]);
+    let state = fos_id::State {
+        rotation_keys: vec![fos_id::did_key(rotation.public())],
+        verification_methods: [(
+            fos_id::SIGNING_METHOD.to_string(),
+            fos_id::did_key(signing.public()),
+        )]
+        .into(),
+        ..fos_id::State::default()
+    };
+    let genesis = fos_id::Op::genesis(state, &rotation).unwrap();
+    let did = genesis.did();
+    let ops = vec![fos_core::Bytes(genesis.to_bytes())];
+    for node in [laptop, phone] {
+        let cert = fos_id::NodeCert::sign(&did, &signing, world.key(node));
+        world
+            .set_identity(node, ops.clone(), fos_core::Bytes(cert.to_bytes()))
+            .unwrap();
+    }
+
+    // Mom shares a space with Ming, the person, not with one of his keys.
+    let space = world.create(mom);
+    world.put(mom, space, "hello", b"for Ming").unwrap();
+    world
+        .give_to(
+            mom,
+            space,
+            Principal::Identity(genesis.hash()),
+            &WRITE,
+            all(),
+        )
+        .unwrap();
+
+    // The phone comes online: it shows that it is Ming's, Mom's node writes a
+    // vouch for it, and the space comes.
+    world.connect(mom, phone);
+    world.follow(phone, space);
+    assert_eq!(world.read(phone, space, "hello"), [b"for Ming".to_vec()]);
+    world.put(phone, space, "reply", b"thanks").unwrap();
+    assert_eq!(world.read(mom, space, "reply"), [b"thanks".to_vec()]);
+
+    // The laptop gets it from the phone, with Mom offline.
+    world.disconnect(mom, phone);
+    world.connect(phone, laptop);
+    world.follow(laptop, space);
+    assert_eq!(world.read(laptop, space, "reply"), [b"thanks".to_vec()]);
+
+    // A node that is not Ming's gets nothing.
+    let stranger = world.add(9);
+    world.connect(mom, stranger);
+    world.follow(stranger, space);
+    assert!(world.space(stranger, space).is_none());
+}

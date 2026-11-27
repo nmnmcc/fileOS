@@ -65,6 +65,8 @@ App 做了什么不在 `fos` 里，要在 App 里看。`fos help <组>` 会进�
 
 也可以授予具体的权限，比如 `files.read,files.create`。作用在一个文件路径上的授权，在文件改名后仍然跟着这个文件；作用在目录上的授权，作用于它下面的每个名字。
 
+要分享给一个人和他的所有设备，就把访问授予他的身份，而不是某个节点密钥：`fos space grant /family did:fos:… read-write`。他的每个节点，包括以后加入的，都会拿到这个空间。
+
 `fos space grants /family` 列出授权。`fos space take /family <授权 ID>` 收回一项授权，由它转授出去的也一起收回。对方在你收回访问的同时做的事没有效果。
 
 ## 一个身份，多个节点

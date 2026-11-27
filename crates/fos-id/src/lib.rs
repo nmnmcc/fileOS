@@ -126,6 +126,42 @@ fn base32(bytes: &[u8]) -> String {
     out
 }
 
+fn unbase32(text: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    let (mut buffer, mut bits) = (0u32, 0u32);
+    for c in text.bytes() {
+        let v = BASE32.iter().position(|b| *b == c)? as u32;
+        buffer = (buffer << 5) | v;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buffer >> bits) as u8);
+        }
+    }
+    Some(out)
+}
+
+/// The hash of the first operation of `did`: the part of the DID after
+/// `did:fos:`.
+///
+/// # Errors
+///
+/// When the text is not a `did:fos` DID.
+pub fn did_hash(did: &str) -> Result<Hash, Error> {
+    let bad = || Error(format!("not a did:fos DID: {did:?}"));
+    let bytes = did
+        .strip_prefix("did:fos:")
+        .and_then(unbase32)
+        .ok_or_else(bad)?;
+    let hash = Hash::try_from(bytes.as_slice()).ok().ok_or_else(bad)?;
+    (did_of(hash) == did).then_some(hash).ok_or_else(bad)
+}
+
+/// The DID whose first operation has the hash `hash`.
+pub fn did_of(hash: Hash) -> String {
+    format!("did:fos:{}", base32(&hash.0))
+}
+
 // Operations
 
 /// A service of an identity, as in a DID document.
@@ -259,7 +295,7 @@ impl Op {
 
     /// The DID that this operation makes, if it is a first operation.
     pub fn did(&self) -> String {
-        format!("did:fos:{}", base32(&self.hash().0))
+        did_of(self.hash())
     }
 
     fn verify_sig(&self) -> bool {
@@ -506,6 +542,8 @@ mod tests {
         let did = genesis.did();
         assert!(did.starts_with("did:fos:"));
         assert_eq!(did.len(), "did:fos:".len() + 52);
+        assert_eq!(did_hash(&did).unwrap(), genesis.hash());
+        did_hash("did:fos:abc").unwrap_err();
         assert_eq!(
             dids(std::slice::from_ref(&genesis)),
             std::slice::from_ref(&did)

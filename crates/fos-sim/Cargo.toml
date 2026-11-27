@@ -13,5 +13,8 @@ publish.workspace = true
 fos-core.workspace = true
 fos-space.workspace = true
 
+[dev-dependencies]
+fos-id.workspace = true
+
 [lints]
 workspace = true

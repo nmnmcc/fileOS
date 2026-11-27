@@ -47,6 +47,11 @@ pub enum Msg {
     },
     WantContent(Hash),
     Content(Bytes),
+    /// I am a node of an identity: its DID operations and my certificate.
+    Iam {
+        ops: Vec<Bytes>,
+        cert: Bytes,
+    },
 }
 
 /// Something the caller acts on.
@@ -74,6 +79,10 @@ pub trait Contents {
     fn get(&self, hash: Hash) -> Option<Vec<u8>>;
 }
 
+/// What a node shows about its identity: the identity, the operations of
+/// its DID log, and the node's certificate.
+type Proof = (Hash, Vec<Bytes>, Bytes);
+
 /// The spaces on one node, and its peers.
 #[derive(Debug)]
 pub struct Node {
@@ -87,6 +96,14 @@ pub struct Node {
     /// The ones of them that are lists of chunks.
     lists: BTreeSet<Hash>,
     nonce: u64,
+    /// The identity this node is a node of: its DID operations and the
+    /// certificate of this node.
+    identity: Option<Proof>,
+    /// What connected peers showed about their identities.
+    proofs: BTreeMap<PublicKey, Proof>,
+    /// The newest time this node has seen, for what it writes when a
+    /// message comes (this crate has no clock).
+    time: u64,
 }
 
 impl Node {
@@ -101,6 +118,9 @@ impl Node {
             asked: BTreeSet::new(),
             lists: BTreeSet::new(),
             nonce,
+            identity: None,
+            proofs: BTreeMap::new(),
+            time: 0,
         }
     }
 
@@ -151,6 +171,103 @@ impl Node {
         let mut step = Step::default();
         step.events.push(Event::Changed(id));
         (id, step)
+    }
+
+    /// Makes this node a node of an identity: `ops` is its DID log, and
+    /// `cert` the certificate of this node. Connected peers are told.
+    ///
+    /// # Errors
+    ///
+    /// When the certificate is not for this node, or not signed by the
+    /// signing key of the DID log.
+    pub fn set_identity(&mut self, ops: Vec<Bytes>, cert: Bytes) -> Result<Step, Error> {
+        let did = Self::check_proof(self.me(), &ops, &cert)?;
+        let mut step = Step::default();
+        if self
+            .identity
+            .as_ref()
+            .is_some_and(|(d, o, c)| *d == did && *o == ops && *c == cert)
+        {
+            return Ok(step);
+        }
+        self.identity = Some((did, ops.clone(), cert.clone()));
+        for peer in &self.peers {
+            step.out.push((
+                *peer,
+                Msg::Iam {
+                    ops: ops.clone(),
+                    cert: cert.clone(),
+                },
+            ));
+        }
+        Ok(step)
+    }
+
+    /// Checks that `cert` says `node` is a node of the identity whose log
+    /// is `ops`. Gives the identity.
+    fn check_proof(node: PublicKey, ops: &[Bytes], cert: &Bytes) -> Result<Hash, Error> {
+        let cert = fos_id::NodeCert::from_bytes(&cert.0)?;
+        let did = fos_id::did_hash(&cert.did)?;
+        let ops: Vec<fos_id::Op> = ops
+            .iter()
+            .map(|o| fos_id::Op::from_bytes(&o.0))
+            .collect::<Result<_, _>>()?;
+        let signing = fos_id::resolve(&cert.did, &ops)?
+            .state
+            .and_then(|s| s.signing_key())
+            .ok_or_else(|| Error("the identity has no signing key".into()))?;
+        if cert.node != node || !cert.verify(signing) {
+            return Err(Error("the certificate is not good for this node".into()));
+        }
+        Ok(did)
+    }
+
+    /// Writes a `Vouch` for `node` into each space here that names `did` and
+    /// does not show yet that `node` is its node.
+    fn vouch(
+        &mut self,
+        did: Hash,
+        node: PublicKey,
+        ops: &[Bytes],
+        cert: &Bytes,
+        time: u64,
+        step: &mut Step,
+    ) {
+        let spaces: Vec<Hash> = self
+            .spaces
+            .values()
+            .filter(|s| s.identities().contains(&did) && !s.is_node_of(node, did))
+            .map(Space::id)
+            .collect();
+        for space in spaces {
+            let act = Act::Vouch {
+                ops: ops.to_vec(),
+                cert: cert.clone(),
+            };
+            if let Ok((_, more)) = self.write(space, time, vec![act]) {
+                step.out.extend(more.out);
+                step.events.extend(more.events);
+            }
+        }
+    }
+
+    fn last_time(&self) -> u64 {
+        self.time
+    }
+
+    /// Writes the vouches for connected peers that a space now names, for
+    /// example after a grant to their identity.
+    fn vouch_peers(&mut self, step: &mut Step) {
+        let proofs: Vec<(PublicKey, Proof)> =
+            self.proofs.iter().map(|(k, p)| (*k, p.clone())).collect();
+        let time = self.last_time();
+        for (peer, (did, ops, cert)) in proofs {
+            let before = step.out.len();
+            self.vouch(did, peer, &ops, &cert, time, step);
+            if step.out.len() > before {
+                step.out.push((peer, self.have_for(peer)));
+            }
+        }
     }
 
     /// The nodes this node is connected to.
@@ -206,10 +323,32 @@ impl Node {
             .spaces
             .get_mut(&space)
             .ok_or_else(|| Error(format!("space {space} is not here")))?;
+        self.time = self.time.max(time);
+        let mut new = Vec::new();
+        // This node shows first that it is a node of its identity, when the
+        // space names that identity.
+        if author.public() == self.key.public()
+            && let Some((did, ops, cert)) = &self.identity
+            && s.identities().contains(did)
+            && !s.is_node_of(author.public(), *did)
+        {
+            new.push(s.write(
+                author,
+                time,
+                vec![Act::Vouch {
+                    ops: ops.clone(),
+                    cert: cert.clone(),
+                }],
+            )?);
+        }
         let entry = s.write(author, time, acts)?;
+        new.push(entry.clone());
         let mut step = Step::default();
         step.events.push(Event::Changed(space));
-        self.send_on(space, std::slice::from_ref(&entry), None, &mut step);
+        self.send_on(space, &new, None, &mut step);
+        if !self.proofs.is_empty() && new.iter().any(|e| e.header.author == self.key.public()) {
+            self.vouch_peers(&mut step);
+        }
         Ok((entry, step))
     }
 
@@ -305,6 +444,15 @@ impl Node {
     pub fn connected(&mut self, peer: PublicKey) -> Step {
         let mut step = Step::default();
         self.peers.insert(peer);
+        if let Some((_, ops, cert)) = &self.identity {
+            step.out.push((
+                peer,
+                Msg::Iam {
+                    ops: ops.clone(),
+                    cert: cert.clone(),
+                },
+            ));
+        }
         step.out.push((peer, self.have_for(peer)));
         for id in &self.wanted {
             step.out.push((peer, Msg::Want(*id)));
@@ -314,6 +462,7 @@ impl Node {
 
     pub fn disconnected(&mut self, peer: PublicKey) {
         self.peers.remove(&peer);
+        self.proofs.remove(&peer);
     }
 
     /// Takes a message from a peer.
@@ -382,6 +531,14 @@ impl Node {
             }
             Msg::Entries { space, entries } => {
                 self.take_entries(from, space, entries, contents, &mut step);
+            }
+            Msg::Iam { ops, cert } => {
+                if let Ok(did) = Self::check_proof(from, &ops, &cert) {
+                    let time = self.last_time();
+                    self.vouch(did, from, &ops, &cert, time, &mut step);
+                    self.proofs.insert(from, (did, ops, cert));
+                    step.out.push((from, self.have_for(from)));
+                }
             }
             Msg::Snapshot { space, snapshot } => {
                 self.take_snapshot(from, space, *snapshot, contents, &mut step);
@@ -514,8 +671,12 @@ impl Node {
             .into_iter()
             .filter(|e| added.contains(&e.hash()))
             .collect();
+        if let Some(t) = new.iter().map(|e| e.header.time).max() {
+            self.time = self.time.max(t);
+        }
         self.ask_contents(from, space, contents, step);
         self.send_on(space, &new, Some(from), step);
+        self.vouch_peers(step);
         self.again(space, Vec::new(), step);
     }
 }

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use fos_core::SecretKey;
 use fos_id::Link;
-use fos_node::{NetConfig, Node};
+use fos_node::{NetConfig, Node, parse_permissions, parse_principal};
 
 /// Waits until `ok` is true, for at most 30 seconds.
 async fn until(what: &str, mut ok: impl FnMut() -> bool) {
@@ -81,6 +81,28 @@ async fn an_identity_has_its_nodes() {
     vps.identity_add_node(stranger).unwrap_err();
     vps.put("/identity/nodes/x", b"x").unwrap_err();
     assert_eq!(vps.list("/identity/nodes").unwrap().len(), 2);
+
+    // A space shared with the person, not with one key, reaches every node
+    // of the identity.
+    let shared = laptop.create("/shared").unwrap();
+    laptop.put("/shared/note.txt", b"for all my nodes").unwrap();
+    laptop
+        .grant_to(
+            "/shared",
+            parse_principal(&did).unwrap(),
+            &parse_permissions("read-write").unwrap(),
+        )
+        .unwrap();
+    vps.mount(shared, "/shared").unwrap();
+    until("the VPS gets the space shared with the identity", || {
+        vps.read("/shared/note.txt").is_ok()
+    })
+    .await;
+    vps.put("/shared/from-vps.txt", b"hi").unwrap();
+    until("the laptop gets the VPS's write", || {
+        laptop.read("/shared/from-vps.txt").is_ok()
+    })
+    .await;
 
     // After a restart, the laptop still holds the keys and can take the VPS away.
     drop(laptop);

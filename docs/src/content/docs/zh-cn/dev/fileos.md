@@ -218,7 +218,7 @@ wit/fos.wit      App 接口
 | 身份：`did:fos`、节点证书、身份空间                | 是                                     |
 | 通过 `wasi:http` 的 App，以及 photos 和 chat       | 是                                     |
 | 加密：跟着前缀的密钥、HPKE、crypto-shredding       | 否                                     |
-| 人作为主体（一个身份代表它的所有设备）             | 否                                     |
+| 人作为主体（一个身份代表它的所有设备）             | 是                                     |
 | App 的视图、选择器、App 之间的分享                 | 否                                     |
 | App 作为 Worker、监听选项、`wasi:filesystem`、定时 | 否                                     |
 | 用户登录（带 PKCE 和 DPoP 的 OAuth）               | 否                                     |
@@ -233,7 +233,6 @@ wit/fos.wit      App 接口
 ## 下一步
 
 1. 加密：跟着前缀的密钥、HPKE、crypto-shredding。
-2. 人作为主体：一个身份代表它的所有设备。
-3. App 的视图、选择器、App 之间的分享。
-4. App 作为 Worker：每个事件一个新实例、监听选项、定时任务。
-5. 网关的用户登录。
+2. App 的视图、选择器、App 之间的分享。
+3. App 作为 Worker：每个事件一个新实例、监听选项、定时任务。
+4. 网关的用户登录。
