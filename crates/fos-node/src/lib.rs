@@ -46,6 +46,27 @@ pub const IDENTITY_AT: &str = "/identity";
 /// The prefix of the files in the home space that say what is mounted where.
 const MOUNTS: &str = ".mounts/";
 
+/// The prefix of the files in the home space that say what each app sees:
+/// `.views/<app>/<name>` holds the space, the prefix in it, and the grant.
+const VIEWS: &str = ".views/";
+
+/// Where the private data space of each app is mounted in the home space.
+const APPDATA: &str = ".appdata/";
+
+/// One mount in the view of an app.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ViewMount {
+    /// The name the app sees, with no `/` at the start: `photos`, or
+    /// `granted/<handle>`.
+    pub name: String,
+    /// The space it stands for. The app does not see it.
+    pub space: Hash,
+    /// The name in that space it stands for. The app does not see it.
+    pub prefix: String,
+    /// The grant to the app's key that goes with it.
+    pub grant: Option<Id>,
+}
+
 /// After this many entries, a node makes a checkpoint of a space it owns and
 /// compacts it. A policy, with a default.
 const CHECKPOINT_AFTER: usize = 1000;
@@ -576,7 +597,8 @@ impl Node {
         let space;
         {
             let mut inner = self.inner();
-            app_key = inner.app_key(&bundle.manifest.id);
+            let app = bundle.manifest.id.clone();
+            app_key = inner.app_key(&app);
             let (id, step) = inner.node.create(now());
             space = id;
             inner.process(step, &self.shared.changed)?;
@@ -584,12 +606,21 @@ impl Node {
             for (path, data) in &bundle.files {
                 inner.put(None, &format!("{at}{path}"), data, &self.shared.changed)?;
             }
+            // The private data of the app: a space that its key owns, so no
+            // other app and no person has access to it unless given.
+            if inner.app_data(&app).is_none() {
+                let (data, step) = inner.node.create_as(&app_key, now());
+                inner.process(step, &self.shared.changed)?;
+                inner.mount(data, &format!("{APPDATA}{app}"), &self.shared.changed)?;
+            }
+            // Each permission in the manifest is mounted in the app's view at
+            // the name the manifest gives.
             for permission in &bundle.manifest.permissions {
-                inner.grant(
-                    None,
+                inner.give_app(
+                    &app,
                     &permission.path,
-                    Principal::Key(app_key.public()),
                     &parse_permissions(&permission.access)?,
+                    &clean(&permission.path),
                     &self.shared.changed,
                 )?;
             }
@@ -609,6 +640,59 @@ impl Node {
             key: app_key.public(),
             id,
         })
+    }
+
+    /// Gives an installed app (by the ID in its manifest) permissions on a
+    /// node path, and mounts it in the app's view at `name`, or at
+    /// `granted/<handle>` with no name. A mount at the same name is taken
+    /// back first. Gives the name in the app's view.
+    ///
+    /// # Errors
+    ///
+    /// When the path is not there, or the node may not give the permissions.
+    pub fn app_grant(
+        &self,
+        app: &str,
+        path: &str,
+        permissions: &[Permission],
+        name: Option<&str>,
+    ) -> Result<String, Error> {
+        let mut inner = self.inner();
+        let name = if let Some(n) = name {
+            clean(n)
+        } else {
+            let (space, prefix) = inner.resolve(path);
+            let handle = Hash::of_value(&(app, space, &prefix)).to_string();
+            format!("granted/{}", &handle[..12])
+        };
+        if inner.views(app).iter().any(|v| v.name == name) {
+            inner.take_app(app, &name, &self.shared.changed)?;
+        }
+        inner.give_app(app, path, permissions, &name, &self.shared.changed)?;
+        // The app hears of the files that are there already.
+        let existing = inner.files_under(path);
+        drop(inner);
+        lock(&self.shared.changed).extend(existing);
+        self.pump();
+        Ok(format!("/{name}"))
+    }
+
+    /// What an app sees: the mounts in its view.
+    pub fn app_view(&self, app: &str) -> Vec<ViewMount> {
+        self.inner().views(app)
+    }
+
+    /// Takes a mount away from an app's view, and takes back its grant.
+    ///
+    /// # Errors
+    ///
+    /// When there is no such mount.
+    pub fn app_take(&self, app: &str, name: &str) -> Result<(), Error> {
+        let result = self
+            .inner()
+            .take_app(app, &clean(name), &self.shared.changed);
+        self.pump();
+        result
     }
 
     /// The app with this ID, if it gives HTTP.
@@ -955,10 +1039,30 @@ fn pump(shared: &Shared) {
         let Some(path) = lock(&shared.changed).pop_front() else {
             return;
         };
-        let mut apps = lock(&shared.apps);
-        for app in apps.iter_mut().filter(|a| a.watches(&path)) {
-            if let Err(e) = app.on_change(&path) {
-                tracing::warn!("app {} failed on {path}: {e}", app.manifest().id);
+        // When the apps are busy, this is a write made by an app while it was
+        // told of a change: the loop that holds them takes this path next.
+        let mut apps = match shared.apps.try_lock() {
+            Ok(apps) => apps,
+            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                lock(&shared.changed).push_front(path);
+                return;
+            }
+        };
+        // Each app hears of the change at the paths of its own view.
+        let seen: Vec<Vec<String>> = {
+            let inner = lock(&shared.inner);
+            let (space, name) = inner.resolve(&path);
+            apps.iter()
+                .map(|a| inner.view_paths(&a.manifest().id, space, &name))
+                .collect()
+        };
+        for (app, paths) in apps.iter_mut().zip(seen) {
+            let paths: Vec<String> = paths.into_iter().filter(|p| app.watches(p)).collect();
+            for path in &paths {
+                if let Err(e) = app.on_change(path) {
+                    tracing::warn!("app {} failed on {path}: {e}", app.manifest().id);
+                }
             }
         }
     }
@@ -1219,10 +1323,14 @@ impl Inner {
 
     fn read(&self, who: PublicKey, path: &str) -> Result<Vec<u8>, FsError> {
         let (space, name) = self.resolve(path);
+        self.read_in(who, space, &name)
+    }
+
+    fn read_in(&self, who: PublicKey, space: Hash, name: &str) -> Result<Vec<u8>, FsError> {
         let s = self.node.space(space).ok_or(FsError::NotFound)?;
-        let file = s.find(&name).into_iter().next().ok_or(FsError::NotFound)?;
-        if !Self::may(s, who, Permission::FilesRead, &name) {
-            return Err(FsError::Denied(format!("{who} may not read {path}")));
+        let file = s.find(name).into_iter().next().ok_or(FsError::NotFound)?;
+        if !Self::may(s, who, Permission::FilesRead, name) {
+            return Err(FsError::Denied(format!("{who} may not read {name}")));
         }
         let content = newest(&file).ok_or(FsError::NotFound)?;
         fos_space::content::join(&content, &self.store)
@@ -1231,6 +1339,30 @@ impl Inner {
 
     fn list(&self, who: PublicKey, path: &str) -> Result<Vec<String>, FsError> {
         let (space, name) = self.resolve(path);
+        let mut names = self.list_in(who, space, &name)?;
+        if space == self.home {
+            names.retain(|n| ![".mounts", ".views", ".appdata"].contains(&n.as_str()));
+            let here = clean(path);
+            for (at, _) in self.mounts() {
+                let rest = if here.is_empty() {
+                    Some(at.as_str())
+                } else {
+                    at.strip_prefix(&format!("{here}/"))
+                };
+                if let Some(first) = rest.and_then(|r| r.split('/').next())
+                    && !first.starts_with('.')
+                {
+                    names.push(first.to_string());
+                }
+            }
+            names.sort();
+            names.dedup();
+        }
+        Ok(names)
+    }
+
+    fn list_in(&self, who: PublicKey, space: Hash, name: &str) -> Result<Vec<String>, FsError> {
+        let path = name;
         let s = self.node.space(space).ok_or(FsError::NotFound)?;
         let prefix = if name.is_empty() {
             String::new()
@@ -1248,7 +1380,7 @@ impl Inner {
         ) {
             return Err(FsError::Denied(format!("{who} may not list {path}")));
         }
-        let mut names: BTreeSet<String> = s
+        let names: BTreeSet<String> = s
             .files()
             .iter()
             .flat_map(|f| f.versions.iter().map(|v| v.name.clone()))
@@ -1258,21 +1390,149 @@ impl Inner {
             })
             .filter(|n| !n.is_empty())
             .collect();
-        if space == self.home {
-            names.remove(MOUNTS.trim_end_matches('/'));
-            let here = clean(path);
-            for (at, _) in self.mounts() {
-                let rest = if here.is_empty() {
-                    Some(at.as_str())
+        Ok(names.into_iter().collect())
+    }
+
+    /// The private data space of an app, if it has one.
+    fn app_data(&self, app: &str) -> Option<Hash> {
+        let at = format!("{APPDATA}{app}");
+        self.mounts()
+            .into_iter()
+            .find(|(m, _)| *m == at)
+            .map(|(_, id)| id)
+    }
+
+    /// The mounts in the view of an app.
+    fn views(&self, app: &str) -> Vec<ViewMount> {
+        let prefix = format!("{VIEWS}{app}/");
+        let Some(home) = self.node.space(self.home) else {
+            return Vec::new();
+        };
+        let mut out: Vec<ViewMount> = home
+            .files()
+            .iter()
+            .filter_map(|f| {
+                let name = f
+                    .versions
+                    .iter()
+                    .find_map(|v| v.name.strip_prefix(&prefix))?
+                    .to_string();
+                let bytes = fos_space::content::join(&newest(f)?, &self.store)?;
+                let text = String::from_utf8(bytes).ok()?;
+                let mut lines = text.split('\n');
+                let space = lines.next()?.parse().ok()?;
+                let prefix = lines.next().unwrap_or_default().to_string();
+                let grant = lines.next().and_then(|g| parse_grant(g).ok());
+                Some(ViewMount {
+                    name,
+                    space,
+                    prefix,
+                    grant,
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out
+    }
+
+    /// The space and the name in it of a path in the view of an app. A path
+    /// under no mount is in the app's private data space.
+    fn resolve_app(&self, app: &str, path: &str) -> Result<(Hash, String), FsError> {
+        let path = clean(path);
+        let best = self
+            .views(app)
+            .into_iter()
+            .filter(|v| path == v.name || path.starts_with(&format!("{}/", v.name)))
+            .max_by_key(|v| v.name.len());
+        if let Some(v) = best {
+            let rest = path[v.name.len()..].trim_start_matches('/');
+            let name = match (v.prefix.is_empty(), rest.is_empty()) {
+                (true, _) => rest.to_string(),
+                (false, true) => v.prefix.clone(),
+                (false, false) => format!("{}/{rest}", v.prefix),
+            };
+            return Ok((v.space, name));
+        }
+        let data = self
+            .app_data(app)
+            .ok_or_else(|| FsError::Invalid("the app has no data space".into()))?;
+        Ok((data, path))
+    }
+
+    /// The paths in the view of an app where a name of a space is seen.
+    fn view_paths(&self, app: &str, space: Hash, name: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for v in self.views(app) {
+            if v.space != space {
+                continue;
+            }
+            let rest = if v.prefix.is_empty() {
+                Some(name)
+            } else if name == v.prefix {
+                Some("")
+            } else {
+                name.strip_prefix(&format!("{}/", v.prefix))
+            };
+            if let Some(rest) = rest {
+                out.push(if rest.is_empty() {
+                    format!("/{}", v.name)
                 } else {
-                    at.strip_prefix(&format!("{here}/"))
-                };
-                if let Some(first) = rest.and_then(|r| r.split('/').next()) {
-                    names.insert(first.to_string());
-                }
+                    format!("/{}/{rest}", v.name)
+                });
             }
         }
-        Ok(names.into_iter().collect())
+        if self.app_data(app) == Some(space) {
+            out.push(format!("/{name}"));
+        }
+        out
+    }
+
+    /// Gives the key of `app` permissions on a node path, and mounts it in
+    /// the app's view at `name`.
+    fn give_app(
+        &mut self,
+        app: &str,
+        path: &str,
+        permissions: &[Permission],
+        name: &str,
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
+        let key = self.app_key(app).public();
+        let (space, prefix) = self.resolve(path);
+        let grant = self.grant(None, path, Principal::Key(key), permissions, changed)?;
+        let home = self.home;
+        let text = format!("{space}\n{prefix}\n{}", grant_text(grant));
+        self.put_name(
+            None,
+            home,
+            &format!("{VIEWS}{app}/{name}"),
+            text.as_bytes(),
+            changed,
+        )
+    }
+
+    /// Takes a mount away from the view of an app, and takes back its grant.
+    fn take_app(
+        &mut self,
+        app: &str,
+        name: &str,
+        changed: &Mutex<VecDeque<String>>,
+    ) -> Result<(), Error> {
+        let v = self
+            .views(app)
+            .into_iter()
+            .find(|v| v.name == name)
+            .ok_or_else(|| Error(format!("the app {app} has no /{name}")))?;
+        if let Some(grant) = v.grant
+            && self
+                .node
+                .space(v.space)
+                .is_some_and(|s| s.grants().iter().any(|g| g.given.id == grant))
+        {
+            self.write(None, v.space, vec![Act::Take { grant }], changed)?;
+        }
+        let home = self.home;
+        self.delete_name(None, home, &format!("{VIEWS}{app}/{name}"), changed)
     }
 
     fn kv(&mut self, app: &str) -> &mut BTreeMap<String, Vec<u8>> {
@@ -1688,8 +1948,10 @@ struct Host {
 impl Host {
     fn with<T>(&self, f: impl FnOnce(&mut Inner, &Mutex<VecDeque<String>>) -> T) -> Option<T> {
         let shared = self.shared.upgrade()?;
-        let mut inner = lock(&shared.inner);
-        Some(f(&mut inner, &shared.changed))
+        let out = f(&mut lock(&shared.inner), &shared.changed);
+        // Apps hear of what an app wrote.
+        pump(&shared);
+        Some(out)
     }
 
     fn stopped<T>() -> Result<T, FsError> {
@@ -1701,7 +1963,8 @@ impl AppHost for Host {
     fn read(&self, app: &str, path: &str) -> Result<Vec<u8>, FsError> {
         self.with(|inner, _| {
             let key = inner.app_key(app).public();
-            inner.read(key, path)
+            let (space, name) = inner.resolve_app(app, path)?;
+            inner.read_in(key, space, &name)
         })
         .unwrap_or_else(Host::stopped)
     }
@@ -1709,8 +1972,9 @@ impl AppHost for Host {
     fn write(&self, app: &str, path: &str, data: Vec<u8>) -> Result<(), FsError> {
         self.with(|inner, changed| {
             let key = inner.app_key(app);
+            let (space, name) = inner.resolve_app(app, path)?;
             inner
-                .put(Some(&key), path, &data, changed)
+                .put_name(Some(&key), space, &name, &data, changed)
                 .map_err(|e| FsError::Denied(e.0))
         })
         .unwrap_or_else(Host::stopped)
@@ -1719,8 +1983,15 @@ impl AppHost for Host {
     fn append(&self, app: &str, path: &str, data: Vec<u8>) -> Result<(), FsError> {
         self.with(|inner, changed| {
             let key = inner.app_key(app);
+            let (space, name) = inner.resolve_app(app, path)?;
+            let mut bytes = match inner.read_in(key.public(), space, &name) {
+                Ok(bytes) => bytes,
+                Err(FsError::NotFound) => Vec::new(),
+                Err(e) => return Err(e),
+            };
+            bytes.extend_from_slice(&data);
             inner
-                .append(Some(&key), path, &data, changed)
+                .put_name(Some(&key), space, &name, &bytes, changed)
                 .map_err(|e| FsError::Denied(e.0))
         })
         .unwrap_or_else(Host::stopped)
@@ -1729,8 +2000,9 @@ impl AppHost for Host {
     fn delete(&self, app: &str, path: &str) -> Result<(), FsError> {
         self.with(|inner, changed| {
             let key = inner.app_key(app);
+            let (space, name) = inner.resolve_app(app, path)?;
             inner
-                .delete(Some(&key), path, changed)
+                .delete_name(Some(&key), space, &name, changed)
                 .map_err(|e| FsError::Denied(e.0))
         })
         .unwrap_or_else(Host::stopped)
@@ -1739,7 +2011,23 @@ impl AppHost for Host {
     fn list(&self, app: &str, path: &str) -> Result<Vec<String>, FsError> {
         self.with(|inner, _| {
             let key = inner.app_key(app).public();
-            inner.list(key, path)
+            let (space, name) = inner.resolve_app(app, path)?;
+            let mut names = inner.list_in(key, space, &name)?;
+            // Mounts of the view under this path are names too.
+            let here = clean(path);
+            for v in inner.views(app) {
+                let rest = if here.is_empty() {
+                    Some(v.name.as_str())
+                } else {
+                    v.name.strip_prefix(&format!("{here}/"))
+                };
+                if let Some(first) = rest.and_then(|r| r.split('/').next()) {
+                    names.push(first.to_string());
+                }
+            }
+            names.sort();
+            names.dedup();
+            Ok(names)
         })
         .unwrap_or_else(Host::stopped)
     }

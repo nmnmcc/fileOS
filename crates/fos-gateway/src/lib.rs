@@ -33,6 +33,9 @@
 //! | `DELETE /v0/grants/<path>?id=<grant>`        | Take back a grant                    |
 //! | `POST /v0/checkpoint/<path>`                 | Checkpoint and compact a space       |
 //! | `POST /v0/install?dir=<dir>`                 | Install an app from a directory      |
+//! | `GET /v0/apps/<app>/view`                    | The mounts in an app's view          |
+//! | `POST /v0/apps/<app>/view?path=&permissions=&as=` | Give an app a path, in its view  |
+//! | `DELETE /v0/apps/<app>/view?name=<name>`     | Take a mount away from an app's view |
 //! | `GET /v0/kv/<app>`                           | An app's cache on this node, as text |
 //! | `POST /v0/dial`                              | Connect to a multiaddr (the body)    |
 //!
@@ -350,6 +353,31 @@ fn route(
     if let Some(at) = path.strip_prefix("/v0/checkpoint") {
         let at = if at.is_empty() { "/" } else { at };
         return node.checkpoint(at).and_then(|()| ok(String::new()));
+    }
+    if let Some(app) = path
+        .strip_prefix("/v0/apps/")
+        .and_then(|p| p.strip_suffix("/view"))
+    {
+        return match *method {
+            Method::GET => ok(node
+                .app_view(app)
+                .into_iter()
+                .map(|v| format!("/{}\t{} {:?}\n", v.name, v.space, v.prefix))
+                .collect()),
+            Method::POST => {
+                let at = node.app_grant(
+                    app,
+                    &arg("path")?,
+                    &parse_permissions(&arg("permissions")?)?,
+                    query.get("as").map(String::as_str),
+                )?;
+                ok(format!("{at}\n"))
+            }
+            Method::DELETE => node
+                .app_take(app, &arg("name")?)
+                .and_then(|()| ok(String::new())),
+            _ => Ok(reply(StatusCode::METHOD_NOT_ALLOWED, "")),
+        };
     }
     if let Some(app) = path.strip_prefix("/v0/kv/") {
         let lines: String = node

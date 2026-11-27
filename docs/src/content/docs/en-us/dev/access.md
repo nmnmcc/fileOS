@@ -5,10 +5,10 @@ description: Seven ideas (content, files, spaces, principals, grants, views and 
 
 :::note[Status: built in part]
 Built: content, files, spaces, principals (keys and groups) and grants, with
-strong removal, and people as principals (in `fos-space`). Not built yet: views,
-asking at run time, sharing between apps, checks on writes, and the `watch`
-options and `schedule` events. Today an app gets the paths of its manifest
-when it is installed.
+strong removal, and people as principals (in `fos-space`); views for apps,
+with private data and grants given at run time from the command line. Not
+built yet: the picker (an app asking for a file), sharing between apps,
+checks on writes, and the `watch` options and `schedule` events.
 :::
 
 ## The test for making things one

@@ -32,9 +32,22 @@ An app is a component of the `app` world.
 | `wasi:http/incoming-handler.handle` | An HTTP request for the app's origin came in |
 
 Every call to `fs` is made with the **app's own key**, which the node makes
-from its own key. The kernel checks every call against the grants of that key
-in the space of the path. An app can only use the paths that the user gave it
-when it was installed. Each call into an app has limits on fuel and memory.
+from its own key. Each call into an app has limits on fuel and memory.
+
+**Paths are in the app's view**, not on the node:
+
+- Each permission in the manifest is mounted in the view at the path the
+  manifest gives: the photos app asks for `/photos`, and sees `/photos`.
+- The person can give more at run time (`fos app grant`); it comes at
+  `/granted/<handle>/`, or at a name the person picks. The person can also
+  point a name at another place: the app's `/photos` can be the space at
+  `/pictures`. The app never sees where a mount really is.
+- Every other path is in the app's **private data**: a space that the app's
+  key owns, which no other app and no person can read unless given.
+- `on-change` gives paths in the view too.
+
+The kernel checks every call against the grants of the app's key in the
+space that the path stands for.
 
 Apps work together only through files: one app writes, another watches.
 

@@ -84,6 +84,17 @@ App 做了什么不在 `fos` 里，要在 App 里看。`fos help <组>` 会进�
 
 App 以 `.app` 文件的形式提供，比如 `Photos.app`。用 `fos app install Photos.app` 安装。安装时，节点只给 App 它的 manifest 里申请的权限。`fos app install` 会打印 App 的地址，例如 `http://photos-…localhost:7341/`，在浏览器里打开即可。`fos` 命令只用于内核：App 做了什么，要在 App 里看。
 
+App 只能看到它自己的视图，永远看不到你的文件真正在哪里：
+
+| 命令                                                    | 作用                                    |
+| ------------------------------------------------------- | --------------------------------------- |
+| `fos app grants photos`                                 | App 看到什么，以及每一部分代表什么      |
+| `fos app grant photos /pictures read`                   | 授予更多；它在 `/granted/<handle>` 看到 |
+| `fos app grant photos /pictures read-write --as photos` | 让它的 `/photos` 就是你的 `/pictures`   |
+| `fos app take photos granted/<handle>`                  | 再收回                                  |
+
+每个 App 还有自己的私有数据，别的 App 读不到。
+
 fileOS 自带两个 App：
 
 - **照片**：显示 `/photos` 中的照片，可以上传新照片，并为照片尺寸建立索引。

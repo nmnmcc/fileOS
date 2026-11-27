@@ -59,6 +59,7 @@ To share `/photos` with another node: `fos space grant /photos <its node key> re
 - [ ] **Apps**
   - [x] Apps come as `.app` files (a zip with no compression: the manifest, and the rest in `tar.zst`)
   - [x] Each app has its own key, gets only what its manifest asks for, and runs with limits on fuel and memory
+  - [x] Each app sees only its own view: mounts at names it knows, private data, and grants given at run time (`fos app grant`)
   - [x] Apps answer HTTP at their own origin, `<app-id>.localhost`, with `wasi:http`
   - [x] The photos app: a gallery, upload, and an index of image sizes
   - [x] The chat app: rooms with one file for each message, in a space that you share

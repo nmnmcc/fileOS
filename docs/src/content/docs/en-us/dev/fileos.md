@@ -276,7 +276,8 @@ Dependencies go down only. Apps depend only on `fos-app`.
 | Apps over `wasi:http`, with the photos and chat apps              | Yes                                    |
 | Encryption: keys that follow prefixes, HPKE, crypto-shredding     | No                                     |
 | People as principals (an identity acts for its devices)           | Yes                                    |
-| Views for apps, the picker, sharing between apps                  | No                                     |
+| Views for apps, private app data, grants given at run time        | Yes                                    |
+| The picker, sharing between apps                                  | No                                     |
 | Apps as workers, watch options, `wasi:filesystem`, schedules      | No                                     |
 | Sign-in for people (OAuth with PKCE and DPoP)                     | No                                     |
 
@@ -294,6 +295,6 @@ Dependencies go down only. Apps depend only on `fos-app`.
 ## Next steps
 
 1. Encryption: keys that follow prefixes, HPKE, crypto-shredding.
-2. Views for apps, the picker, sharing between apps.
+2. The picker (an app asks for a file), sharing between apps.
 3. Apps as workers: a new instance for each event, watch options, schedules.
 4. Sign-in for people at the gateway.
