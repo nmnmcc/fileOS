@@ -28,20 +28,20 @@ There are only a few ideas:
 - **Apps only see what you let them see.** An app is a small program in a
   sandbox. It can only use the paths you gave it.
 
-## The `fos` command
+## The `fileos` command
 
-`fos` works with the kernel of your node. Its commands are in groups:
+`fileos` works with the kernel of your node. Its commands are in groups:
 
 | Group                     | What it is for                                                  |
 | ------------------------- | --------------------------------------------------------------- |
-| `fos node`                | This node: `init`, `run`, `status`, `connect`                   |
-| `fos fs`                  | Files: `ls`, `cat`, `put`, `append`, `rm`                       |
-| `fos space`               | Spaces: `new`, `mount`, `grant`, `grants`, `take`, `checkpoint` |
-| `fos identity` (`fos id`) | Your identity: `new`, `add-node`, `remove-node`, `join`         |
-| `fos app`                 | `pack` or `install` an app                                      |
-| `fos curl`                | curl with your node's token, for example `fos curl /v0/status`  |
+| `fileos node`                | This node: `init`, `run`, `status`, `connect`                   |
+| `fileos fs`                  | Files: `ls`, `cat`, `put`, `append`, `rm`                       |
+| `fileos space`               | Spaces: `new`, `mount`, `grant`, `grants`, `take`, `checkpoint` |
+| `fileos identity` (`fileos id`) | Your identity: `new`, `add-node`, `remove-node`, `join`         |
+| `fileos app`                 | `pack` or `install` an app                                      |
+| `fileos curl`                | curl with your node's token, for example `fileos curl /v0/status`  |
 
-What an app does is not in `fos`; you see it in the app. `fos help <group>`
+What an app does is not in `fileos`; you see it in the app. `fileos help <group>`
 says more about each group.
 
 ## Using your files
@@ -51,20 +51,20 @@ the place a space is mounted, for example `/photos/2026/beach.jpg`.
 
 | Command                            | What it does                         |
 | ---------------------------------- | ------------------------------------ |
-| `fos fs ls /photos`                | The names under a path               |
-| `fos fs cat /notes/todo.txt`       | Print a file                         |
-| `fos fs put /notes/todo.txt FILE`  | Put a file (or the text you type)    |
-| `fos fs rm /notes/todo.txt`        | Delete a file; old versions are kept |
-| `fos fs append /notes/log.txt "…"` | Add a line to the end of a file      |
-| `fos node status`                  | What your node is doing              |
+| `fileos fs ls /photos`                | The names under a path               |
+| `fileos fs cat /notes/todo.txt`       | Print a file                         |
+| `fileos fs put /notes/todo.txt FILE`  | Put a file (or the text you type)    |
+| `fileos fs rm /notes/todo.txt`        | Delete a file; old versions are kept |
+| `fileos fs append /notes/log.txt "…"` | Add a line to the end of a file      |
+| `fileos node status`                  | What your node is doing              |
 
 ## Sharing a space
 
-1. Make a space: `fos space new /family`. It prints the space ID.
+1. Make a space: `fileos space new /family`. It prints the space ID.
 2. Give your friend's node access:
-   `fos space grant /family <their node key> read-write`. It prints the ID of
+   `fileos space grant /family <their node key> read-write`. It prints the ID of
    the grant.
-3. Your friend mounts it on their node: `fos space mount <space ID> /family`.
+3. Your friend mounts it on their node: `fileos space mount <space ID> /family`.
 
 Now you both see the same files, and either of you can write, also offline.
 When you both change the same file at the same time, both versions are kept.
@@ -84,46 +84,46 @@ on a directory is on every name under it.
 
 To share with a person and all their devices, give the access to their
 identity in place of a node key:
-`fos space grant /family did:fos:… read-write`. Each of their nodes, also
+`fileos space grant /family did:fileos:… read-write`. Each of their nodes, also
 ones they add later, then gets the space.
 
-`fos space grants /family` lists the grants. `fos space take /family <grant ID>`
+`fileos space grants /family` lists the grants. `fileos space take /family <grant ID>`
 takes one back, and with it what was given on from it. What someone did at
 the same time as you took their access back has no effect.
 
 ## One identity, many nodes
 
 Your identity is you; a node is one of your machines. Your identity is a DID
-(`did:fos:…`), and with it all your nodes are known to be yours.
+(`did:fileos:…`), and with it all your nodes are known to be yours.
 
 1. On the node that is to hold the keys of your identity (your laptop, for
-   example), run `fos identity new`. It prints your DID. Keep a copy of the two key
+   example), run `fileos identity new`. It prints your DID. Keep a copy of the two key
    files that it names in a safe place.
-2. On your other node, run `fos node status` and copy its node key.
-3. On the first node, run `fos identity add-node <node key>`. It prints a command.
-4. On the other node, run that command: `fos identity join <space ID>`.
+2. On your other node, run `fileos node status` and copy its node key.
+3. On the first node, run `fileos identity add-node <node key>`. It prints a command.
+4. On the other node, run that command: `fileos identity join <space ID>`.
 
-`fos identity` shows your identity, its nodes and its link. The link is what you
+`fileos identity` shows your identity, its nodes and its link. The link is what you
 give to other people. Only the node that holds the signing key can add nodes
-(`fos identity add-node`) or take them away (`fos identity remove-node`).
+(`fileos identity add-node`) or take them away (`fileos identity remove-node`).
 
 ## Apps
 
 An app comes as an `.app` file, such as `Photos.app`. Install one with
-`fos app install Photos.app`. When you install it, your node gives the app only
-the access that its manifest asks for. `fos app install` prints the address
+`fileos app install Photos.app`. When you install it, your node gives the app only
+the access that its manifest asks for. `fileos app install` prints the address
 of the app, such as `http://photos-…localhost:7341/`; open it in a browser.
-The `fos` command is for the kernel only: what an app does, you see in the
+The `fileos` command is for the kernel only: what an app does, you see in the
 app.
 
 An app sees only its own view, never where your files really are:
 
 | Command                                                 | What it does                                     |
 | ------------------------------------------------------- | ------------------------------------------------ |
-| `fos app grants photos`                                 | What the app sees, and what each part stands for |
-| `fos app grant photos /pictures read`                   | Give it more; it sees it at `/granted/<handle>`  |
-| `fos app grant photos /pictures read-write --as photos` | Make its `/photos` be your `/pictures`           |
-| `fos app take photos granted/<handle>`                  | Take it away again                               |
+| `fileos app grants photos`                                 | What the app sees, and what each part stands for |
+| `fileos app grant photos /pictures read`                   | Give it more; it sees it at `/granted/<handle>`  |
+| `fileos app grant photos /pictures read-write --as photos` | Make its `/photos` be your `/pictures`           |
+| `fileos app take photos granted/<handle>`                  | Take it away again                               |
 
 Each app also has its own private data, which other apps cannot read.
 
@@ -132,7 +132,7 @@ Two apps come with fileOS:
 - **Photos** shows the photos in `/photos`, lets you upload more, and keeps an
   index of their sizes.
 - **Chat** keeps rooms in `/chat`, one file for each message. Make the space
-  with `fos space new /chat`, share it with your friends' nodes, and each of
+  with `fileos space new /chat`, share it with your friends' nodes, and each of
   you talks through the chat app on your own node.
 
 To run a node, see the [administration manual](../admin/).

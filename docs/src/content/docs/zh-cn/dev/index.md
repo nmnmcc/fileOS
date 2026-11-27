@@ -10,7 +10,7 @@ description: 面向开发 fileOS 或在 fileOS 之上开发的人。
 内核之上的一切都是 App：放在 `.app` 文件夹里的 WebAssembly 组件。
 
 - [编写 App](apps/)：接口、SDK、`.app` 文件夹和 manifest。
-- 接口定义在 [`wit/fos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fos.wit)。
+- 接口定义在 [`wit/fileos.wit`](https://github.com/nmnmcc/fileOS/blob/main/wit/fileos.wit)。
 
 ## 开发 fileOS
 

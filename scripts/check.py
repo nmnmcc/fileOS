@@ -26,7 +26,7 @@ APPS = ["--manifest-path", "apps/Cargo.toml"]
 def portable_check() -> list[str]:
     """`cargo check` for the browser, for every crate with `portable = true`.
 
-    The list comes from `[package.metadata.fos]` in each Cargo.toml, so it is
+    The list comes from `[package.metadata.fileos]` in each Cargo.toml, so it is
     never written down twice.
     """
     out = subprocess.run(
@@ -40,8 +40,8 @@ def portable_check() -> list[str]:
     command = ["cargo", "check", "--locked", "--target", WASM_TARGET]
     for package in packages:
         metadata = package.get("metadata")
-        fos = metadata.get("fos") if isinstance(metadata, dict) else None
-        if isinstance(fos, dict) and fos.get("portable") is True:
+        fileos = metadata.get("fileos") if isinstance(metadata, dict) else None
+        if isinstance(fileos, dict) and fileos.get("portable") is True:
             command += ["--package", str(package["name"])]
     return command
 

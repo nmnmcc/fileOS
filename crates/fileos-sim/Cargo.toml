@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "fileos-sim"
+description = "Deterministic simulation of many fileOS nodes, for tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+fileos-core.workspace = true
+fileos-space.workspace = true
+
+[dev-dependencies]
+fileos-id.workspace = true
+
+[lints]
+workspace = true

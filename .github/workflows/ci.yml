@@ -55,9 +55,9 @@ jobs:
       - run: devenv shell -- artifacts
       - uses: actions/upload-artifact@v7
         with:
-          name: fos-linux-x86_64
+          name: fileos-linux-x86_64
           path: |
-            artifacts/fos
+            artifacts/fileos
             artifacts/apps
       - uses: actions/upload-artifact@v7
         with:

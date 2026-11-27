@@ -41,7 +41,7 @@ and what is kept apart, and why. In short:
 | A shared album or drive    | A space, with grants for the family                           |
 | A chat                     | A directory with one small file for each message              |
 | A group of people          | A group: a principal with members, owned by a key or a group  |
-| A person with many devices | An identity (`did:fos`) and its nodes                         |
+| A person with many devices | An identity (`did:fileos`) and its nodes                         |
 | A backup or a relay        | A node with `data.keep` on a space                            |
 | Installing an app          | Putting the app into a space mounted at `/apps/<name>`        |
 | What an app may do         | Grants to the app's key, from the permissions in its manifest |
@@ -51,16 +51,16 @@ and what is kept apart, and why. In short:
 ## Layers
 
 ```
-┌───────────────────────────────────────────────┐
-│ Apps (WASM)  photos chat …                    │
-├───────────────────────────────────────────────┤
-│ WIT: fos:app (fs, kv, log, events) + wasi:http│
-├───────────────────────────────────────────────┤
-│ Kernel: spaces · grants · sync · checkpoints ·│
-│         app runtime · gateway                 │
-├───────────────────────────────────────────────┤
-│ wasmtime · libp2p · disk                      │
-└───────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────┐
+│ Apps (WASM)  photos chat …                        │
+├───────────────────────────────────────────────────┤
+│ WIT: fileos:app (fs, kv, log, events) + wasi:http │
+├───────────────────────────────────────────────────┤
+│ Kernel: spaces · grants · sync · checkpoints ·    │
+│         app runtime · gateway                     │
+├───────────────────────────────────────────────────┤
+│ wasmtime · libp2p · disk                          │
+└───────────────────────────────────────────────────┘
 ```
 
 The kernel has no "should" in it about data. It does not know what a photo,
@@ -160,21 +160,21 @@ How sync works:
   sent on from there.
 - A node that is far behind gets the snapshot of the last checkpoint.
 - Content is asked for by hash from the node that sent the entry.
-- The sync protocol is sans-IO. `fos-net` connects it to libp2p, and
-  `fos-sim` to a simulation in memory.
+- The sync protocol is sans-IO. `fileos-net` connects it to libp2p, and
+  `fileos-sim` to a simulation in memory.
 
 ## The app runtime: wasmtime
 
 We use [wasmtime](https://wasmtime.dev) and do not make our own. An app is a
-component of the `app` world in `wit/fos.wit`:
+component of the `app` world in `wit/fileos.wit`:
 
 | Interface                | What it does                                                   |
 | ------------------------ | -------------------------------------------------------------- |
-| `fos:app/fs`             | Read, write, add to and list paths, checked against the grants |
-| `fos:app/kv`             | A cache on this node only, for indexes that can be made again  |
-| `fos:app/log`            | Messages for people                                            |
+| `fileos:app/fs`             | Read, write, add to and list paths, checked against the grants |
+| `fileos:app/kv`             | A cache on this node only, for indexes that can be made again  |
+| `fileos:app/log`            | Messages for people                                            |
 | `wasi:clocks/wall-clock` | The time, for names that sort by time                          |
-| `fos:app/events` (out)   | `on-change`: a path that the app watches changed               |
+| `fileos:app/events` (out)   | `on-change`: a path that the app watches changed               |
 | `wasi:http` (out)        | The requests for the app's own origin, `<app-id>.localhost`    |
 
 Rules for apps:
@@ -192,7 +192,7 @@ picker) are in [Apps as workers](../workers/) and [The model](../access/).
 
 An app is a folder, as on macOS: `manifest.toml`, components in `bin/`, the
 web interface in `ui/`, and `resources/`. To move it as one file,
-`fos app pack` makes an `.app` file: a zip with no compression, the manifest
+`fileos app pack` makes an `.app` file: a zip with no compression, the manifest
 as it is, and the rest in `payload.tar.zst`.
 
 ```toml
@@ -201,7 +201,7 @@ name     = "Photos"
 kind     = "app"
 version  = "1.4.0"
 build    = 142
-requires = "fos:app@0.1.0"
+requires = "fileos:app@0.1.0"
 main     = "bin/app.wasm"
 
 [[permissions]]               # the most the app may get
@@ -221,7 +221,7 @@ again.
 ## The gateway
 
 The gateway is one HTTP port on this machine. Sync between nodes does not use
-it. It gives the kernel API at `fos.localhost`, and each app's requests at
+it. It gives the kernel API at `fileos.localhost`, and each app's requests at
 its own origin, `<app-id>.localhost`. Apps get no cookies and never handle
 keys. See [HTTP and the browser](../http/).
 
@@ -243,36 +243,36 @@ interface and sandbox as everyone else's apps.
 
 ```
 crates/
-  fos            the program; only joins the parts together
-  fos-node       puts the kernel together into one node
-  fos-gateway    the gateway
-  fos-runtime    the app runtime (wasmtime): .app files and apps
-  fos-net        libp2p
-  fos-store      disk: the node key, logs and bases of spaces, content
-  fos-space      spaces: logs, files, grants, checkpoints, sync (sans-IO, portable)
-  fos-id         identities: did:fos, node certificates, links (portable)
-  fos-core       hashes, keys, signatures, CBOR (portable)
-  fos-sim        a simulation of many nodes, for tests
+  fileos            the program; only joins the parts together
+  fileos-node       puts the kernel together into one node
+  fileos-gateway    the gateway
+  fileos-runtime    the app runtime (wasmtime): .app files and apps
+  fileos-net        libp2p
+  fileos-store      disk: the node key, logs and bases of spaces, content
+  fileos-space      spaces: logs, files, grants, checkpoints, sync (sans-IO, portable)
+  fileos-id         identities: did:fileos, node certificates, links (portable)
+  fileos-core       hashes, keys, signatures, CBOR (portable)
+  fileos-sim        a simulation of many nodes, for tests
 apps/
-  fos-app        the Rust SDK for apps (MIT OR Apache-2.0)
-  photos, chat   the apps that come with fileOS
-wit/fos.wit      the app interface
+  fileos-app        the Rust SDK for apps (MIT OR Apache-2.0)
+  photos, chat      the apps that come with fileOS
+wit/fileos.wit      the app interface
 ```
 
-Dependencies go down only. Apps depend only on `fos-app`.
+Dependencies go down only. Apps depend only on `fileos-app`.
 
 ## What is built
 
 | Part                                                              | Built                                  |
 | ----------------------------------------------------------------- | -------------------------------------- |
-| Signed logs in a causal graph, with no ordering node              | Yes (`fos-space`, tested in `fos-sim`) |
+| Signed logs in a causal graph, with no ordering node              | Yes (`fileos-space`, tested in `fileos-sim`) |
 | Files with fixed IDs, versions side by side, content in chunks    | Yes                                    |
 | Grants: permissions, prefixes and files, give on, take back, deny | Yes                                    |
 | Strong removal                                                    | Yes                                    |
 | Groups, owned by keys or by groups                                | Yes                                    |
 | Checkpoints, compaction, snapshots, retention                     | Yes                                    |
 | The node, store, network and gateway on the new kernel            | Yes                                    |
-| Identities: `did:fos`, node certificates, an identity space       | Yes                                    |
+| Identities: `did:fileos`, node certificates, an identity space       | Yes                                    |
 | Apps over `wasi:http`, with the photos and chat apps              | Yes                                    |
 | Encryption: keys that follow prefixes, HPKE, crypto-shredding     | No                                     |
 | People as principals (an identity acts for its devices)           | Yes                                    |

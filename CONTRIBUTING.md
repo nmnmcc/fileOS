@@ -10,6 +10,8 @@ Read "System model" in the [README](README.md) first. We judge contributions by 
 
 All English that the project itself puts out is in [Basic English](https://en.wikipedia.org/wiki/Basic_English): the README, the documentation, this file, help for the command line, error messages, comments in the code, commit messages, release notes and the GitHub templates. Basic English uses short sentences and a small number of common words, so it is easy to read for people whose first language is not English, and it goes well through machine translation. Names of things (Rust, SQLite, OpenID Connect) and words for things that have no simpler name stay as they are.
 
+Write the project name as fileOS in text. Use `fileos` in commands and other names that need lowercase letters. Do not shorten the name.
+
 For your issues, pull requests and comments, we suggest Basic English, but it is not a rule. Writing in Chinese is also good. When your pull request changes text that the project puts out, the maintainers may make changes to the wording before it is merged.
 
 The English form of every document is the one that counts; other languages are only for reference.
@@ -29,7 +31,7 @@ The repository gives its environment in `devenv.nix`. It has the Rust toolchain 
 direnv allow
 ```
 
-After that, the shell loads the environment every time you go into the directory. Run `check` before you push, `budget` to check the compile-time budget and `docs` to see the documentation before it goes out. Build the release files with `devenv shell -- artifacts`, or only the release server with `devenv build outputs.hs`. Without direnv, use `devenv shell`. Put your own small changes in `devenv.local.nix`; git does not see that file.
+After that, the shell loads the environment every time you go into the directory. Run `check` before you push, `budget` to check the compile-time budget and `docs` to see the documentation before it goes out. Build the release files with `devenv shell -- artifacts`, or only the release server with `devenv build outputs.fileos`. Without direnv, use `devenv shell`. Put your own small changes in `devenv.local.nix`; git does not see that file.
 
 ### Without Nix
 
@@ -50,7 +52,7 @@ An ordinary laptop should be enough to contribute. Most of Rust's compile time d
 | -------------------------------------- | ------- |
 | Clean debug build of the workspace     | ≤ 360 s |
 | Rebuild after a change to a leaf crate | ≤ 5 s   |
-| Rebuild after a change to `fos-core`   | ≤ 20 s  |
+| Rebuild after a change to `fileos-core`   | ≤ 20 s  |
 
 The budgets are for a laptop with 4 cores and 8 GB of RAM. We will change the budgets as the code gets bigger.
 
@@ -59,8 +61,8 @@ The budgets are for a laptop with 4 cores and 8 GB of RAM. We will change the bu
 1. **We review every new external dependency.** Say in the PR why it is needed and how much time it adds to the clean build (compare `cargo build --timings` before and after). Judge it by build time, binary size and what it brings with it (a second cryptography library or HTTP stack, a banned crate, heavy procedural macros, build scripts, C or C++). Do not judge it by its number of crates: a library in many small crates can cost less than one large crate.
 2. Put it once in the root `Cargo.toml` under `[workspace.dependencies]`, with `default-features = false`. Switch on only the features you use.
 3. One version of each crate. `cargo deny check` does not let two versions in, because each copy gets compiled by itself. When an upstream crate brings a second version that we cannot take out, put it under `skip` in `deny.toml`, with the reason.
-4. No C or C++ that needs cmake. Small C code that the `cc` crate compiles is allowed, such as the code in `ring`. For TLS, use rustls with the `ring` backend. `fos` comes as one executable; it loads only the `.app` files that the user gives it.
-5. Keep heavy dependencies inside the crate that needs them, so changes in other places do not rebuild them: wasmtime is only in `fos-runtime`, and libp2p is only in `fos-net`.
+4. No C or C++ that needs cmake. Small C code that the `cc` crate compiles is allowed, such as the code in `ring`. For TLS, use rustls with the `ring` backend. `fileos` comes as one executable; it loads only the `.app` files that the user gives it.
+5. Keep heavy dependencies inside the crate that needs them, so changes in other places do not rebuild them: wasmtime is only in `fileos-runtime`, and libp2p is only in `fileos-net`.
 
 ### Writing code that compiles fast
 
@@ -88,35 +90,35 @@ The budgets are for a laptop with 4 cores and 8 GB of RAM. We will change the bu
 
 ```
 crates/
-  fos             the program: wires the components together, nothing else
-  fos-node        assembles the components into one node
-  fos-gateway     the local HTTP API for clients
-  fos-runtime     wasmtime: .app files and folders, and apps
-  fos-net         libp2p: carries sync messages between nodes
-  fos-store       the data directory: node key, content, logs and bases of spaces, app caches
-  fos-space       spaces: signed logs, files, grants, checkpoints and sync (sans-IO, portable)
-  fos-id          identities: did:fos, node certificates, identity links (portable)
-  fos-core        formats: CBOR, ed25519, BLAKE3 (bottom of the graph, portable)
-  fos-sim         deterministic multi-node simulation, for tests
-apps/             a second workspace, built for wasm32-unknown-unknown by `apps`
-  fos-app         the SDK for apps (MIT OR Apache-2.0)
-  photos          the photos app
-  chat            the chat app
+  fileos            the program: wires the components together, nothing else
+  fileos-node       assembles the components into one node
+  fileos-gateway    the local HTTP API for clients
+  fileos-runtime    wasmtime: .app files and folders, and apps
+  fileos-net        libp2p: carries sync messages between nodes
+  fileos-store      the data directory: node key, content, logs and bases of spaces, app caches
+  fileos-space      spaces: signed logs, files, grants, checkpoints and sync (sans-IO, portable)
+  fileos-id         identities: did:fileos, node certificates, identity links (portable)
+  fileos-core       formats: CBOR, ed25519, BLAKE3 (bottom of the graph, portable)
+  fileos-sim        deterministic multi-node simulation, for tests
+apps/               a second workspace, built for wasm32-unknown-unknown by `apps`
+  fileos-app        the SDK for apps (MIT OR Apache-2.0)
+  photos            the photos app
+  chat              the chat app
 wit/
-  fos.wit         the interfaces between the core and components (MIT OR Apache-2.0)
+  fileos.wit        the interfaces between the core and components (MIT OR Apache-2.0)
 ```
 
-Crates marked _portable_ have `portable = true` under `[package.metadata.fos]` in their `Cargo.toml`. They have to build for `wasm32-unknown-unknown`, because apps, phone shells and the web app use them; `check` makes sure of this. Do not use threads, files, sockets or clocks in them. Get to those through interfaces that each host gives.
+Crates marked _portable_ have `portable = true` under `[package.metadata.fileos]` in their `Cargo.toml`. They have to build for `wasm32-unknown-unknown`, because apps, phone shells and the web app use them; `check` makes sure of this. Do not use threads, files, sockets or clocks in them. Get to those through interfaces that each host gives.
 
 The documentation site is in `docs/`. It is built with [Astro Starlight](https://starlight.astro.build) (full-text search, translations). English pages are in `docs/src/content/docs/en-us/`, and Simplified Chinese pages are in `docs/src/content/docs/zh-cn/`, with the same file names. The pages are in three manuals. Each manual is a topic in the switcher at the top of the sidebar: `user/` for people who use fileOS, `admin/` for people who run a node, and `dev/` for developers. Put a new page in both languages, and add it to the `topics` list in `docs/astro.config.mjs`. Write it for the reader of its manual.
 
-For production builds, set `DOCS_SITE_URL` to the public origin of the site. Then the build makes canonical URLs, `hreflang` links and the sitemap. The page at `/` only sends you to a language; it is not indexed and is not in the sitemap.
+The site uses <https://docs.fileos.app/> for canonical URLs, `hreflang` links and the sitemap. Set `DOCS_SITE_URL` when you build for another address. The page at `/` only sends you to a language; it is not indexed and is not in the sitemap.
 
-Dependencies only go down. `fos-core` depends on no other fileOS crate. Apps depend only on `fos-app`. `fos` stays thin, so that it rebuilds in seconds.
+Dependencies only go down. `fileos-core` depends on no other fileOS crate. Apps depend only on `fileos-app`. `fileos` stays thin, so that it rebuilds in seconds.
 
 ## The command line
 
-`fos` is for the kernel. Its commands are in groups (`node`, `fs`, `space`, `identity`, `app`). What an app or a plugin does is not in it; packing and installing them is. The command line keeps no state: it saves nothing of its own, and there is no login or other command that changes what later commands do. It reads the address and the token of the gateway from the data directory of the node.
+`fileos` is for the kernel. Its commands are in groups (`node`, `fs`, `space`, `identity`, `app`). What an app or a plugin does is not in it; packing and installing them is. The command line keeps no state: it saves nothing of its own, and there is no login or other command that changes what later commands do. It reads the address and the token of the gateway from the data directory of the node.
 
 ## Storage that does not grow without end
 
@@ -130,21 +132,21 @@ We give mechanisms and sensible defaults; each person makes the rules. When code
 
 fileOS is a kernel and apps, and the kernel can take kernel plugins (there are none today). See "System model" in the [README](README.md).
 
-- **Do not break user space.** Apps and other nodes are user space. The app interface (`wit/fos.wit`) and the formats and protocol between nodes only get new things. Old behavior stays, even when it is wrong, because someone may depend on it. A breaking change is a new version of the interface, and the old version still works.
+- **Do not break user space.** Apps and other nodes are user space. The app interface (`wit/fileos.wit`) and the formats and protocol between nodes only get new things. Old behavior stays, even when it is wrong, because someone may depend on it. A breaking change is a new version of the interface, and the old version still works.
 - **Apps are not plugins.** An app uses the kernel. It does not change the kernel.
 - **A kernel plugin does not change what apps or other nodes see.** It only picks between results that the contract already has, for example `denied`.
 - **The kernel checks what a kernel plugin gives back**, with hashes, signatures or AEAD. When a kernel plugin is wrong, the worst result is an error, never a wrong file.
 - **The kernel asks; the kernel plugin answers.** The kernel keeps the control and the state. A kernel plugin gets a small input and gives back a value. It does not get into the middle of the work, does not change requests, and does not call other plugins. No hooks with `next()`, no registries, no event buses, no dependency injection.
 - **The cost is only for the person who made the choice.** A choice that can do damage to other people (such as the encryption of shared spaces) goes in the protocol, not in a kernel plugin.
-- **Defaults are in the code.** With no kernel plugins and no config, fileOS is complete. `fos-node` puts the parts together in plain code.
+- **Defaults are in the code.** With no kernel plugins and no config, fileOS is complete. `fileos-node` puts the parts together in plain code.
 - **A new kind of kernel plugin needs a real reason:** a second way of doing the work that people want now. Until then, a `dyn Trait` inside the crate is enough.
 
 ## Licensing
 
 fileOS is under [AGPL-3.0-only](LICENSE), with the [fileOS Plugin Exception](PLUGIN-EXCEPTION.md) for apps and engines that use only the Plugin Interface. When you contribute, you agree that your contribution is under:
 
-- **AGPL-3.0-only**, for everything except `apps/fos-app` and `wit/`
-- **MIT OR Apache-2.0**, for `apps/fos-app` and `wit/`, so that apps can use any license
+- **AGPL-3.0-only**, for everything except `apps/fileos-app` and `wit/`
+- **MIT OR Apache-2.0**, for `apps/fileos-app` and `wit/`, so that apps can use any license
 
 You keep the copyright to your work. There is no Contributor License Agreement. So no one, not even the maintainers, is able to put fileOS under a different license by themselves.
 
@@ -178,7 +180,7 @@ budget   # compile-time budget
 
 The workspace gives its MSRV (the oldest Rust version it supports) in `Cargo.toml`. Nix gives that compiler for a locked check of all native targets.
 
-`apps` builds the apps into `target/apps/`. The tests of `fos-runtime` and `fos-node` use them, so run `apps` before `cargo test`. `check` does this for you.
+`apps` builds the apps into `target/apps/`. The tests of `fileos-runtime` and `fileos-node` use them, so run `apps` before `cargo test`. `check` does this for you.
 
 The formatters and their settings are only in `devenv.nix` (through treefmt-nix). Going into the shell does not change files; run `treefmt` yourself.
 
@@ -198,7 +200,7 @@ uv run scripts/budget.py
 3. Open a pull request into `main`. GitHub asks the code owners for a review.
 4. A pull request may be merged when the `ci` check is green and every comment thread is resolved. It is merged with "Squash and merge": `main` gets one commit for each pull request, with the title of the pull request as its first line. The branch is deleted after the merge.
 
-The `ci` check is green only when every job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is green: `check`, `budget`, `artifacts` and, for pull requests, `dco`. A pull request that changes `docs/` also makes the documentation site as a test. After a merge into `main`, the site goes to <https://hs.nmnm.cc/>.
+The `ci` check is green only when every job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is green: `check`, `budget`, `artifacts` and, for pull requests, `dco`. A pull request that changes `docs/` also makes the documentation site as a test. After a merge into `main`, the site goes to <https://docs.fileos.app/>.
 
 Dependabot opens pull requests for dependency updates: every week for GitHub Actions, and every month for Cargo, npm and uv. They go through the same checks. A major update is checked like a new dependency (see "Dependency policy").
 
@@ -234,4 +236,4 @@ knope prepare-release
 
 Knope works out the new version from the change files. It puts that version in `Cargo.toml` and `apps/Cargo.toml`, puts the change files into `CHANGELOG.md` under the new version, and deletes them. Then [`scripts/release_pr.py`](scripts/release_pr.py) makes the branch `release/v<version>` with one commit, and opens a pull request.
 
-When that pull request is merged, the [Release workflow](.github/workflows/release.yml) sees a version in `Cargo.toml` that has no tag. It makes the release files (`fos-<version>-linux-x86_64.tar.gz` with `fos` and the `.app` folders, the documentation, and `SHA256SUMS`) and runs `knope release`. Knope makes the tag `v<version>` and the GitHub release, with the part of `CHANGELOG.md` for that version as the release notes.
+When that pull request is merged, the [Release workflow](.github/workflows/release.yml) sees a version in `Cargo.toml` that has no tag. It makes the release files (`fileos-<version>-linux-x86_64.tar.gz` with `fileos` and the `.app` folders, the documentation, and `SHA256SUMS`) and runs `knope release`. Knope makes the tag `v<version>` and the GitHub release, with the part of `CHANGELOG.md` for that version as the release notes.

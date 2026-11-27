@@ -9,7 +9,7 @@ fileOS is a replicated file system for people and the small groups they are part
 
 ## System model
 
-**Principals.** Devices, nodes and apps are named by ed25519 public keys. A group is a principal with no key; its members act for it, and its owner is a key or another group. A person is an identity (`did:fos`) with a number of nodes.
+**Principals.** Devices, nodes and apps are named by ed25519 public keys. A group is a principal with no key; its members act for it, and its owner is a key or another group. A person is an identity (`did:fileos`) with a number of nodes.
 
 **Spaces.** A space is the unit of replication, ownership and retention. Its ID is the hash of its first entry. Each writer has a signed, append-only log in the space; each entry names the entries it comes after, so the logs form one causal graph. The state is a function of the set of entries alone, so replicas that have the same entries are in the same state (strong eventual consistency), and every node may write while offline.
 
@@ -26,23 +26,23 @@ fileOS is a replicated file system for people and the small groups they are part
 With the devenv shell (`direnv allow`):
 
 ```sh
-cargo build -p fos                       # the program
+cargo build -p fileos                       # the program
 apps                                     # the apps, in target/apps/
-fos node init                            # a node in ~/.fileos
-fos node run                             # the network, the apps and the gateway
+fileos node init                            # a node in ~/.fileos
+fileos node run                             # the network, the apps and the gateway
 ```
 
 In another terminal:
 
 ```sh
-fos space new /photos                    # a space, mounted at /photos
-fos app install target/apps/Photos.app   # the photos app
-fos fs put /photos/cat.png cat.png
-fos fs ls /photos
-fos node status
+fileos space new /photos                    # a space, mounted at /photos
+fileos app install target/apps/Photos.app   # the photos app
+fileos fs put /photos/cat.png cat.png
+fileos fs ls /photos
+fileos node status
 ```
 
-To share `/photos` with another node: `fos space grant /photos <its node key> read-write` here, then `fos space mount <space ID> /photos` there.
+To share `/photos` with another node: `fileos space grant /photos <its node key> read-write` here, then `fileos space mount <space ID> /photos` there.
 
 ## What is there
 
@@ -59,7 +59,7 @@ To share `/photos` with another node: `fos space grant /photos <its node key> re
 - [ ] **Apps**
   - [x] Apps come as `.app` files (a zip with no compression: the manifest, and the rest in `tar.zst`)
   - [x] Each app has its own key, gets only what its manifest asks for, and runs with limits on fuel and memory
-  - [x] Each app sees only its own view: mounts at names it knows, private data, and grants given at run time (`fos app grant`)
+  - [x] Each app sees only its own view: mounts at names it knows, private data, and grants given at run time (`fileos app grant`)
   - [x] Apps answer HTTP at their own origin, `<app-id>.localhost`, with `wasi:http`
   - [x] The photos app: a gallery, upload, and an index of image sizes
   - [x] The chat app: rooms with one file for each message, in a space that you share
@@ -70,19 +70,21 @@ To share `/photos` with another node: `fos space grant /photos <its node key> re
   - [ ] Encryption: keys that follow prefixes, HPKE (RFC 9180), keys destroyed on delete
   - [ ] QUIC
 - [ ] **Identity**
-  - [x] One identity for a person: a DID (`did:fos`, the `did:plc` method with no directory), apart from the keys of their nodes
+  - [x] One identity for a person: a DID (`did:fileos`, the `did:plc` method with no directory), apart from the keys of their nodes
   - [x] Rotation keys and a signing key; node certificates in an identity space
-  - [x] An identity acting for all its devices: a grant to a `did:fos` is a grant to each of its nodes
+  - [x] An identity acting for all its devices: a grant to a `did:fileos` is a grant to each of its nodes
   - [ ] Domain names as other names of an identity (as AT Protocol handles)
   - [ ] Finding all the nodes of an identity through rendezvous nodes
 - [x] **Running a node**
-  - [x] One program (`fos`) and one data directory
+  - [x] One program (`fileos`) and one data directory
   - [x] A local gateway and a command line
 
 ## Documentation
+
+Read the [fileOS documentation](https://docs.fileos.app/en-us/).
 
 [User manual](docs/src/content/docs/en-us/user/index.md) · [Running a node](docs/src/content/docs/en-us/admin/index.md) · [Architecture](docs/src/content/docs/en-us/dev/fileos.md) · [Writing apps](docs/src/content/docs/en-us/dev/apps.md) · [Contributing](CONTRIBUTING.md)
 
 ## License
 
-[AGPL-3.0-only](LICENSE), with a [Plugin Exception](PLUGIN-EXCEPTION.md). The app SDK (`apps/fos-app`) and the interfaces in `wit/` are MIT OR Apache-2.0.
+[AGPL-3.0-only](LICENSE), with a [Plugin Exception](PLUGIN-EXCEPTION.md). The app SDK (`apps/fileos-app`) and the interfaces in `wit/` are MIT OR Apache-2.0.

@@ -21,14 +21,14 @@ body:
     attributes:
       label: Steps to make it take place again
       placeholder: |
-        1. fos node init
-        2. fos node run
+        1. fileos node init
+        2. fileos node run
         3. ...
   - type: input
     id: version
     attributes:
       label: Version
-      description: The output of `fos --version`, or the commit you made it from.
+      description: The output of `fileos --version`, or the commit you made it from.
     validations:
       required: true
   - type: input

@@ -35,7 +35,7 @@ budget on every pull request, measured on a 4-core laptop with 8 GB of RAM:
 | ---------------------------------- | ------- |
 | Clean debug build of the workspace | ≤ 360 s |
 | Rebuild after editing a leaf crate | ≤ 5 s   |
-| Rebuild after editing `fos-core`   | ≤ 20 s  |
+| Rebuild after editing `fileos-core`   | ≤ 20 s  |
 
 We treat a pull request over budget like one that fails the tests.
 
@@ -48,12 +48,12 @@ and neither is C or C++ that needs cmake.
 
 ## Shape of the code
 
-- Small crates and a shallow graph. Dependencies only go down. `fos-core`
-  depends on no other fileOS crate, and `fos` stays thin.
+- Small crates and a shallow graph. Dependencies only go down. `fileos-core`
+  depends on no other fileOS crate, and `fileos` stays thin.
 - Crates marked `portable = true` must build for `wasm32-unknown-unknown`, so
   they have no threads, files, sockets or clocks.
 - Protocol logic is sans-IO (it does no input or output itself). So the same
-  code runs in the deterministic simulation (`fos-sim`).
+  code runs in the deterministic simulation (`fileos-sim`).
 - Mechanism, not policy: when code decides what should happen (whom to help,
   what to share, what to keep), make it a policy with a default that can be
   changed for another.
@@ -84,7 +84,7 @@ workflow makes the tag and the GitHub release. The steps are in
 
 ## Licensing and sign-off
 
-fileOS is AGPL-3.0-only. The app SDK (`apps/fos-app`) and the interfaces
+fileOS is AGPL-3.0-only. The app SDK (`apps/fileos-app`) and the interfaces
 in `wit/` are MIT OR Apache-2.0, so that apps can use any license. Start every source file with an SPDX header.
 There is no CLA: you keep your copyright.
 

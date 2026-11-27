@@ -8,4 +8,4 @@ The kernel is new. Folders are now spaces: every writer has its own signed log, 
 
 Access is now grants in the kernel: exact permissions or templates (`read`, `read-write`, `manage`, `relay`), on a path or on one file, which can be taken back with everything given on from them. The engine and `Capability.app` are gone.
 
-The command line changes: `fos node init` needs no engine, and `fos space new|mount|grant|grants|take|checkpoint` takes the place of `fos folder`. The data directory has a new layout, so make a new node. Apps keep the same interface; the chat app now keeps one file for each message.
+The command line changes: `fileos node init` needs no engine, and `fileos space new|mount|grant|grants|take|checkpoint` takes the place of `fileos folder`. The data directory has a new layout, so make a new node. Apps keep the same interface; the chat app now keeps one file for each message.

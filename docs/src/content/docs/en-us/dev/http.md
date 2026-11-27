@@ -25,7 +25,7 @@ the port. Two apps with the same origin can read each other's storage and
 make requests as each other. So every app has an origin of its own:
 
 ```
-http://fos.localhost:<port>/            the kernel: interface, sign-in, API
+http://fileos.localhost:<port>/            the kernel: interface, sign-in, API
 http://<app>.localhost:<port>/       one origin for each app
 http://<plugin-id>.localhost:<port>/    a plugin with an interface
 ```
@@ -66,15 +66,15 @@ passwords, sessions or tokens.
 1. The app is opened at `http://photos.localhost/`. Its static files
    need no sign-in: they are the code of the app, not data.
 2. The app has no token, so it sends the browser to
-   `http://fos.localhost/authorize`, with a PKCE challenge.
+   `http://fileos.localhost/authorize`, with a PKCE challenge.
 3. The kernel's page signs the person in (with a passkey) and asks if the app
    may act for them. The page is on the origin of the kernel, so the app
    cannot make a false one.
 4. The kernel sends the browser back with a code. The app changes the code
-   for a token at `http://fos.localhost/token` (CORS lets only that app's
+   for a token at `http://fileos.localhost/token` (CORS lets only that app's
    origin in).
 5. The app sends the token in the `Authorization` header. The kernel checks
-   it, takes the header away, puts in `Fos-User: did:fos:…`, and gives the
+   it, takes the header away, puts in `FileOS-User: did:fileos:…`, and gives the
    request to the app.
 
 The standards are OAuth 2.0 (RFC 6749) with PKCE (RFC 7636), as in "OAuth 2.0
@@ -93,7 +93,7 @@ for them.
 - It listens on this machine only (127.0.0.1 and ::1), on a fixed port that
   people can change. Other devices come through libp2p, not through this
   port.
-- It takes only known host names (`fos.localhost`, `*.localhost`), so that DNS
+- It takes only known host names (`fileos.localhost`, `*.localhost`), so that DNS
   rebinding does not work.
 - It sends each request to the component of its host name.
 - It takes away `Set-Cookie` from the answers of apps, and never sends a
@@ -117,7 +117,7 @@ for large files, and `application/problem+json` (RFC 9457) for errors.
 
 ### Enhanced mode: a node on the device
 
-The node gives the web interface itself, from files that are in the `fos`
+The node gives the web interface itself, from files that are in the `fileos`
 program. The code comes from the program you put on your machine, not from
 a server each time. Apps on other nodes come through the local node over
 libp2p. The web page of the project only looks for a local node, and sends
@@ -161,8 +161,8 @@ over WebSocket through a relay. It is a way in, not the home of your data:
 2. **Apps as HTTP servers:** `wasi:http` in the runtime, and requests sent by
    host name.
 3. **Sign-in:** `/authorize`, `/token` and `/revoke`, passkeys, DPoP, the
-   `Fos-User` header, and signed URLs.
-4. **The web interface in `fos`**, and the web page of the project that sends
+   `FileOS-User` header, and signed URLs.
+4. **The web interface in `fileos`**, and the web page of the project that sends
    people to their local node.
 5. **The shared domain** for devices with no node.
 6. **The node in the browser.**

@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "fileos-node"
+description = "One fileOS node: the store, the spaces, the apps and the network"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+fileos-core.workspace = true
+fileos-space.workspace = true
+fileos-id.workspace = true
+fileos-store.workspace = true
+fileos-runtime.workspace = true
+fileos-net.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

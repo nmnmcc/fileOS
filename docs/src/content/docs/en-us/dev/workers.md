@@ -44,8 +44,8 @@ of browsers.
 | Event      | When                                       | Interface                               |
 | ---------- | ------------------------------------------ | --------------------------------------- |
 | `fetch`    | An HTTP request comes for its origin       | `wasi:http/incoming-handler` (standard) |
-| `watch`    | A file or a prefix it watches changes      | `fos:app/events`                        |
-| `schedule` | A time given in the manifest, as cron does | `fos:app/events`                        |
+| `watch`    | A file or a prefix it watches changes      | `fileos:app/events`                        |
+| `schedule` | A time given in the manifest, as cron does | `fileos:app/events`                        |
 
 Time is not data, so it is not a file: a `schedule` is listed in the manifest,
 as Cloudflare's Cron Triggers are. Every other "event" is a watch on files:
@@ -100,11 +100,11 @@ name  = "reindex"
 every = "1d"        # s, m, h or d; at least one minute
 ```
 
-At those times the kernel sends `POST /.well-known/fos/schedule/<name>`,
-with the header `fos-event: schedule`, to the app's own `wasi:http` handler.
+At those times the kernel sends `POST /.well-known/fileos/schedule/<name>`,
+with the header `fileos-event: schedule`, to the app's own `wasi:http` handler.
 So a schedule needs nothing new in the app interface. Requests from outside
-never reach paths under `/.well-known/fos/`, and the gateway takes
-`fos-event` away from them. A schedule runs first one period after the node
+never reach paths under `/.well-known/fileos/`, and the gateway takes
+`fileos-event` away from them. A schedule runs first one period after the node
 starts; times missed while the node was off are not made up, as with cron.
 Today each node runs the schedules of its own apps.
 

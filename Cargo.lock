@@ -1055,20 +1055,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "fos"
+name = "fileos"
 version = "0.1.0"
 dependencies = [
  "clap",
- "fos-core",
- "fos-gateway",
- "fos-node",
+ "fileos-core",
+ "fileos-gateway",
+ "fileos-node",
  "percent-encoding",
  "tokio",
  "tracing-subscriber",
 ]
 
 [[package]]
-name = "fos-core"
+name = "fileos-core"
 version = "0.1.0"
 dependencies = [
  "blake3",
@@ -1078,12 +1078,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "fos-gateway"
+name = "fileos-gateway"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "fos-core",
- "fos-node",
+ "fileos-core",
+ "fileos-node",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -1093,46 +1093,46 @@ dependencies = [
 ]
 
 [[package]]
-name = "fos-id"
+name = "fileos-id"
 version = "0.1.0"
 dependencies = [
  "bs58",
- "fos-core",
+ "fileos-core",
  "serde",
 ]
 
 [[package]]
-name = "fos-net"
+name = "fileos-net"
 version = "0.1.0"
 dependencies = [
- "fos-core",
- "fos-space",
+ "fileos-core",
+ "fileos-space",
  "libp2p",
  "tokio",
  "tracing",
 ]
 
 [[package]]
-name = "fos-node"
+name = "fileos-node"
 version = "0.1.0"
 dependencies = [
- "fos-core",
- "fos-id",
- "fos-net",
- "fos-runtime",
- "fos-space",
- "fos-store",
+ "fileos-core",
+ "fileos-id",
+ "fileos-net",
+ "fileos-runtime",
+ "fileos-space",
+ "fileos-store",
  "tempfile",
  "tokio",
  "tracing",
 ]
 
 [[package]]
-name = "fos-runtime"
+name = "fileos-runtime"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "fos-core",
+ "fileos-core",
  "http-body-util",
  "hyper",
  "rawzip",
@@ -1147,29 +1147,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "fos-sim"
+name = "fileos-sim"
 version = "0.1.0"
 dependencies = [
- "fos-core",
- "fos-id",
- "fos-space",
+ "fileos-core",
+ "fileos-id",
+ "fileos-space",
 ]
 
 [[package]]
-name = "fos-space"
+name = "fileos-space"
 version = "0.1.0"
 dependencies = [
- "fos-core",
- "fos-id",
+ "fileos-core",
+ "fileos-id",
  "serde",
 ]
 
 [[package]]
-name = "fos-store"
+name = "fileos-store"
 version = "0.1.0"
 dependencies = [
- "fos-core",
- "fos-space",
+ "fileos-core",
+ "fileos-space",
  "getrandom 0.3.4",
  "tempfile",
 ]
