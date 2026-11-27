@@ -44,6 +44,17 @@ interface log {
   info: func(message: string);
 }
 
+/// Asking the person for access at run time, through the kernel's picker.
+/// The app never sees where the files really are: the answer comes as a new
+/// mount at `/granted/<handle>` in the app's view, with `on-change` for it.
+interface access {
+  /// Asks for `permissions` (exact names or templates, within the `asks`
+  /// of the manifest) on a file or directory that the person picks.
+  /// `purpose` is shown to the person. Gives the ID of the request; the
+  /// call does not wait for the answer.
+  ask: func(purpose: string, permissions: string) -> result<string, string>;
+}
+
 /// What the core calls in an app.
 interface events {
   /// A path that the app watches has changed.
@@ -59,6 +70,7 @@ world app {
   import fs;
   import kv;
   import log;
+  import access;
   /// The time of day, for names that sort by time.
   import wasi:clocks/wall-clock@0.2.12;
   export events;

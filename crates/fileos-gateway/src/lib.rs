@@ -36,6 +36,9 @@
 //! | `GET /v0/apps/<app>/view`                    | The mounts in an app's view          |
 //! | `POST /v0/apps/<app>/view?path=&permissions=&as=` | Give an app a path, in its view  |
 //! | `DELETE /v0/apps/<app>/view?name=<name>`     | Take a mount away from an app's view |
+//! | `GET /v0/requests`                           | Requests of apps for access          |
+//! | `POST /v0/requests/<id>?path=<path>`         | Answer a request with a path         |
+//! | `DELETE /v0/requests/<id>`                   | Say no to a request                  |
 //! | `GET /v0/kv/<app>`                           | An app's cache on this node, as text |
 //! | `POST /v0/dial`                              | Connect to a multiaddr (the body)    |
 //!
@@ -387,6 +390,20 @@ fn route(
             Method::DELETE => node
                 .app_take(app, &arg("name")?)
                 .and_then(|()| ok(String::new())),
+            _ => Ok(reply(StatusCode::METHOD_NOT_ALLOWED, "")),
+        };
+    }
+    if path == "/v0/requests" {
+        return ok(node
+            .requests()
+            .into_iter()
+            .map(|r| format!("{}\t{}\t{}\t{}\n", r.id, r.app, r.permissions, r.purpose))
+            .collect());
+    }
+    if let Some(id) = path.strip_prefix("/v0/requests/") {
+        return match *method {
+            Method::POST => ok(format!("{}\n", node.answer(id, &arg("path")?)?)),
+            Method::DELETE => node.refuse(id).and_then(|()| ok(String::new())),
             _ => Ok(reply(StatusCode::METHOD_NOT_ALLOWED, "")),
         };
     }

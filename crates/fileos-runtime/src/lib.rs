@@ -44,7 +44,9 @@ mod bindings {
     }
 }
 
-use bindings::app::fileos::app::{fs as wit_fs, kv as wit_kv, log as wit_log};
+use bindings::app::fileos::app::{
+    access as wit_access, fs as wit_fs, kv as wit_kv, log as wit_log,
+};
 
 /// Fuel for one call into an app.
 const APP_FUEL: u64 = 2_000_000_000;
@@ -143,6 +145,16 @@ pub fn glob(pattern: &str, name: &str) -> bool {
     p[pi..].iter().all(|c| *c == '*')
 }
 
+/// What an app may ask the person for at run time (see `fileos:app/access`).
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct Ask {
+    /// Exact permissions or templates, with commas: `read`, `files.read`.
+    pub permissions: String,
+    /// The key of the text that tells the person why, in `resources/locales/`.
+    #[serde(default)]
+    pub reason: String,
+}
+
 /// Where the kernel sends the request for a schedule of an app:
 /// `POST /.well-known/fileos/schedule/<name>`, with `fileos-event: schedule`.
 /// Requests from outside never reach paths under `/.well-known/fileos/`.
@@ -204,6 +216,9 @@ pub struct Manifest {
     pub watch: Vec<Watch>,
     #[serde(default)]
     pub schedule: Vec<Schedule>,
+    /// The most the app may ask for at run time, through the picker.
+    #[serde(default)]
+    pub asks: Vec<Ask>,
 }
 
 /// The WIT version this runtime gives.
@@ -398,6 +413,16 @@ pub trait AppHost: Send + Sync {
     fn kv_delete(&self, app: &str, key: &str);
     fn kv_keys(&self, app: &str, prefix: &str) -> Vec<String>;
     fn log(&self, app: &str, message: &str);
+    /// Files a request of the app for access, for the person to answer.
+    /// Gives its ID.
+    ///
+    /// # Errors
+    ///
+    /// When the app may not ask for this, or the node has no picker.
+    fn ask(&self, app: &str, purpose: &str, permissions: &str) -> Result<String, String> {
+        let _ = (app, purpose, permissions);
+        Err("this node cannot ask the person".into())
+    }
 }
 
 struct AppCtx {
@@ -482,6 +507,7 @@ fn add_fileos_to_linker(linker: &mut Linker<AppCtx>) -> Result<(), Error> {
     app::fs::add_to_linker::<AppCtx, HasSelf<AppCtx>>(linker, |c| c).map_err(wasm_error)?;
     app::kv::add_to_linker::<AppCtx, HasSelf<AppCtx>>(linker, |c| c).map_err(wasm_error)?;
     app::log::add_to_linker::<AppCtx, HasSelf<AppCtx>>(linker, |c| c).map_err(wasm_error)?;
+    app::access::add_to_linker::<AppCtx, HasSelf<AppCtx>>(linker, |c| c).map_err(wasm_error)?;
     Ok(())
 }
 
@@ -512,6 +538,12 @@ impl wit_fs::Host for AppCtx {
 
     fn list_dir(&mut self, path: String) -> Result<Vec<String>, wit_fs::Error> {
         self.host.list(&self.app, &path).map_err(to_wit)
+    }
+}
+
+impl wit_access::Host for AppCtx {
+    fn ask(&mut self, purpose: String, permissions: String) -> Result<String, String> {
+        self.host.ask(&self.app, &purpose, &permissions)
     }
 }
 

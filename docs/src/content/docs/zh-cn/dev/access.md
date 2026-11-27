@@ -138,6 +138,8 @@ fileOS 只有一个模型，但只有当两样东西**规则相同、生命周�
 - 没有 “照片库” 这样的系统级种类。
 - 用户可以随时收回整项授权，或者其中的某几项权限。
 
+目前已实现：App 在它 manifest 的 `[[asks]]` 范围内调用 `fileos:app/access.ask(purpose, permissions)`。请求保存在家空间里等待。用户用 `fileos app requests` 查看，用 `fileos app answer <id> <path>` 回应（或用 `fileos app refuse <id>` 拒绝）。App 在 `/granted/<handle>` 得到这个路径，并通过 `on-change` 得知。`fileos.localhost` 上的选择器页面会和登录一起做。
+
 ### App 之间的分享
 
 和 Android 的 intent 一样：App 在清单里声明它能接收什么（`[[receives]]`，写明 action、类型和路径）。有 `share.send` 的 App 把用户转到内核的分享面板；用户选择一个 App；内核用分享方自己的授权，给接收方一项授权（只读、单个文件、一直有效直到被收回），把它挂载好，再把用户转到接收方的路径，对接收方来说这是一个普通的 `fetch`。

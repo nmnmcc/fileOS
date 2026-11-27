@@ -25,6 +25,7 @@ An app is a component of the `app` world.
 | `kv`                     | A cache on this node only, for indexes that can be made again  |
 | `log`                    | Messages for the node's status and log                         |
 | `wasi:clocks/wall-clock` | The time, for names that sort by time                          |
+| `access`                 | `ask`: ask the person for a file or folder, through the picker |
 
 | The app gives (exports)             | When the core calls it                       |
 | ----------------------------------- | -------------------------------------------- |

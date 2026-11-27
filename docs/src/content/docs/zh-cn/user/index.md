@@ -95,6 +95,8 @@ App 只能看到它自己的视图，永远看不到你的文件真正在哪里�
 
 每个 App 还有自己的私有数据，别的 App 读不到。
 
+App 也可以向你申请东西，比如一个要显示的照片文件夹。`fileos app requests` 列出 App 的申请；`fileos app answer <id> /holiday` 给它，`fileos app refuse <id>` 拒绝。
+
 fileOS 自带两个 App：
 
 - **照片**：显示 `/photos` 中的照片，可以上传新照片，并为照片尺寸建立索引。

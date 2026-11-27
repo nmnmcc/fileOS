@@ -53,6 +53,22 @@ const VIEWS: &str = ".views/";
 /// Where the private data space of each app is mounted in the home space.
 const APPDATA: &str = ".appdata/";
 
+/// Where the requests of apps for access wait for the person, in the home
+/// space: `.requests/<id>`.
+const REQUESTS: &str = ".requests/";
+
+/// A request of an app for access, waiting for the person.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccessRequest {
+    pub id: String,
+    /// The ID in the app's manifest.
+    pub app: String,
+    /// What the app says it is for.
+    pub purpose: String,
+    /// What it asks for: exact permissions or templates.
+    pub permissions: String,
+}
+
 /// One mount in the view of an app.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ViewMount {
@@ -99,6 +115,8 @@ struct Shared {
     changed: Changed,
     /// The schedules of each app, by app ID.
     schedules: Mutex<BTreeMap<String, Vec<fileos_runtime::Schedule>>>,
+    /// The most each app may ask for, by the ID in its manifest.
+    asks: Mutex<BTreeMap<String, BTreeSet<Permission>>>,
     /// True once `start_schedules` ran: apps started later get their
     /// timers at once.
     scheduling: std::sync::atomic::AtomicBool,
@@ -415,6 +433,7 @@ impl Node {
                 http: Mutex::new(BTreeMap::new()),
                 changed: Mutex::new(VecDeque::new()),
                 schedules: Mutex::new(BTreeMap::new()),
+                asks: Mutex::new(BTreeMap::new()),
                 scheduling: std::sync::atomic::AtomicBool::new(false),
                 runtime: Runtime::new()?,
                 key: key.public(),
@@ -692,8 +711,10 @@ impl Node {
             inner.take_app(app, &name, &self.shared.changed)?;
         }
         inner.give_app(app, path, permissions, &name, &self.shared.changed)?;
-        // The app hears of the files that are there already.
-        let existing = inner.files_under(path);
+        // The app hears of the new mount, and of the files that are there
+        // already.
+        let mut existing = vec![format!("/{}", clean(path))];
+        existing.extend(inner.files_under(path));
         drop(inner);
         lock(&self.shared.changed).extend(existing.into_iter().map(|p| (p, ChangeKind::Made)));
         self.pump();
@@ -703,6 +724,46 @@ impl Node {
     /// What an app sees: the mounts in its view.
     pub fn app_view(&self, app: &str) -> Vec<ViewMount> {
         self.inner().views(app)
+    }
+
+    /// The requests of apps for access that wait for the person.
+    pub fn requests(&self) -> Vec<AccessRequest> {
+        self.inner().requests()
+    }
+
+    /// Answers a request of an app: gives it what it asked for on the node
+    /// path the person picked, at `/granted/<handle>` in its view. Gives that
+    /// path.
+    ///
+    /// # Errors
+    ///
+    /// When there is no such request, or the grant cannot be given.
+    pub fn answer(&self, id: &str, path: &str) -> Result<String, Error> {
+        let request = self
+            .requests()
+            .into_iter()
+            .find(|r| r.id == id)
+            .ok_or_else(|| Error(format!("no request {id:?}")))?;
+        let at = self.app_grant(
+            &request.app,
+            path,
+            &parse_permissions(&request.permissions)?,
+            None,
+        )?;
+        self.refuse(id)?;
+        Ok(at)
+    }
+
+    /// Says no to a request of an app: it goes away, and the app gets
+    /// nothing.
+    ///
+    /// # Errors
+    ///
+    /// When there is no such request.
+    pub fn refuse(&self, id: &str) -> Result<(), Error> {
+        let mut inner = self.inner();
+        let home = inner.home;
+        inner.delete_name(None, home, &format!("{REQUESTS}{id}"), &self.shared.changed)
     }
 
     /// Takes a mount away from an app's view, and takes back its grant.
@@ -1005,6 +1066,11 @@ impl Node {
         lock(&self.shared.apps).push(app);
         lock(&self.shared.http).insert(id.clone(), http);
         lock(&self.shared.schedules).insert(id.clone(), bundle.manifest.schedule.clone());
+        let mut asks = BTreeSet::new();
+        for ask in &bundle.manifest.asks {
+            asks.extend(parse_permissions(&ask.permissions)?);
+        }
+        lock(&self.shared.asks).insert(bundle.manifest.id.clone(), asks);
         if self
             .shared
             .scheduling
@@ -1450,7 +1516,7 @@ impl Inner {
         let (space, name) = self.resolve(path);
         let mut names = self.list_in(who, space, &name)?;
         if space == self.home {
-            names.retain(|n| ![".mounts", ".views", ".appdata"].contains(&n.as_str()));
+            names.retain(|n| ![".mounts", ".views", ".appdata", ".requests"].contains(&n.as_str()));
             let here = clean(path);
             for (at, _) in self.mounts() {
                 let rest = if here.is_empty() {
@@ -1500,6 +1566,31 @@ impl Inner {
             .filter(|n| !n.is_empty())
             .collect();
         Ok(names.into_iter().collect())
+    }
+
+    /// The requests of apps that wait for the person.
+    fn requests(&self) -> Vec<AccessRequest> {
+        let Some(home) = self.node.space(self.home) else {
+            return Vec::new();
+        };
+        home.files()
+            .iter()
+            .filter_map(|f| {
+                let id = f
+                    .versions
+                    .iter()
+                    .find_map(|v| v.name.strip_prefix(REQUESTS))?
+                    .to_string();
+                let text = String::from_utf8(self.bytes(self.home, f)?).ok()?;
+                let mut lines = text.splitn(3, '\n');
+                Some(AccessRequest {
+                    id,
+                    app: lines.next()?.to_string(),
+                    permissions: lines.next()?.to_string(),
+                    purpose: lines.next().unwrap_or_default().to_string(),
+                })
+            })
+            .collect()
     }
 
     /// The private data space of an app, if it has one.
@@ -2210,6 +2301,35 @@ impl AppHost for Host {
 
     fn log(&self, app: &str, message: &str) {
         self.with(|inner, _| inner.log(format!("[{app}] {message}")));
+    }
+
+    fn ask(&self, app: &str, purpose: &str, permissions: &str) -> Result<String, String> {
+        let shared = self.shared.upgrade().ok_or("the node stopped")?;
+        let asked = parse_permissions(permissions).map_err(|e| e.0)?;
+        let allowed = lock(&shared.asks).get(app).cloned().unwrap_or_default();
+        if let Some(p) = asked.iter().find(|p| !allowed.contains(p)) {
+            return Err(format!(
+                "the manifest of {app} does not let it ask for {p:?}"
+            ));
+        }
+        if purpose.len() > 500 || purpose.contains('\n') {
+            return Err("a purpose is one line of at most 500 bytes".into());
+        }
+        let id = Hash::of_value(&(app, purpose, permissions, now())).to_string()[..12].to_string();
+        let text = format!("{app}\n{permissions}\n{purpose}");
+        self.with(|inner, changed| {
+            let home = inner.home;
+            inner.put_name(
+                None,
+                home,
+                &format!("{REQUESTS}{id}"),
+                text.as_bytes(),
+                changed,
+            )
+        })
+        .ok_or("the node stopped")?
+        .map_err(|e| e.0)?;
+        Ok(id)
     }
 }
 
