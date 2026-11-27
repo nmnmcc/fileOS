@@ -280,10 +280,12 @@ Dependencies go down only. Apps depend only on `fileos-app`.
 | Encryption: keys that follow prefixes, HPKE, crypto-shredding     | Yes                                          |
 | People as principals (an identity acts for its devices)           | Yes                                          |
 | Views for apps, private app data, grants given at run time        | Yes                                          |
-| The picker, sharing between apps                                  | No                                           |
+| The picker, sharing between apps                                  | Yes                                          |
 | Apps as workers: a new instance for each event                    | Yes                                          |
 | Schedules: a request from the kernel to the app                   | Yes                                          |
-| Watch options, `wasi:filesystem`, lists of nodes                  | No                                           |
+| Watch options                                                     | Yes                                          |
+| Apps that belong to the identity, the same on every node          | Yes                                          |
+| `wasi:filesystem`, lists of nodes for each event                  | No                                           |
 | Sign-in for people (OAuth with PKCE and DPoP)                     | Yes                                          |
 
 ## Costs and open questions
@@ -301,5 +303,5 @@ Dependencies go down only. Apps depend only on `fileos-app`.
 
 ## Next steps
 
-1. The picker (an app asks for a file), sharing between apps.
-2. Watch options, `wasi:filesystem`, and lists of nodes for each event.
+1. Lists of nodes for each event, with fallback.
+2. `wasi:filesystem` for apps.

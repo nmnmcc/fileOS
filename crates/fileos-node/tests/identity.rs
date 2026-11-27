@@ -83,7 +83,8 @@ async fn an_identity_has_its_nodes() {
     assert_eq!(vps.list("/identity/nodes").unwrap().len(), 2);
 
     // A space shared with the person, not with one key, reaches every node
-    // of the identity.
+    // of the identity. The mount is in the home space of the identity, so
+    // the VPS has it too, with no `mount` of its own.
     let shared = laptop.create("/shared").unwrap();
     laptop.put("/shared/note.txt", b"for all my nodes").unwrap();
     laptop
@@ -93,7 +94,6 @@ async fn an_identity_has_its_nodes() {
             &parse_permissions("read-write").unwrap(),
         )
         .unwrap();
-    vps.mount(shared, "/shared").unwrap();
     until("the VPS gets the space shared with the identity", || {
         vps.read("/shared/note.txt").is_ok()
     })

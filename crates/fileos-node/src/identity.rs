@@ -2,13 +2,14 @@
 
 //! Keeps the identity log and the certificates of its nodes.
 
+use std::collections::BTreeSet;
 use std::fmt::{self, Write as _};
 
 use fileos_core::{Error, Hash, PublicKey, SecretKey};
 use fileos_id::{Link, NodeCert, Op as DidOp, Service, State};
-use fileos_space::{Act, Id, Principal};
+use fileos_space::{Act, Id, Principal, Space};
 
-use super::{Changed, Inner, Node, READ, clean};
+use super::{APP_SEED, Changed, Inner, Node, READ, clean};
 
 /// Where the identity space is mounted in the home space.
 pub const IDENTITY_AT: &str = "/identity";
@@ -84,7 +85,27 @@ impl Node {
             &self.shared.changed,
         )?;
         inner.add_node(&did, &signing, self.key(), &self.shared.changed)?;
+        // The home space of the identity, owned by the identity: every node
+        // of the person may write in it. It has the seed of app keys, which
+        // gives the apps of this node the keys they had.
+        let owner = Principal::Identity(fileos_id::did_hash(&did)?);
+        let now = (inner.clock)();
+        let (home, step) = inner.node.create_owned(owner, now);
+        inner.process(step, &self.shared.changed)?;
+        let seed = inner.key.derive("apps").seed();
+        let path = format!("{IDENTITY_AT}{}", fileos_id::HOME);
+        inner.put(
+            Some(&signing),
+            &path,
+            home.to_string().as_bytes(),
+            &self.shared.changed,
+        )?;
+        inner.update_proof(&self.shared.changed)?;
+        if inner.home == home && inner.read_name(home, APP_SEED).is_none() {
+            inner.put_name(None, home, APP_SEED, &seed, &self.shared.changed)?;
+        }
         drop(inner);
+        self.start_new_apps();
         self.pump();
         Ok(did)
     }
@@ -370,10 +391,113 @@ impl Inner {
             return Ok(());
         };
         match self.node.set_identity(ops, cert) {
-            Ok(step) => self.process(step, changed),
+            Ok(step) => self.process(step, changed)?,
             // Not a good certificate (yet, or any more): nothing to show.
-            Err(_) => Ok(()),
+            Err(_) => return Ok(()),
         }
+        self.use_identity_home(changed)
+    }
+
+    /// The bytes of the file `name` in a space, if this node can read it.
+    fn read_name(&self, space: Hash, name: &str) -> Option<Vec<u8>> {
+        let s = self.node.space(space)?;
+        let file = s.find(name).into_iter().next()?;
+        self.bytes(space, &file)
+    }
+
+    /// The home space of the identity, as its identity space names it.
+    pub(super) fn identity_home(&self) -> Option<Hash> {
+        let space = self.identity_space()?;
+        let name = fileos_id::HOME.trim_start_matches('/');
+        String::from_utf8(self.read_name(space, name)?)
+            .ok()?
+            .trim()
+            .parse()
+            .ok()
+    }
+
+    /// The identity of this node, as a principal.
+    pub(super) fn identity_principal(&self) -> Option<Principal> {
+        let did = self.identity(self.key.public())?.did?;
+        fileos_id::did_hash(&did).ok().map(Principal::Identity)
+    }
+
+    /// Uses the home space of the identity as this node's home, once it is
+    /// here: the mounts, views and apps of this node that it does not have
+    /// yet go into it, and the node follows what it mounts.
+    pub(super) fn use_identity_home(&mut self, changed: &Changed) -> Result<(), Error> {
+        let Some(target) = self.identity_home() else {
+            return Ok(());
+        };
+        if target == self.home {
+            return Ok(());
+        }
+        if self.node.space(target).is_none() {
+            let step = self.node.follow(target);
+            return self.process(step, changed);
+        }
+        let old = self.home;
+        let ours: Vec<(String, Vec<u8>)> = self
+            .node
+            .space(old)
+            .map(Space::files)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|f| Some((f.versions.first()?.name.clone(), self.bytes(old, f)?)))
+            .collect();
+        let theirs: BTreeSet<String> = self
+            .node
+            .space(target)
+            .map(Space::files)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|f| f.versions.first().map(|v| v.name.clone()))
+            .collect();
+        self.home = target;
+        for (name, bytes) in ours {
+            if theirs.contains(&name) {
+                continue;
+            }
+            if let Err(e) = self.put_name(None, target, &name, &bytes, changed) {
+                // Not a node of the identity in that space yet: try later.
+                self.home = old;
+                tracing::debug!("the home space of the identity is not ready: {e}");
+                return Ok(());
+            }
+        }
+        self.follow_mounts(changed)?;
+        self.log("this node now uses the home space of its identity".into());
+        Ok(())
+    }
+
+    /// Follows the mounts of the home space that are not here: mounts that
+    /// another node of the person made, or that could not be read before
+    /// their keys or content came.
+    pub(super) fn follow_mounts(&mut self, changed: &Changed) -> Result<(), Error> {
+        let missing: Vec<Hash> = self
+            .mounts()
+            .into_iter()
+            .map(|(_, id)| id)
+            .filter(|id| self.node.space(*id).is_none() && !self.node.wanted().any(|w| w == id))
+            .collect();
+        for id in missing {
+            let step = self.node.follow(id);
+            self.process(step, changed)?;
+        }
+        Ok(())
+    }
+
+    /// The key all app keys come from: a seed in the home space of the
+    /// identity, so an app has the same key on every node of the person;
+    /// or, with no identity, one that comes from the node key.
+    pub(super) fn apps_root(&self) -> SecretKey {
+        if self.home != self.node_home
+            && let Some(seed) = self.read_name(self.home, APP_SEED)
+            && let Ok(seed) = <[u8; 32]>::try_from(seed)
+        {
+            return SecretKey::from_seed(&seed);
+        }
+        self.key.derive("apps")
     }
 }
 

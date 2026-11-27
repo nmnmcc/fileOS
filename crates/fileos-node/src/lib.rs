@@ -58,6 +58,9 @@ const VIEWS: &str = ".views/";
 /// Where the private data space of each app is mounted in the home space.
 const APPDATA: &str = ".appdata/";
 
+/// The file in the home space of an identity with the seed of app keys.
+const APP_SEED: &str = ".app-seed";
+
 /// Where the requests of apps for access wait for the person, in the home
 /// space: `.requests/<id>`.
 const REQUESTS: &str = ".requests/";
@@ -140,6 +143,10 @@ struct Shared {
 
 struct Inner {
     store: Store,
+    /// The home space of this node itself. `home` is the home space of the
+    /// identity instead, once the node has one: then mounts, views and apps
+    /// are the same on every node of the person.
+    node_home: Hash,
     clock: fn() -> u64,
     key: SecretKey,
     node: fileos_space::Node,
@@ -425,6 +432,7 @@ impl Node {
             key: key.clone(),
             node,
             home,
+            node_home: home,
             kv: BTreeMap::new(),
             net: None,
             net_dirty: false,
@@ -1174,6 +1182,8 @@ impl Inner {
         let mut spaces = BTreeSet::new();
         let mut out = step.out;
         let mut proof_changed = false;
+        let mut home_changed = false;
+        let mut mounts_changed = false;
         for event in step.events {
             match event {
                 Event::Changed(space) => {
@@ -1181,6 +1191,10 @@ impl Inner {
                     self.note(space, changed);
                     spaces.insert(space);
                     proof_changed |= self.identity_space() == Some(space);
+                    // The home space of the identity came or changed, or a
+                    // mount may be readable now.
+                    home_changed |= space != self.home && self.identity_home() == Some(space);
+                    mounts_changed |= space == self.home;
                 }
                 Event::Content { from, data } => {
                     let hash = Hash::of(&data);
@@ -1206,8 +1220,10 @@ impl Inner {
                         let paths = self.waiting.remove(&h).unwrap_or_default();
                         lock(changed).extend(paths);
                     }
-                    // The certificate of this node may be what just came.
+                    // The certificate of this node, or the file of a mount,
+                    // may be what just came.
                     proof_changed = true;
+                    mounts_changed = true;
                 }
                 Event::Again { space, entries } => {
                     tracing::info!(name: "node.space.rebased", %space, entries, "offline changes were written again");
@@ -1220,6 +1236,12 @@ impl Inner {
         }
         if proof_changed {
             self.update_proof(changed)?;
+        }
+        if home_changed {
+            self.use_identity_home(changed)?;
+        }
+        if mounts_changed {
+            self.follow_mounts(changed)?;
         }
         if let Some(net) = self.net.clone() {
             for (to, msg) in out {

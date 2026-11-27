@@ -220,10 +220,12 @@ wit/fileos.wit      App 接口
 | 加密：跟着前缀的密钥、HPKE、crypto-shredding | 是                                           |
 | 人作为主体（一个身份代表它的所有设备）       | 是                                           |
 | App 的视图、App 私有数据、运行时授予的授权   | 是                                           |
-| 选择器、App 之间的分享                       | 否                                           |
+| 选择器、App 之间的分享                       | 是                                           |
 | App 作为 Worker：每个事件一个新实例          | 是                                           |
 | 定时任务：内核向 App 发送请求                | 是                                           |
-| 监听选项、`wasi:filesystem`、事件的节点列表  | 否                                           |
+| 监听选项                                     | 是                                           |
+| 属于身份的 App，在每个节点上都相同           | 是                                           |
+| `wasi:filesystem`、事件的节点列表            | 否                                           |
 | 用户登录（带 PKCE 和 DPoP 的 OAuth）         | 是                                           |
 
 ## 代价和未决问题
@@ -235,5 +237,5 @@ wit/fileos.wit      App 接口
 
 ## 下一步
 
-1. 选择器（App 申请一个文件）、App 之间的分享。
-2. 监听选项、`wasi:filesystem`，以及每个事件的节点列表。
+1. 每个事件的节点列表，以及接替。
+2. App 的 `wasi:filesystem`。
