@@ -5,7 +5,10 @@ description: How apps and plugins give their services over HTTP, each with an or
 
 :::note[Status: design, partly built]
 The gateway and apps as HTTP servers (steps 1 and 2 of the [plan](#plan))
-are built. The rest is not built yet.
+are built. Of sign-in (step 3), OAuth 2.0 with PKCE is built: `/authorize`,
+`/token`, `/revoke` and the `FileOS-User` header. Today the person signs in
+with a one-time code from `fileos node sign-in-code`; passkeys, DPoP, refresh
+tokens and signed URLs come next. The rest is not built yet.
 :::
 
 ## The goal

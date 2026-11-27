@@ -1080,13 +1080,17 @@ dependencies = [
 name = "fileos-gateway"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bytes",
  "fileos-core",
  "fileos-node",
+ "getrandom 0.3.4",
  "http-body-util",
  "hyper",
  "hyper-util",
  "percent-encoding",
+ "sha2 0.11.2",
+ "tempfile",
  "tokio",
  "tracing",
 ]

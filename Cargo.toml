@@ -53,6 +53,10 @@ toml = { version = "1.2.3", default-features = false, features = [
 # already built.
 bs58 = { version = "0.5.1", default-features = false, features = ["alloc"] }
 getrandom = { version = "0.3.4", default-features = false, features = ["std"] }
+# Sign-in at the gateway: SHA-256 for PKCE (RFC 7636) and base64url for its
+# codes. Both are already built (sha2 through hpke, base64 through libp2p).
+sha2 = { version = "0.11.2", default-features = false }
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 # Encryption of content and keys. HPKE (RFC 9180) sends keys to each device;
 # it uses x25519-dalek, curve25519-dalek, hkdf and sha2, which libp2p already
 # builds. XChaCha20-Poly1305 encrypts chunks and wraps keys.

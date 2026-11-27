@@ -69,6 +69,10 @@ App 做了什么不在 `fileos` 里，要在 App 里看。`fileos help <组>` �
 
 `fileos space grants /family` 列出授权。`fileos space take /family <授权 ID>` 收回一项授权，由它转授出去的也一起收回。对方在你收回访问的同时做的事没有效果。
 
+## 登录 App
+
+浏览器里的 App 想代表你操作时，会把你带到你的节点在 `fileos.localhost` 上的一个页面。运行 `fileos node sign-in-code`，把代码填进去（只能用一次，十分钟内有效），然后选择同意或拒绝。App 永远看不到这个代码；它得到一个一小时内有效、只能给这个 App 用的令牌。
+
 ## 一个身份，多个节点
 
 身份是你这个人，节点是你的一台机器。你的身份是一个 DID（`did:fileos:…`），有了它，你的所有节点都能被认出是你的。

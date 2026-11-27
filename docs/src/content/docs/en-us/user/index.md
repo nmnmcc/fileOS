@@ -91,6 +91,14 @@ ones they add later, then gets the space.
 takes one back, and with it what was given on from it. What someone did at
 the same time as you took their access back has no effect.
 
+## Signing in to an app
+
+When an app in the browser wants to act for you, it sends you to a page of
+your node at `fileos.localhost`. Run `fileos node sign-in-code` and type the
+code there (it is good once, for ten minutes), then say yes or no. The app
+never sees the code; it gets a token that is good for one hour, for that app
+only.
+
 ## One identity, many nodes
 
 Your identity is you; a node is one of your machines. Your identity is a DID

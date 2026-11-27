@@ -97,6 +97,9 @@ enum NodeCommand {
         #[arg(long)]
         no_mdns: bool,
     },
+    /// A one-time code to sign in to an app in the browser. It is good for
+    /// ten minutes.
+    SignInCode,
     /// What the node is doing: its key, addresses, peers and spaces.
     Status,
     /// Connect to another node by its multiaddr.
@@ -347,6 +350,9 @@ fn node(command: NodeCommand, dir: &Path) -> Result<(), Error> {
             no_mdns,
         } => serve(dir, listen, peer, port, !no_mdns),
         NodeCommand::Status => print(&Client::new(dir)?.call("GET", "/v0/status", &[])?),
+        NodeCommand::SignInCode => {
+            print(&Client::new(dir)?.call("POST", "/v0/sign-in-code", &[])?)
+        }
         NodeCommand::Connect { addr } => Client::new(dir)?
             .call("POST", "/v0/dial", addr.as_bytes())
             .map(drop),

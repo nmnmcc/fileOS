@@ -46,6 +46,12 @@
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+pub mod signin;
+
+use signin::{AuthorizeRequest, SignIn};
 
 use bytes::Bytes;
 use fileos_core::Error;
@@ -163,6 +169,39 @@ fn decode(text: &str) -> String {
     percent_decode_str(text).decode_utf8_lossy().into_owned()
 }
 
+/// Reads `a=1&b=2` (a query, or a form body, where `+` is a space).
+fn fields(text: &str) -> BTreeMap<String, String> {
+    text.split('&')
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            let (k, v) = p.split_once('=').unwrap_or((p, ""));
+            (decode(&k.replace('+', " ")), decode(&v.replace('+', " ")))
+        })
+        .collect()
+}
+
+/// The time now, in seconds since 1970.
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+fn random<const N: usize>() -> [u8; N] {
+    let mut bytes = [0; N];
+    // With no randomness the codes are all zero, and so never good: the
+    // kernel takes each code once, and checks the PKCE verifier.
+    let _ = getrandom::fill(&mut bytes);
+    bytes
+}
+
+/// The sign-in state of the gateway, for all its connections.
+type Sessions = Arc<Mutex<SignIn>>;
+
+fn sessions(s: &Sessions) -> std::sync::MutexGuard<'_, SignIn> {
+    s.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Starts the gateway on `port` (0 for any free port), on `127.0.0.1` and,
 /// when this machine has it, `::1`. Gives the port it listens on.
 ///
@@ -184,17 +223,18 @@ pub async fn start(node: Node, port: u16, token: String) -> Result<u16, Error> {
         Ok(listener) => listeners.push(listener),
         Err(e) => tracing::debug!("gateway: not on {v6}: {e}"),
     }
+    let signin: Sessions = Arc::default();
     for listener in listeners {
-        let (node, token) = (node.clone(), token.clone());
+        let (node, token, signin) = (node.clone(), token.clone(), Arc::clone(&signin));
         tokio::spawn(async move {
             loop {
                 let Ok((stream, _)) = listener.accept().await else {
                     continue;
                 };
-                let (node, token) = (node.clone(), token.clone());
+                let (node, token, signin) = (node.clone(), token.clone(), Arc::clone(&signin));
                 tokio::spawn(async move {
                     let service = hyper::service::service_fn(move |req| {
-                        serve(node.clone(), token.clone(), req)
+                        serve(node.clone(), token.clone(), Arc::clone(&signin), req)
                     });
                     if let Err(e) = hyper::server::conn::http1::Builder::new()
                         .serve_connection(TokioIo::new(stream), service)
@@ -212,6 +252,7 @@ pub async fn start(node: Node, port: u16, token: String) -> Result<u16, Error> {
 async fn serve(
     node: Node,
     token: String,
+    signin: Sessions,
     req: Request<Incoming>,
 ) -> Result<Reply, std::convert::Infallible> {
     let host = req
@@ -230,8 +271,8 @@ async fn serve(
         return Ok(answer);
     };
     let mut answer = match &target {
-        Target::Kernel => kernel(node, token, req).await,
-        Target::App(id) => app(&node, id, req).await,
+        Target::Kernel => kernel(node, token, signin, req).await,
+        Target::App(id) => app(&node, &signin, id, req).await,
     };
     safe_headers(answer.headers_mut(), &target);
     Ok(answer)
@@ -249,7 +290,7 @@ pub fn kernel_only(path: &str) -> bool {
 }
 
 /// A request for an app.
-async fn app(node: &Node, id: &str, req: Request<Incoming>) -> Reply {
+async fn app(node: &Node, signin: &Sessions, id: &str, req: Request<Incoming>) -> Reply {
     let Some(app) = node.http_app(id) else {
         let mut answer = reply(
             StatusCode::NOT_FOUND,
@@ -264,8 +305,24 @@ async fn app(node: &Node, id: &str, req: Request<Incoming>) -> Reply {
         return answer;
     }
     let (mut parts, body) = req.into_parts();
+    // A good access token for this app says who the person is.
+    let signed_in = parts
+        .headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .is_some_and(|t| sessions(signin).check(t, id, now()));
     for name in KERNEL_HEADERS {
         parts.headers.remove(name);
+    }
+    if signed_in {
+        let user = node
+            .identity()
+            .and_then(|i| i.did)
+            .unwrap_or_else(|| node.key().to_string());
+        if let Ok(value) = HeaderValue::from_str(&user) {
+            parts.headers.insert("fileos-user", value);
+        }
     }
     let mut answer = match app.handle(Request::from_parts(parts, body)).await {
         Ok(answer) => answer.map(|body| body.map_err(|e| Box::new(e) as BodyError).boxed_unsync()),
@@ -279,7 +336,12 @@ async fn app(node: &Node, id: &str, req: Request<Incoming>) -> Reply {
 }
 
 /// A request for the kernel API.
-async fn kernel(node: Node, token: String, req: Request<Incoming>) -> Reply {
+async fn kernel(node: Node, token: String, signin: Sessions, req: Request<Incoming>) -> Reply {
+    // Sign-in has its own checks: apps call it from their origins.
+    match req.uri().path() {
+        "/authorize" | "/token" | "/revoke" => return oauth(&node, &signin, req).await,
+        _ => {}
+    }
     if cross_site(req.headers()) {
         return reply(StatusCode::FORBIDDEN, "no requests from other sites\n");
     }
@@ -290,6 +352,10 @@ async fn kernel(node: Node, token: String, req: Request<Incoming>) -> Reply {
         .is_some_and(|v| v.strip_prefix("Bearer ") == Some(token.as_str()));
     if !authorized {
         return reply(StatusCode::UNAUTHORIZED, "a token is needed\n");
+    }
+    if req.uri().path() == "/v0/sign-in-code" && req.method() == Method::POST {
+        let code = sessions(&signin).new_sign_in_code(random(), now());
+        return reply(StatusCode::OK, format!("{code}\n"));
     }
     let method = req.method().clone();
     let path = decode(req.uri().path());
@@ -316,6 +382,164 @@ async fn kernel(node: Node, token: String, req: Request<Incoming>) -> Reply {
         Ok(Ok(reply)) => reply,
         Ok(Err(e)) => reply(StatusCode::BAD_REQUEST, format!("{e}\n")),
         Err(e) => reply(StatusCode::INTERNAL_SERVER_ERROR, format!("{e}\n")),
+    }
+}
+
+/// `/authorize`, `/token` and `/revoke`: OAuth 2.0 with PKCE for apps.
+async fn oauth(node: &Node, signin: &Sessions, req: Request<Incoming>) -> Reply {
+    let path = req.uri().path().to_string();
+    let method = req.method().clone();
+    let origin = req
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let same_origin = req
+        .headers()
+        .get("sec-fetch-site")
+        .is_none_or(|v| v.as_bytes() == b"same-origin" || v.as_bytes() == b"none");
+    let query = fields(req.uri().query().unwrap_or_default());
+    let body = match req.into_body().collect().await {
+        Ok(body) => String::from_utf8_lossy(&body.to_bytes()).into_owned(),
+        Err(e) => return reply(StatusCode::BAD_REQUEST, format!("{e}\n")),
+    };
+    let html = |status, text: String| {
+        let mut r = reply(status, text);
+        r.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        );
+        r
+    };
+    let see = |url: &str| {
+        let mut r = reply(StatusCode::SEE_OTHER, "");
+        if let Ok(v) = HeaderValue::from_str(url) {
+            r.headers_mut().insert(header::LOCATION, v);
+        }
+        r
+    };
+    match (method, path.as_str()) {
+        (Method::GET, "/authorize") => {
+            let r = AuthorizeRequest::from_fields(&query);
+            match sessions(signin).check_request(&r) {
+                Ok(app) if node.http_app(&app).is_some() => {
+                    html(StatusCode::OK, signin::page(&r, &app, None))
+                }
+                Ok(app) => reply(
+                    StatusCode::BAD_REQUEST,
+                    format!("no app {app} on this node\n"),
+                ),
+                Err(e) => reply(
+                    StatusCode::BAD_REQUEST,
+                    format!("{}: {}\n", e.error, e.text),
+                ),
+            }
+        }
+        (Method::POST, "/authorize") => {
+            // Only the kernel's own page may send this form.
+            if !same_origin {
+                return reply(StatusCode::FORBIDDEN, "no requests from other sites\n");
+            }
+            let form = fields(&body);
+            let r = AuthorizeRequest::from_fields(&form);
+            let app = match sessions(signin).check_request(&r) {
+                Ok(app) => app,
+                Err(e) => {
+                    return reply(
+                        StatusCode::BAD_REQUEST,
+                        format!("{}: {}\n", e.error, e.text),
+                    );
+                }
+            };
+            if form.get("answer").map(String::as_str) != Some("yes") {
+                return see(&SignIn::deny_url(&r));
+            }
+            let code = form.get("sign_in_code").cloned().unwrap_or_default();
+            let approved = sessions(signin).approve(&r, &code, random(), now());
+            match approved {
+                Ok(url) => see(&url),
+                Err(e) => html(
+                    StatusCode::UNAUTHORIZED,
+                    signin::page(&r, &app, Some(&e.text)),
+                ),
+            }
+        }
+        (Method::OPTIONS, "/token" | "/revoke") => {
+            let mut r = reply(StatusCode::NO_CONTENT, "");
+            cors(&mut r, origin.as_deref());
+            r
+        }
+        (Method::POST, "/token") => {
+            let form = fields(&body);
+            // The request must come from the app that the code is for.
+            let from_client = origin
+                .as_deref()
+                .is_none_or(|o| Some(o) == form.get("client_id").map(String::as_str));
+            let result = if from_client {
+                sessions(signin).token(&form, random(), now())
+            } else {
+                Err(signin::Refused {
+                    error: "invalid_client",
+                    text: "the Origin is not the client_id".into(),
+                })
+            };
+            let (status, json) = match result {
+                Ok(token) => (
+                    StatusCode::OK,
+                    format!(
+                        "{{\"access_token\":\"{token}\",\"token_type\":\"Bearer\",\"expires_in\":{}}}",
+                        signin::TOKEN_LIFE
+                    ),
+                ),
+                Err(e) => (
+                    StatusCode::BAD_REQUEST,
+                    format!(
+                        "{{\"error\":\"{}\",\"error_description\":\"{}\"}}",
+                        e.error,
+                        e.text.replace('"', "'")
+                    ),
+                ),
+            };
+            let mut r = reply(status, json);
+            r.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            r.headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            cors(&mut r, origin.as_deref());
+            r
+        }
+        (Method::POST, "/revoke") => {
+            if let Some(token) = fields(&body).get("token") {
+                sessions(signin).revoke(token);
+            }
+            let mut r = reply(StatusCode::OK, "");
+            cors(&mut r, origin.as_deref());
+            r
+        }
+        _ => reply(StatusCode::METHOD_NOT_ALLOWED, ""),
+    }
+}
+
+/// Lets an app's origin call `/token` and `/revoke`. Other origins get no
+/// CORS headers, so the browser keeps the answer from them.
+fn cors(r: &mut Reply, origin: Option<&str>) {
+    let Some(origin) = origin.filter(|o| signin::client_app(o).is_some()) else {
+        return;
+    };
+    if let Ok(v) = HeaderValue::from_str(origin) {
+        let h = r.headers_mut();
+        h.insert("access-control-allow-origin", v);
+        h.insert(
+            "access-control-allow-methods",
+            HeaderValue::from_static("POST"),
+        );
+        h.insert(
+            "access-control-allow-headers",
+            HeaderValue::from_static("content-type"),
+        );
+        h.insert("vary", HeaderValue::from_static("origin"));
     }
 }
 

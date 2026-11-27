@@ -4,7 +4,7 @@ description: App 和插件怎样通过 HTTP 提供服务，每个都有自己的
 ---
 
 :::note[状态：设计，部分已实现]
-网关和 App 作为 HTTP 服务器（[计划](#计划)的第 1、2 步）已经实现，其余部分还没有实现。
+网关和 App 作为 HTTP 服务器（[计划](#计划)的第 1、2 步）已经实现。登录（第 3 步）中，带 PKCE 的 OAuth 2.0 已经实现：`/authorize`、`/token`、`/revoke` 和 `FileOS-User` 头。目前用户用 `fileos node sign-in-code` 给出的一次性代码登录；passkey、DPoP、刷新令牌和签名 URL 是接下来的工作。其余部分还没有实现。
 :::
 
 ## 目标
