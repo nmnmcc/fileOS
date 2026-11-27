@@ -385,6 +385,7 @@ mod tests {
                 vec![Act::Create {
                     name: "a".into(),
                     content: Content::of(b"hello"),
+                    key: None,
                 }],
             )
             .unwrap();

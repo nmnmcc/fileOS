@@ -397,7 +397,8 @@ fn a_grant_to_a_person_reaches_every_device_of_that_person() {
     world.put(phone, space, "reply", b"thanks").unwrap();
     assert_eq!(world.read(mom, space, "reply"), [b"thanks".to_vec()]);
 
-    // The laptop gets it from the phone, with Mom offline.
+    // The laptop gets it from the phone, with Mom offline. The phone also
+    // gives the laptop the keys: both may read, so this leaks nothing.
     world.disconnect(mom, phone);
     world.connect(phone, laptop);
     world.follow(laptop, space);
@@ -408,4 +409,218 @@ fn a_grant_to_a_person_reaches_every_device_of_that_person() {
     world.connect(mom, stranger);
     world.follow(stranger, space);
     assert!(world.space(stranger, space).is_none());
+
+    // The phone is lost. Ming takes it away from his identity: Mom's node
+    // starts a new epoch, and the phone cannot read what comes after, even
+    // with every entry and every piece.
+    let revocation = fileos_id::NodeRevocation::sign(&did, &signing, world.key(phone));
+    world.connect(mom, laptop);
+    world.revoke(laptop, vec![fileos_core::Bytes(revocation.to_bytes())]);
+    world
+        .put(mom, space, "after", b"not for the phone")
+        .unwrap();
+    assert_eq!(
+        world.read(laptop, space, "after"),
+        [b"not for the phone".to_vec()]
+    );
+    let entries = world.space(mom, space).unwrap().entries();
+    let mut copy = fileos_space::Space::from_genesis(&entries[0]).unwrap();
+    copy.insert(entries[1..].to_vec()).unwrap();
+    let ring = copy.keyring(&[&world.nodes[phone].key]);
+    let file = copy.find("after").remove(0);
+    assert_eq!(
+        copy.data_keys(&ring, file.id, &file.versions[0]),
+        Vec::<[u8; 32]>::new()
+    );
+}
+
+#[test]
+fn a_node_that_only_keeps_a_space_sees_only_ciphertext() {
+    let mut world = World::default();
+    let (ming, relay) = (world.add(1), world.add(7));
+    let space = world.create(ming);
+    let secret = b"the plan for the party, which nobody else may read".repeat(10);
+    world.put(ming, space, "plan.txt", &secret).unwrap();
+    world.give(ming, space, relay, &[DataKeep], all()).unwrap();
+    world.connect(ming, relay);
+    world.follow(relay, space);
+    assert_eq!(
+        world.find(relay, space, "plan.txt").len(),
+        1,
+        "it has the space"
+    );
+    assert_eq!(world.read(relay, space, "plan.txt"), Vec::<Vec<u8>>::new());
+    assert!(
+        !world.nodes[relay].contents.0.is_empty(),
+        "it has the pieces"
+    );
+    for piece in world.nodes[relay].contents.0.values() {
+        assert!(
+            !piece
+                .windows(16)
+                .any(|w| secret.windows(16).any(|s| s == w))
+        );
+    }
+}
+
+#[test]
+fn a_reader_whose_access_is_taken_back_cannot_read_what_comes_after() {
+    let mut world = World::default();
+    let (ming, mom, dad) = (world.add(1), world.add(2), world.add(3));
+    let space = world.create(ming);
+    let to_mom = world
+        .give(ming, space, mom, &[DataKeep, FilesRead], all())
+        .unwrap();
+    world
+        .give(ming, space, dad, &[DataKeep, FilesRead], all())
+        .unwrap();
+    world.put(ming, space, "before", b"old news").unwrap();
+    world.connect(ming, mom);
+    world.connect(ming, dad);
+    world.follow(mom, space);
+    world.follow(dad, space);
+    assert_eq!(world.read(mom, space, "before"), [b"old news".to_vec()]);
+    let epoch = world.space(ming, space).unwrap().epoch();
+
+    world.take(ming, space, to_mom).unwrap();
+    let new_epoch = world.space(ming, space).unwrap().epoch();
+    assert_ne!(epoch, new_epoch, "taking access back starts a new epoch");
+    world.put(ming, space, "after", b"new plans").unwrap();
+    assert_eq!(world.read(dad, space, "after"), [b"new plans".to_vec()]);
+    assert_eq!(world.read(dad, space, "before"), [b"old news".to_vec()]);
+
+    // Even with every entry and piece, Mom's node has no key for the new
+    // epoch.
+    let entries = world.space(ming, space).unwrap().entries();
+    world.nodes[mom].node.space(space).unwrap();
+    let pieces = world.nodes[ming].contents.0.clone();
+    world.nodes[mom].contents.0.extend(pieces);
+    let mut copy = fileos_space::Space::from_genesis(&entries[0]).unwrap();
+    copy.insert(entries[1..].to_vec()).unwrap();
+    let ring = copy.keyring(&[&world.nodes[mom].key]);
+    let file = copy.find("after").remove(0);
+    let v = &file.versions[0];
+    assert_eq!(copy.data_keys(&ring, file.id, v), Vec::<[u8; 32]>::new());
+}
+
+#[test]
+fn a_member_of_a_group_gets_the_keys_of_the_group() {
+    let mut world = World::default();
+    let (ming, mom) = (world.add(1), world.add(2));
+    let space = world.create(ming);
+    world.put(ming, space, "photos/a.jpg", b"jpeg").unwrap();
+    let family = world
+        .write(
+            ming,
+            space,
+            vec![Act::Group {
+                owner: world.who(ming),
+            }],
+        )
+        .unwrap();
+    world
+        .write(
+            ming,
+            space,
+            vec![Act::Give {
+                to: Principal::Group(family),
+                effect: Effect::Allow,
+                permissions: vec![DataKeep, FilesRead],
+                on: Resource::Prefix("photos/".into()),
+            }],
+        )
+        .unwrap();
+    // Mom keeps the space, but is not in the family yet.
+    world.give(ming, space, mom, &[DataKeep], all()).unwrap();
+    world.connect(ming, mom);
+    world.follow(mom, space);
+    assert_eq!(
+        world.read(mom, space, "photos/a.jpg"),
+        Vec::<Vec<u8>>::new()
+    );
+    world
+        .write(
+            ming,
+            space,
+            vec![Act::Give {
+                to: world.who(mom),
+                effect: Effect::Allow,
+                permissions: vec![Permission::Member],
+                on: Resource::Group(family),
+            }],
+        )
+        .unwrap();
+    assert_eq!(world.read(mom, space, "photos/a.jpg"), [b"jpeg".to_vec()]);
+}
+
+#[test]
+fn a_grant_on_one_file_opens_that_file_only() {
+    let mut world = World::default();
+    let (ming, chat) = (world.add(1), world.add(3));
+    let space = world.create(ming);
+    let cat = world.put(ming, space, "2026/cat.jpg", b"cat").unwrap();
+    world.put(ming, space, "2026/dog.jpg", b"dog").unwrap();
+    world.give(ming, space, chat, &[DataKeep], all()).unwrap();
+    world
+        .give(ming, space, chat, &[FilesRead], Resource::File(cat))
+        .unwrap();
+    world.connect(ming, chat);
+    world.follow(chat, space);
+    assert_eq!(world.read(chat, space, "2026/cat.jpg"), [b"cat".to_vec()]);
+    assert_eq!(
+        world.read(chat, space, "2026/dog.jpg"),
+        Vec::<Vec<u8>>::new()
+    );
+    // Renamed, it is still the same key.
+    world
+        .change(ming, space, cat, "best/cat.jpg", Some(b"cat"))
+        .unwrap();
+    assert_eq!(world.read(chat, space, "best/cat.jpg"), [b"cat".to_vec()]);
+    // In a new epoch the file gets a new data key, and the reader gets it.
+    let other = world.add(9);
+    let g = world.give(ming, space, other, &[FilesRead], all()).unwrap();
+    world.take(ming, space, g).unwrap();
+    world
+        .change(ming, space, cat, "best/cat.jpg", Some(b"cat, again"))
+        .unwrap();
+    assert_eq!(
+        world.read(chat, space, "best/cat.jpg"),
+        [b"cat, again".to_vec()]
+    );
+}
+
+#[test]
+fn a_deleted_file_cannot_be_opened_once_its_keys_are_dropped() {
+    let (mut world, ming, mom, space) = family();
+    let secret = world.put(ming, space, "secret.txt", b"burn this").unwrap();
+    let old = world
+        .space(ming, space)
+        .unwrap()
+        .file(secret)
+        .unwrap()
+        .versions[0]
+        .clone();
+    world
+        .change(ming, space, secret, "secret.txt", None)
+        .unwrap();
+    // Access to the space changes, so there is a new epoch; and time goes by,
+    // so the bin empties at the next checkpoint.
+    let other = world.add(9);
+    let grant = world.give(ming, space, other, &[FilesRead], all()).unwrap();
+    world.take(ming, space, grant).unwrap();
+    world.wait(31 * 24 * 60 * 60 * 1000);
+    world.checkpoint(ming, space).unwrap();
+    world.compact(ming, space);
+    world.compact(mom, space);
+    for node in [ming, mom] {
+        let n = &mut world.nodes[node];
+        let s = n.node.space(space).unwrap();
+        assert!(s.file(secret).is_none(), "the file is gone");
+        let ring = s.keyring(&[&n.key]);
+        assert!(
+            s.data_keys(&ring, secret, &old).is_empty(),
+            "and so is its key"
+        );
+        assert_eq!(n.node.open(space, secret, &old, &n.contents), None);
+    }
 }

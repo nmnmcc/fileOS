@@ -92,6 +92,16 @@ async fn two_nodes_share_a_photos_space() {
     })
     .await;
     assert_eq!(bob.read("/photos/2026/a.png").unwrap(), png(64, 32));
+    // Content is kept encrypted on disk.
+    for dir in [dir_a.path(), dir_b.path()] {
+        for blob in std::fs::read_dir(dir.join("blobs")).unwrap() {
+            let bytes = std::fs::read(blob.unwrap().path()).unwrap();
+            assert!(
+                !bytes.windows(4).any(|w| w == b"IHDR"),
+                "a photo is on disk in the clear"
+            );
+        }
+    }
 
     // Bob writes too, with no ordering node.
     bob.put("/photos/2026/b.png", &png(10, 20)).unwrap();

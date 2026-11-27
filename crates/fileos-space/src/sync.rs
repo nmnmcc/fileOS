@@ -20,14 +20,22 @@
 //! - Content is asked for from the node that sent the entry, and is given
 //!   only to nodes that may keep a space that has it.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use fileos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
 
 use crate::content;
-use crate::entry::{Act, Entry, Permission, Principal, Resource, Retention};
-use crate::space::{Snapshot, Space};
+use crate::crypto::{self, Random, Wrapped};
+use crate::entry::{
+    Act, Content, Entry, Id, KeyRef, Permission, Principal, Resource, Retention, Sealed,
+};
+use crate::space::{Keyring, Snapshot, Space, Version};
+
+/// What [`Node::seal`] gives: the content, the wrapped data key, and the
+/// pieces for the content store.
+pub type Sealing = (Content, Option<Wrapped>, Vec<(Hash, Vec<u8>)>);
 
 /// A message between two nodes.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -113,13 +121,26 @@ pub struct Node {
     /// The newest time this node has seen, for what it writes when a
     /// message comes (this crate has no clock).
     time: u64,
+    /// Other keys this node signs with, such as the signing key of an
+    /// identity that it holds.
+    keys: Vec<SecretKey>,
+    random: Random,
+    /// The opened keys of each space, with the heads they were opened at.
+    rings: RefCell<BTreeMap<Hash, (Vec<Hash>, Keyring)>>,
 }
 
 impl Node {
     /// `nonce` should be random, so that spaces made after a restart are
     /// different.
     pub fn new(key: SecretKey, nonce: u64) -> Self {
+        let random = Random::new(blake3::derive_key(
+            "fileOS 2026 node random",
+            &[&key.seed()[..], &nonce.to_le_bytes()].concat(),
+        ));
         Self {
+            keys: Vec::new(),
+            random,
+            rings: RefCell::new(BTreeMap::new()),
             key,
             spaces: BTreeMap::new(),
             wanted: BTreeSet::new(),
@@ -137,6 +158,228 @@ impl Node {
 
     pub fn me(&self) -> PublicKey {
         self.key.public()
+    }
+
+    /// Lets this node also sign with `key`, and open keys sealed to it.
+    pub fn add_key(&mut self, key: SecretKey) {
+        if key.public() != self.me() && !self.keys.iter().any(|k| k.public() == key.public()) {
+            self.keys.push(key);
+        }
+    }
+
+    fn mine(&self) -> Vec<SecretKey> {
+        std::iter::once(self.key.clone())
+            .chain(self.keys.iter().cloned())
+            .collect()
+    }
+
+    /// The keys this node has opened in a space.
+    pub fn keyring(&self, space: Hash) -> Keyring {
+        let Some(s) = self.spaces.get(&space) else {
+            return Keyring::default();
+        };
+        let heads = s.heads();
+        if let Some((at, ring)) = self.rings.borrow().get(&space)
+            && *at == heads
+        {
+            return ring.clone();
+        }
+        let mine = self.mine();
+        let ring = s.keyring(&mine.iter().collect::<Vec<_>>());
+        self.rings.borrow_mut().insert(space, (heads, ring.clone()));
+        ring
+    }
+
+    /// Makes content for a file named `name` (the file `file`, when it is
+    /// there): encrypted under the newest epoch of the space, with the data
+    /// key wrapped by the key of the prefix it is in. Gives back the content,
+    /// the wrapped key, and the pieces for the content store. With no epoch
+    /// in the space, the content is not encrypted.
+    ///
+    /// # Errors
+    ///
+    /// When the space is not here, or this node has no key for that prefix.
+    pub fn seal(
+        &mut self,
+        space: Hash,
+        name: &str,
+        file: Option<Id>,
+        data: &[u8],
+    ) -> Result<Sealing, Error> {
+        let s = self
+            .spaces
+            .get(&space)
+            .ok_or_else(|| Error(format!("space {space} is not here")))?;
+        let Some(epoch) = s.epoch() else {
+            let (content, pieces) = content::split(data);
+            return Ok((content, None, pieces));
+        };
+        let ring = self.keyring(space);
+        let s = &self.spaces[&space];
+        let prefix = crypto::parent(name);
+        let kek = ring
+            .prefix(epoch, &prefix)
+            .ok_or_else(|| Error(format!("this node has no key for {prefix:?} yet")))?;
+        // The same data key while the epoch is the same, so chunks that do
+        // not change are kept once.
+        let same = file
+            .and_then(|id| s.file(id))
+            .and_then(|f| {
+                let v = f.versions.iter().max_by_key(|v| (v.time, v.id))?.clone();
+                (v.key.as_ref()?.epoch == epoch).then(|| s.data_keys(&ring, f.id, &v))
+            })
+            .and_then(|keys| keys.into_iter().next());
+        let data_key = same.unwrap_or_else(|| self.random.key());
+        let (content, pieces) = content::seal(data, &data_key);
+        let wrapped = crypto::wrap(&kek, epoch, &prefix, &data_key, &mut self.random);
+        Ok((content, Some(wrapped), pieces))
+    }
+
+    /// The bytes of `version` of `file`, if this node can open them and all
+    /// of the content is here.
+    pub fn open(
+        &self,
+        space: Hash,
+        file: Id,
+        version: &Version,
+        contents: &dyn Contents,
+    ) -> Option<Vec<u8>> {
+        let content = version.content?;
+        if version.key.is_none() {
+            return content::join(&content, contents);
+        }
+        let ring = self.keyring(space);
+        let s = self.spaces.get(&space)?;
+        s.data_keys(&ring, file, version)
+            .into_iter()
+            .find_map(|key| content::open(&content, &key, contents))
+    }
+
+    /// Keeps the keys of a space in order, with the keys this node holds:
+    /// starts a new epoch when access was taken back (or there is none),
+    /// and sends readers the keys they do not have yet.
+    fn upkeep(&mut self, space: Hash, step: &mut Step) {
+        let Some(s) = self.spaces.get(&space) else {
+            return;
+        };
+        let time = s.latest_time();
+        let whole = Resource::Prefix(String::new());
+        let mine = self.mine();
+        if s.needs_new_epoch()
+            && let Some(author) = mine.iter().find(|k| {
+                s.may(
+                    Principal::Key(k.public()),
+                    Permission::SpaceCheckpoint,
+                    &whole,
+                )
+            })
+        {
+            let ring = self.keyring(space);
+            let s = &self.spaces[&space];
+            let epoch = Hash(self.random.key());
+            let root = self.random.key();
+            let mut rewrap = Vec::new();
+            for f in s.files() {
+                let Some(v) = f.versions.iter().max_by_key(|v| (v.time, v.id)) else {
+                    continue;
+                };
+                if v.key.is_none() {
+                    continue;
+                }
+                if let Some(dk) = s.data_keys(&ring, f.id, v).into_iter().next() {
+                    let prefix = crypto::parent(&v.name);
+                    let kek = crypto::prefix_key(&root, &prefix);
+                    rewrap.push((
+                        f.id,
+                        crypto::wrap(&kek, epoch, &prefix, &dk, &mut self.random),
+                    ));
+                }
+            }
+            let info = space.0;
+            if let Some((enc, keys)) =
+                crypto::seal_to(author.public(), &info, &root, &mut self.random)
+            {
+                let act = Act::Keys {
+                    epoch: Some(epoch),
+                    sealed: vec![Sealed {
+                        to: author.public(),
+                        refs: vec![KeyRef::Root(epoch)],
+                        enc,
+                        keys,
+                    }],
+                    rewrap,
+                };
+                let author = author.clone();
+                if let Ok(more) = self.write_inner(space, &author, time, vec![act]) {
+                    step.out.extend(more.out);
+                    step.events.extend(more.events);
+                }
+            }
+        }
+        // Send the keys that readers lack, with each key this node holds
+        // that may give them.
+        let gaps = self.spaces[&space].key_gaps();
+        if gaps.is_empty() {
+            return;
+        }
+        let ring = self.keyring(space);
+        for author in &mine {
+            let s = &self.spaces[&space];
+            let who = Principal::Key(author.public());
+            // Who may give the access may give the key; a reader may give it
+            // to a device that may read it too (a gap means it may).
+            let may = |r: &KeyRef| {
+                let on = match r {
+                    KeyRef::Root(_) => return s.may(who, Permission::SpaceCheckpoint, &whole),
+                    KeyRef::Prefix(_, p) => Resource::Prefix(p.clone()),
+                    KeyRef::File(id, _) => Resource::File(*id),
+                };
+                s.may(who, Permission::AccessGive, &on) || s.may(who, Permission::FilesRead, &on)
+            };
+            let mut by_device: BTreeMap<PublicKey, (Vec<KeyRef>, Vec<u8>)> = BTreeMap::new();
+            // The data key of a file is unwrapped from its newest version.
+            let get = |r: &KeyRef| match r {
+                KeyRef::File(id, epoch) => s.data_key_in(&ring, *id, *epoch),
+                other => ring.get(other),
+            };
+            for (to, r) in &gaps {
+                // Keys sealed to this node's own keys give it nothing new.
+                if mine.iter().any(|k| k.public() == *to) {
+                    continue;
+                }
+                if let Some(key) = get(r)
+                    && may(r)
+                {
+                    let entry = by_device.entry(*to).or_default();
+                    entry.0.push(r.clone());
+                    entry.1.extend_from_slice(&key);
+                }
+            }
+            if by_device.is_empty() {
+                continue;
+            }
+            let mut sealed = Vec::new();
+            for (to, (refs, keys)) in by_device {
+                if let Some((enc, keys)) = crypto::seal_to(to, &space.0, &keys, &mut self.random) {
+                    sealed.push(Sealed {
+                        to,
+                        refs,
+                        enc,
+                        keys,
+                    });
+                }
+            }
+            let act = Act::Keys {
+                epoch: None,
+                sealed,
+                rewrap: Vec::new(),
+            };
+            if let Ok(more) = self.write_inner(space, author, time, vec![act]) {
+                step.out.extend(more.out);
+                step.events.extend(more.events);
+            }
+            break;
+        }
     }
 
     pub fn space(&self, id: Hash) -> Option<&Space> {
@@ -169,6 +412,7 @@ impl Node {
         self.spaces.insert(id, space);
         let mut step = Step::default();
         step.events.push(Event::Changed(id));
+        self.upkeep(id, &mut step);
         (id, step)
     }
 
@@ -176,11 +420,13 @@ impl Node {
     /// example the signing key of an identity that this node holds.
     pub fn create_as(&mut self, owner: &SecretKey, time: u64) -> (Hash, Step) {
         self.nonce += 1;
+        self.add_key(owner.clone());
         let (space, _) = Space::create(Principal::Key(owner.public()), owner, time, self.nonce);
         let id = space.id();
         self.spaces.insert(id, space);
         let mut step = Step::default();
         step.events.push(Event::Changed(id));
+        self.upkeep(id, &mut step);
         (id, step)
     }
 
@@ -394,6 +640,29 @@ impl Node {
         time: u64,
         acts: Vec<Act>,
     ) -> Result<(Entry, Step), Error> {
+        let (entry, mut step) = self.write_entry(space, author, time, acts)?;
+        self.upkeep(space, &mut step);
+        Ok((entry, step))
+    }
+
+    fn write_inner(
+        &mut self,
+        space: Hash,
+        author: &SecretKey,
+        time: u64,
+        acts: Vec<Act>,
+    ) -> Result<Step, Error> {
+        self.write_entry(space, author, time, acts)
+            .map(|(_, step)| step)
+    }
+
+    fn write_entry(
+        &mut self,
+        space: Hash,
+        author: &SecretKey,
+        time: u64,
+        acts: Vec<Act>,
+    ) -> Result<(Entry, Step), Error> {
         let s = self
             .spaces
             .get_mut(&space)
@@ -477,8 +746,9 @@ impl Node {
             stale.extend(s.take_stale(me));
         }
         let mut written = 0;
+        let key = self.key.clone();
         for (time, acts) in stale {
-            if let Ok((_, more)) = self.write(space, time, acts) {
+            if let Ok(more) = self.write_inner(space, &key, time, acts) {
                 written += 1;
                 step.out.extend(more.out);
             }
@@ -489,6 +759,7 @@ impl Node {
                 entries: written,
             });
         }
+        self.upkeep(space, step);
     }
 
     /// Sends new entries to every connected peer that may keep the space.

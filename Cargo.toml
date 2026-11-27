@@ -53,6 +53,17 @@ toml = { version = "1.2.3", default-features = false, features = [
 # already built.
 bs58 = { version = "0.5.1", default-features = false, features = ["alloc"] }
 getrandom = { version = "0.3.4", default-features = false, features = ["std"] }
+# Encryption of content and keys. HPKE (RFC 9180) sends keys to each device;
+# it uses x25519-dalek, curve25519-dalek, hkdf and sha2, which libp2p already
+# builds. XChaCha20-Poly1305 encrypts chunks and wraps keys.
+hpke = { version = "0.15.2", default-features = false, features = [
+  "alloc",
+  "x25519",
+  "chacha",
+] }
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = [
+  "alloc",
+] }
 
 # .app files: a zip with no compression (rawzip has no dependencies), a tar
 # (tar), and zstd in plain Rust, with no C (ruzstd).

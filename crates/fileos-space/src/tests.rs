@@ -16,6 +16,7 @@ fn create(name: &str, bytes: &[u8]) -> Act {
     Act::Create {
         name: name.into(),
         content: Content::of(bytes),
+        key: None,
     }
 }
 
@@ -115,6 +116,7 @@ fn a_rename_keeps_the_id_and_moves_out_of_a_prefix_grant() {
                 parents: vec![cat],
                 name: "best/cat.jpg".into(),
                 content: Some(Content::of(b"cat")),
+                key: None,
             }],
         )
         .unwrap();
@@ -251,6 +253,7 @@ fn writes_at_the_same_time_are_kept_side_by_side_and_the_order_does_not_matter()
         parents: vec![notes],
         name: "notes".into(),
         content: Some(Content::of(bytes)),
+        key: None,
     };
     let x = a.write(&ming, 0, vec![change(b"ming")]).unwrap();
     let y = b.write(&mom, 0, vec![change(b"mom")]).unwrap();
@@ -272,6 +275,7 @@ fn writes_at_the_same_time_are_kept_side_by_side_and_the_order_does_not_matter()
             parents,
             name: "notes".into(),
             content: Some(Content::of(b"both")),
+            key: None,
         }],
     )
     .unwrap();
