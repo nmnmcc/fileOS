@@ -33,6 +33,14 @@ impl Hash {
 pub struct PublicKey(pub [u8; 32]);
 
 impl PublicKey {
+    /// The X25519 form of this key, for sending it secrets (as libsodium's
+    /// `crypto_sign_ed25519_pk_to_curve25519` does). `None` when the bytes
+    /// are not a key.
+    pub fn x25519(&self) -> Option<[u8; 32]> {
+        let key = ed25519_dalek::VerifyingKey::from_bytes(&self.0).ok()?;
+        Some(key.to_montgomery().to_bytes())
+    }
+
     /// Says if `signature` is a signature of `message` made with this key.
     pub fn verify(&self, message: &[u8], signature: &Signature) -> bool {
         let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&self.0) else {
@@ -72,6 +80,12 @@ impl SecretKey {
 
     pub fn public(&self) -> PublicKey {
         PublicKey(self.0.verifying_key().to_bytes())
+    }
+
+    /// The X25519 secret that goes with [`PublicKey::x25519`], to open the
+    /// secrets sent to this key.
+    pub fn x25519(&self) -> [u8; 32] {
+        self.0.to_scalar_bytes()
     }
 
     pub fn sign(&self, message: &[u8]) -> Signature {

@@ -74,6 +74,14 @@ skip = [
   { crate = "hashbrown@0.16.1", reason = "gimli, in wasmtime; indexmap is on the newer one" },
   { crate = "syn@2.0.119", reason = "proc macros upstream (libp2p, curve25519-dalek, jni); serde is on syn 3" },
   { crate = "windows-sys@0.52.0", reason = "ring, on Windows only" },
+  # hpke (encryption of spaces) is on the newer RustCrypto crates; snow, in
+  # libp2p-noise, is on the older ones.
+  { crate = "aead@0.5.2", reason = "snow" },
+  { crate = "chacha20poly1305@0.10.1", reason = "snow" },
+  { crate = "cipher@0.4.4", reason = "snow" },
+  { crate = "inout@0.1.4", reason = "snow" },
+  { crate = "poly1305@0.8.0", reason = "snow" },
+  { crate = "universal-hash@0.5.1", reason = "snow" },
 ]
 
 [sources]

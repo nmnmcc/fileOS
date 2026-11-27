@@ -365,6 +365,9 @@ impl Node {
             key.clone(),
             u64::from_le_bytes(seed[..8].try_into().unwrap_or_default()),
         );
+        if let Some(signing) = &signing_key {
+            node.add_key(signing.clone());
+        }
         let mut saved = BTreeMap::new();
         for space in store.load_spaces()? {
             let hashes = space.entries().iter().map(fos_space::Entry::hash).collect();
@@ -1165,11 +1168,14 @@ fn fs_error(e: FsError) -> Error {
 /// The newest version of a file that has content: when there are more, the
 /// one made last (by its time, then its ID).
 fn newest(file: &File) -> Option<Content> {
+    newest_version(file).and_then(|v| v.content)
+}
+
+fn newest_version(file: &File) -> Option<&fos_space::Version> {
     file.versions
         .iter()
         .filter(|v| v.content.is_some())
         .max_by_key(|v| (v.time, v.id))
-        .and_then(|v| v.content)
 }
 
 impl Inner {
@@ -1183,7 +1189,7 @@ impl Inner {
             .filter_map(|f| {
                 let v = f.versions.iter().find(|v| v.name.starts_with(MOUNTS))?;
                 let at = v.name[MOUNTS.len()..].to_string();
-                let bytes = fos_space::content::join(&newest(&f)?, &self.store)?;
+                let bytes = self.bytes(self.home, &f)?;
                 let id = String::from_utf8(bytes).ok()?.trim().parse().ok()?;
                 Some((at, id))
             })
@@ -1246,13 +1252,11 @@ impl Inner {
         })
     }
 
-    /// Keeps content in the store, and gives what names it.
-    fn keep(&self, data: &[u8]) -> Result<Content, Error> {
-        let (content, pieces) = fos_space::content::split(data);
-        for (hash, bytes) in pieces {
-            self.store.put_piece(hash, &bytes)?;
-        }
-        Ok(content)
+    /// The bytes of the newest version of a file, if this node can open
+    /// them and has all of the content.
+    fn bytes(&self, space: Hash, file: &File) -> Option<Vec<u8>> {
+        let v = newest_version(file)?;
+        self.node.open(space, file.id, v, &self.store)
     }
 
     fn put(
@@ -1274,21 +1278,29 @@ impl Inner {
         data: &[u8],
         changed: &Changed,
     ) -> Result<(), Error> {
-        let content = self.keep(data)?;
         let s = self
             .node
             .space(space)
             .ok_or_else(|| Error(format!("space {space} is not here yet")))?;
-        let act = match s.find(name).first() {
+        let file = s.find(name).into_iter().next();
+        let (content, key, pieces) =
+            self.node
+                .seal(space, name, file.as_ref().map(|f| f.id), data)?;
+        for (hash, bytes) in pieces {
+            self.store.put_piece(hash, &bytes)?;
+        }
+        let act = match file {
             Some(file) => Act::Change {
                 file: file.id,
                 parents: file.versions.iter().map(|v| v.id).collect(),
                 name: name.to_string(),
                 content: Some(content),
+                key,
             },
             None => Act::Create {
                 name: name.to_string(),
                 content,
+                key,
             },
         };
         self.write(author, space, vec![act], changed).map(drop)
@@ -1347,6 +1359,7 @@ impl Inner {
             parents: file.versions.iter().map(|v| v.id).collect(),
             name: name.to_string(),
             content: None,
+            key: None,
         };
         self.write(author, space, vec![act], changed).map(drop)
     }
@@ -1413,9 +1426,14 @@ impl Inner {
         if !Self::may(s, who, Permission::FilesRead, name) {
             return Err(FsError::Denied(format!("{who} may not read {name}")));
         }
-        let content = newest(&file).ok_or(FsError::NotFound)?;
-        fos_space::content::join(&content, &self.store)
-            .ok_or_else(|| FsError::Invalid("the file is not on this node yet".into()))
+        if newest(&file).is_none() {
+            return Err(FsError::NotFound);
+        }
+        self.bytes(space, &file).ok_or_else(|| {
+            FsError::Invalid(
+                "the file is not on this node yet, or this node has no key for it".into(),
+            )
+        })
     }
 
     fn list(&self, who: PublicKey, path: &str) -> Result<Vec<String>, FsError> {
@@ -1498,7 +1516,7 @@ impl Inner {
                     .iter()
                     .find_map(|v| v.name.strip_prefix(&prefix))?
                     .to_string();
-                let bytes = fos_space::content::join(&newest(f)?, &self.store)?;
+                let bytes = self.bytes(self.home, f)?;
                 let text = String::from_utf8(bytes).ok()?;
                 let mut lines = text.split('\n');
                 let space = lines.next()?.parse().ok()?;
@@ -1662,7 +1680,7 @@ impl Inner {
             .iter()
             .map(|f| {
                 let name = &f.versions.first()?.name;
-                let bytes = fos_space::content::join(&newest(f)?, &self.store)?;
+                let bytes = self.bytes(space, f)?;
                 Some((format!("/{name}"), bytes))
             })
             .collect::<Option<_>>()?;
@@ -1844,6 +1862,9 @@ impl Inner {
         let key = SecretKey::from_seed(&fos_store::random_seed()?);
         self.store.set_identity_key(usage, &key)?;
         *held = Some(key.clone());
+        if usage == "signing" {
+            self.node.add_key(key.clone());
+        }
         Ok(key)
     }
 
@@ -1858,7 +1879,7 @@ impl Inner {
             .iter()
             .filter_map(|f| {
                 let name = f.versions.first()?.name.strip_prefix(&prefix)?.to_string();
-                let bytes = fos_space::content::join(&newest(f)?, &self.store)?;
+                let bytes = self.bytes(space, f)?;
                 Some((name, bytes))
             })
             .collect()
