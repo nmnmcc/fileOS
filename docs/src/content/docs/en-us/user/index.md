@@ -107,6 +107,20 @@ Your identity is you; a node is one of your machines. Your identity is a DID
 give to other people. Only the node that holds the signing key can add nodes
 (`fileos identity add-node`) or take them away (`fileos identity remove-node`).
 
+## Signing in to apps
+
+Apps do not have passwords. You sign in to them with a passkey, on your
+node's own page, and the app never sees the passkey.
+
+1. Run `fileos identity passkey`. It prints a link; open it on the same
+   machine within 10 minutes, and add a passkey (your device asks for your
+   face, finger or PIN).
+2. When an app asks you to sign in, your node's page names the app. Choose
+   **Sign in with a passkey**, or **No**.
+
+The app then knows who you are (your DID) until the sign-in ends or is
+taken back.
+
 ## Apps
 
 An app comes as an `.app` file, such as `Photos.app`. Install one with

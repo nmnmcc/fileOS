@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[package]
+name = "fileos-auth"
+description = "Sign-in for people: passkeys, OAuth 2.0 with PKCE, and DPoP-bound tokens (sans-IO)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+fileos-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+cbor4ii.workspace = true
+ring.workspace = true
+
+[features]
+# A test authenticator and DPoP key, for the tests of other crates.
+testing = []
+
+[lints]
+workspace = true

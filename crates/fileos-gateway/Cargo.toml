@@ -12,6 +12,9 @@ publish.workspace = true
 [dependencies]
 fileos-core.workspace = true
 fileos-node.workspace = true
+fileos-auth.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 bytes.workspace = true
 http-body-util.workspace = true
 hyper.workspace = true
@@ -19,6 +22,10 @@ hyper-util.workspace = true
 tokio.workspace = true
 percent-encoding.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+fileos-auth = { workspace = true, features = ["testing"] }
+tempfile.workspace = true
 
 [lints]
 workspace = true

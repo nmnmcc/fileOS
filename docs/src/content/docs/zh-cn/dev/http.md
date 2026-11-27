@@ -3,8 +3,8 @@ title: "HTTP 与浏览器"
 description: App 和插件怎样通过 HTTP 提供服务，每个都有自己的 origin，用户不用配置任何域名，也不用 Cookie。
 ---
 
-:::note[状态：设计，部分已实现]
-网关和 App 作为 HTTP 服务器（[计划](#计划)的第 1、2 步）已经实现，其余部分还没有实现。
+:::note[状态：部分已实现]
+网关、App 作为 HTTP 服务器，以及登录（[计划](#计划)的第 1 到 3 步）已经实现，但签名 URL 和 OpenID Connect 还没有。其余部分还没有实现。
 :::
 
 ## 目标
@@ -52,6 +52,14 @@ http://<plugin-id>.localhost:<端口>/    带界面的插件
 
 没有 Cookie，浏览器就不会自动发送凭据，所以跨站请求伪造无从发生。`<img>`、`<video>` 和下载链接无法带上 `Authorization` 头，所以内核为它们签发短时有效的签名 URL。
 
+### 已经实现的部分
+
+- **节点的 passkey。** `fileos identity passkey` 给出一个一次性链接，10 分钟内在本机打开，指向 `http://fileos.localhost:7341/setup`。页面会添加一个 passkey（P-256 或 Ed25519，要求验证用户）。这个人就是节点的身份（它的 `did:fos`）；没有身份时，是以 `did:key` 表示的节点密钥。
+- **`GET /authorize`** 接受 `response_type=code`、`client_id`（本节点上某个 App 的 origin）、这个 origin 上的 `redirect_uri`、PKCE challenge（`S256`）和 `state`。页面写明是哪个 App，并用 passkey 登录。授权码 60 秒内有效，只能用一次。
+- **`POST /token`**（只接受来自 App 自己 origin 的请求，通过 CORS）接受 `grant_type=authorization_code` 或 `refresh_token`，并要求 `DPoP` 证明。访问令牌 10 分钟内有效，绑定在证明所用的密钥上；刷新令牌不使用时 30 天有效，每用一次就换新，同一个刷新令牌被用第二次时，整次登录都会被收回。**`POST /revoke`** 收回一次登录。
+- **发给 App 的请求**带上 `Authorization: DPoP <token>` 和针对这个方法与 URL 的 `DPoP` 证明（`ES256` 或 `EdDSA`）时，App 会收到 `FileOS-User: <DID>`。给别的 App 的令牌、用别的密钥签的证明、或用过的证明，都得到 `401`。
+- 节点把 passkey 和刷新令牌的哈希保存在 `auth.cbor` 中，过期的会被丢弃。
+
 ## 网关做什么
 
 - 只在本机（127.0.0.1 和 ::1）监听，使用一个用户可以修改的固定端口。其他设备通过 libp2p 连接，而不是通过这个端口。
@@ -97,7 +105,7 @@ HTTP API 遵循 RFC 9110：用 `ETag` 和 `If-Match` 处理版本，用 `Range` 
 
 1. **网关：** 固定端口，只在本机，只接受已知的主机名，安全的默认头。
 2. **App 成为 HTTP 服务器：** 运行时支持 `wasi:http`，按主机名转发请求。
-3. **登录：** `/authorize`、`/token` 和 `/revoke`，passkey，DPoP，`FileOS-User` 头，以及签名 URL。
+3. **登录：** `/authorize`、`/token` 和 `/revoke`，passkey，DPoP 和 `FileOS-User` 头（已实现）；签名 URL 和 OpenID Connect（还没有）。
 4. **把网页界面打包进 `fileos`**，以及把用户转到本机节点的项目网页。
 5. **为没有节点的设备提供共享域名。**
 6. **浏览器里的节点。**

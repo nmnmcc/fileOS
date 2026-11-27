@@ -81,6 +81,7 @@ To share `/photos` with another node: `fileos space grant /photos <its node key>
 - [x] **Running a node**
   - [x] One program (`fileos`) and one data directory
   - [x] A local gateway and a command line
+  - [x] Sign-in to apps with a passkey: OAuth 2.0 with PKCE, DPoP-bound tokens, no cookies
 
 ## Documentation
 

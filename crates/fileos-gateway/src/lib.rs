@@ -17,6 +17,9 @@
 //!
 //! Every request to the kernel API needs `Authorization: Bearer <token>`,
 //! with the token from the data directory. Requests act with the node key.
+//! Sign-in for people is apart, with no token: see the `signin` module.
+//! A request to an app with `Authorization: DPoP <token>` and a good `DPoP`
+//! proof reaches the app with the person in `FileOS-User`.
 //!
 //! | Request                                      | What it does                         |
 //! | -------------------------------------------- | ------------------------------------ |
@@ -41,6 +44,7 @@
 //! | `DELETE /v0/requests/<id>`                   | Say no to a request                  |
 //! | `GET /v0/kv/<app>`                           | An app's cache on this node, as text |
 //! | `POST /v0/dial`                              | Connect to a multiaddr (the body)    |
+//! | `POST /v0/auth/setup`                        | A link to add a passkey (one use)    |
 //!
 
 use std::collections::BTreeMap;
@@ -58,6 +62,8 @@ use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
 use tokio::net::TcpListener;
+
+mod signin;
 
 /// An error in the body of an answer.
 type BodyError = Box<dyn std::error::Error + Send + Sync>;
@@ -178,6 +184,7 @@ pub async fn start(node: Node, port: u16, token: String) -> Result<u16, Error> {
         .local_addr()
         .map_err(|e| Error(format!("gateway: {e}")))?
         .port();
+    node.start_sign_in(port)?;
     let mut listeners = vec![listener];
     let v6 = SocketAddr::from((Ipv6Addr::LOCALHOST, port));
     match TcpListener::bind(v6).await {
@@ -230,8 +237,8 @@ async fn serve(
         return Ok(answer);
     };
     let mut answer = match &target {
-        Target::Kernel => kernel(node, token, req).await,
-        Target::App(id) => app(&node, id, req).await,
+        Target::Kernel => kernel(node, token, &host, req).await,
+        Target::App(id) => app(&node, id, &host, req).await,
     };
     safe_headers(answer.headers_mut(), &target);
     Ok(answer)
@@ -249,7 +256,7 @@ pub fn kernel_only(path: &str) -> bool {
 }
 
 /// A request for an app.
-async fn app(node: &Node, id: &str, req: Request<Incoming>) -> Reply {
+async fn app(node: &Node, id: &str, host: &str, req: Request<Incoming>) -> Reply {
     let Some(app) = node.http_app(id) else {
         let mut answer = reply(
             StatusCode::NOT_FOUND,
@@ -264,8 +271,51 @@ async fn app(node: &Node, id: &str, req: Request<Incoming>) -> Reply {
         return answer;
     }
     let (mut parts, body) = req.into_parts();
+    let get = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
+    let path = parts.uri.path_and_query().map_or("/", |p| p.as_str());
+    let person = {
+        let (authorization, dpop) = (get("authorization"), get("dpop"));
+        let (node, method, host, path) = (
+            node.clone(),
+            parts.method.to_string(),
+            host.to_string(),
+            path.to_string(),
+        );
+        let (authorization, dpop) = (authorization.map(str::to_string), dpop.map(str::to_string));
+        tokio::task::spawn_blocking(move || {
+            signin::person(
+                &node,
+                authorization.as_deref(),
+                dpop.as_deref(),
+                &method,
+                &host,
+                &path,
+            )
+        })
+        .await
+        .unwrap_or_else(|e| Err(Error(e.to_string())))
+    };
     for name in KERNEL_HEADERS {
         parts.headers.remove(name);
+    }
+    parts.headers.remove("dpop");
+    match person {
+        Ok(Some(person)) => {
+            if let Ok(value) = HeaderValue::from_str(&person) {
+                parts.headers.insert("fileos-user", value);
+            }
+        }
+        Ok(None) => {}
+        Err(e) => {
+            tracing::info!("sign-in for {id}: {e}");
+            let mut answer = reply(StatusCode::UNAUTHORIZED, "the sign-in is not good\n");
+            answer.headers_mut().insert(
+                header::WWW_AUTHENTICATE,
+                HeaderValue::from_static("DPoP error=\"invalid_token\", algs=\"ES256 EdDSA\""),
+            );
+            clean_app_headers(answer.headers_mut());
+            return answer;
+        }
     }
     let mut answer = match app.handle(Request::from_parts(parts, body)).await {
         Ok(answer) => answer.map(|body| body.map_err(|e| Box::new(e) as BodyError).boxed_unsync()),
@@ -279,7 +329,14 @@ async fn app(node: &Node, id: &str, req: Request<Incoming>) -> Reply {
 }
 
 /// A request for the kernel API.
-async fn kernel(node: Node, token: String, req: Request<Incoming>) -> Reply {
+async fn kernel(node: Node, token: String, host: &str, req: Request<Incoming>) -> Reply {
+    let path = req.uri().path().to_string();
+    // Sign-in needs no token. Its pages take no requests from other sites;
+    // `/token` and `/revoke` take them from the apps of this node (CORS).
+    let cross_site_allowed = !cross_site(req.headers()) || signin::is_cross_origin(&path);
+    if signin::is_sign_in(&path) && cross_site_allowed {
+        return sign_in(node, host, req).await;
+    }
     if cross_site(req.headers()) {
         return reply(StatusCode::FORBIDDEN, "no requests from other sites\n");
     }
@@ -317,6 +374,51 @@ async fn kernel(node: Node, token: String, req: Request<Incoming>) -> Reply {
         Ok(Err(e)) => reply(StatusCode::BAD_REQUEST, format!("{e}\n")),
         Err(e) => reply(StatusCode::INTERNAL_SERVER_ERROR, format!("{e}\n")),
     }
+}
+
+/// A sign-in request: no token, and runs on a thread for blocking work.
+async fn sign_in(node: Node, host: &str, req: Request<Incoming>) -> Reply {
+    let method = req.method().clone();
+    let path = decode(req.uri().path());
+    let query: BTreeMap<String, String> = req
+        .uri()
+        .query()
+        .unwrap_or_default()
+        .split('&')
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            let (k, v) = p.split_once('=').unwrap_or((p, ""));
+            (decode(k), decode(v))
+        })
+        .collect();
+    let get = |name: &str| {
+        req.headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+    };
+    let (origin, dpop) = (get("origin"), get("dpop"));
+    let body = match req.into_body().collect().await {
+        Ok(body) => body.to_bytes().to_vec(),
+        Err(e) => return reply(StatusCode::BAD_REQUEST, format!("{e}\n")),
+    };
+    let host = host.to_string();
+    tokio::task::spawn_blocking(move || {
+        signin::handle(
+            &node,
+            &signin::Request {
+                method: &method,
+                path: &path,
+                query: &query,
+                host: &host,
+                origin: origin.as_deref(),
+                dpop: dpop.as_deref(),
+                body,
+            },
+        )
+    })
+    .await
+    .unwrap_or_else(|e| reply(StatusCode::INTERNAL_SERVER_ERROR, format!("{e}\n")))
 }
 
 fn route(
@@ -442,6 +544,10 @@ fn route(
         (&Method::POST, "/v0/install") => {
             let app = node.install(&PathBuf::from(arg("dir")?))?;
             ok(format!("{}\n{}\n", app.key, app.id))
+        }
+        (&Method::POST, "/v0/auth/setup") => {
+            let code = node.sign_in(|a| Ok(a.setup_code(signin::now())))?;
+            ok(format!("{code}\n"))
         }
         (&Method::POST, "/v0/dial") => {
             node.dial(text(body)?.trim())?;
