@@ -59,6 +59,7 @@ fos node status
 - [ ] **App**
   - [x] App 以 `.app` 文件提供（本身不压缩的 zip：manifest，加上 `tar.zst` 里的其余文件）
   - [x] 每个 App 有自己的密钥，只得到 manifest 申请的权限，运行时有 fuel 和内存限制
+  - [x] 每个 App 只能看到自己的视图：它知道的名字下的挂载、私有数据，以及运行时授予的授权（`fos app grant`）
   - [x] App 通过 `wasi:http` 在自己的 origin（`<app-id>.localhost`）上响应 HTTP
   - [x] 照片 App：图库、上传，以及图片尺寸的索引
   - [x] 聊天 App：聊天室中每条消息一个文件，放在你所分享的空间里

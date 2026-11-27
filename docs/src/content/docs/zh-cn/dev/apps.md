@@ -25,7 +25,16 @@ App 是 `app` world 的组件。
 | `events.on-change`                  | App 监听的路径发生变化时                |
 | `wasi:http/incoming-handler.handle` | 有发给这个 App 的 origin 的 HTTP 请求时 |
 
-每次调用 `fs` 都使用 **App 自己的密钥**，这个密钥由节点从自己的密钥派生出来。内核按这个密钥在路径所在空间中的授权检查每一次调用。App 只能使用安装时用户给它的路径。每次调用 App 都有 fuel 和内存的限制。
+每次调用 `fs` 都使用 **App 自己的密钥**，这个密钥由节点从自己的密钥派生出来。每次调用 App 都有 fuel 和内存的限制。
+
+**路径在 App 的视图中**，而不是节点上的路径：
+
+- manifest 中的每项权限，都挂载在视图中 manifest 给出的路径上：照片 App 申请 `/photos`，看到的就是 `/photos`。
+- 用户可以在运行时授予更多（`fos app grant`）；它出现在 `/granted/<handle>/`，或者用户选的名字下。用户也可以让一个名字指向别的地方：App 的 `/photos` 可以是挂载在 `/pictures` 的空间。App 永远看不到一个挂载的真实位置。
+- 其他所有路径都在 App 的**私有数据**中：一个由 App 密钥拥有的空间，没有授权时，别的 App 和任何人都读不到。
+- `on-change` 给出的也是视图中的路径。
+
+内核按 App 密钥在路径所代表的空间中的授权检查每一次调用。
 
 App 之间只通过文件协作：一个 App 写，另一个 App 监听。
 

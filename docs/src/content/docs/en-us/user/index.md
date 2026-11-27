@@ -116,6 +116,17 @@ of the app, such as `http://photos-…localhost:7341/`; open it in a browser.
 The `fos` command is for the kernel only: what an app does, you see in the
 app.
 
+An app sees only its own view, never where your files really are:
+
+| Command                                                 | What it does                                     |
+| ------------------------------------------------------- | ------------------------------------------------ |
+| `fos app grants photos`                                 | What the app sees, and what each part stands for |
+| `fos app grant photos /pictures read`                   | Give it more; it sees it at `/granted/<handle>`  |
+| `fos app grant photos /pictures read-write --as photos` | Make its `/photos` be your `/pictures`           |
+| `fos app take photos granted/<handle>`                  | Take it away again                               |
+
+Each app also has its own private data, which other apps cannot read.
+
 Two apps come with fileOS:
 
 - **Photos** shows the photos in `/photos`, lets you upload more, and keeps an

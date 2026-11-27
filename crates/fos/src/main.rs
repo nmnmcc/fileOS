@@ -172,6 +172,23 @@ enum AppCommand {
         /// The .app file to make. It must not be there yet.
         file: PathBuf,
     },
+    /// Give an app permissions on a path. The app sees it at `/granted/<handle>`,
+    /// or at NAME with --as; it never sees where it really is. Prints the
+    /// path in the app's view.
+    Grant {
+        /// The ID in the app's manifest, such as `photos`.
+        app: String,
+        path: String,
+        /// Exact names (files.read, …) or templates (read, read-write, manage).
+        permissions: String,
+        /// The name in the app's view. A mount there now is taken back first.
+        #[arg(long = "as")]
+        name: Option<String>,
+    },
+    /// What an app sees: the mounts in its view, and what each stands for.
+    Grants { app: String },
+    /// Take a mount away from an app's view, and take back its grant.
+    Take { app: String, name: String },
 }
 
 fn default_dir() -> PathBuf {
@@ -231,6 +248,40 @@ fn run(cli: Cli) -> Result<(), Error> {
             println!("packed {} ({} bytes)", file.display(), data.len());
             Ok(())
         }
+        Command::App {
+            command:
+                AppCommand::Grant {
+                    app,
+                    path,
+                    permissions,
+                    name,
+                },
+        } => {
+            let mut url = format!(
+                "/v0/apps/{}/view?path={}&permissions={}",
+                enc(&app),
+                enc(&path),
+                enc(&permissions)
+            );
+            if let Some(name) = name {
+                url.push_str(&format!("&as={}", enc(&name)));
+            }
+            print(&Client::new(&dir)?.call("POST", &url, &[])?)
+        }
+        Command::App {
+            command: AppCommand::Grants { app },
+        } => {
+            print(&Client::new(&dir)?.call("GET", &format!("/v0/apps/{}/view", enc(&app)), &[])?)
+        }
+        Command::App {
+            command: AppCommand::Take { app, name },
+        } => Client::new(&dir)?
+            .call(
+                "DELETE",
+                &format!("/v0/apps/{}/view?name={}", enc(&app), enc(&name)),
+                &[],
+            )
+            .map(drop),
         Command::App {
             command: AppCommand::Install { app },
         } => {
