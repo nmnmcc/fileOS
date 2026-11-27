@@ -189,6 +189,13 @@ enum AppCommand {
     Grants { app: String },
     /// Take a mount away from an app's view, and take back its grant.
     Take { app: String, name: String },
+    /// The requests of apps for access, waiting for you.
+    Requests,
+    /// Answer a request: give the app what it asked for, on the path you
+    /// pick. It sees it at `/granted/<handle>`, never the path itself.
+    Answer { id: String, path: String },
+    /// Say no to a request.
+    Refuse { id: String },
 }
 
 fn default_dir() -> PathBuf {
@@ -281,6 +288,21 @@ fn run(cli: Cli) -> Result<(), Error> {
                 &format!("/v0/apps/{}/view?name={}", enc(&app), enc(&name)),
                 &[],
             )
+            .map(drop),
+        Command::App {
+            command: AppCommand::Requests,
+        } => print(&Client::new(&dir)?.call("GET", "/v0/requests", &[])?),
+        Command::App {
+            command: AppCommand::Answer { id, path },
+        } => print(&Client::new(&dir)?.call(
+            "POST",
+            &format!("/v0/requests/{}?path={}", enc(&id), enc(&path)),
+            &[],
+        )?),
+        Command::App {
+            command: AppCommand::Refuse { id },
+        } => Client::new(&dir)?
+            .call("DELETE", &format!("/v0/requests/{}", enc(&id)), &[])
             .map(drop),
         Command::App {
             command: AppCommand::Install { app },

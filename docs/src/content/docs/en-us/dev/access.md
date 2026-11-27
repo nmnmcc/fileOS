@@ -218,6 +218,13 @@ space. The same file can be `/photos/2026/cat.jpg` for Ming,
 - There are no system categories such as "the photo library".
 - The person can take back a whole grant or single permissions at any time.
 
+Built today: an app calls `fos:app/access.ask(purpose, permissions)`, within
+the `[[asks]]` of its manifest. The request waits in the home space. The
+person sees it with `fos app requests` and answers with
+`fos app answer <id> <path>` (or `fos app refuse <id>`). The app gets the
+path at `/granted/<handle>` and hears of it with `on-change`. A picker page
+at `fos.localhost` comes with sign-in.
+
 ### Sharing between apps
 
 As with Android intents: an app says in its manifest what it takes

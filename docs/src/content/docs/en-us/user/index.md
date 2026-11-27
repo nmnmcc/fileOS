@@ -127,6 +127,10 @@ An app sees only its own view, never where your files really are:
 
 Each app also has its own private data, which other apps cannot read.
 
+An app can also ask you for something, such as a folder of photos to show.
+`fos app requests` lists what apps ask for; `fos app answer <id> /holiday`
+gives it, and `fos app refuse <id>` says no.
+
 Two apps come with fileOS:
 
 - **Photos** shows the photos in `/photos`, lets you upload more, and keeps an
