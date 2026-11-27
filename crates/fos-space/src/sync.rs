@@ -52,6 +52,9 @@ pub enum Msg {
         ops: Vec<Bytes>,
         cert: Bytes,
     },
+    /// Nodes that are no longer nodes of an identity: revocations signed by
+    /// its signing key.
+    Revoked(Vec<Bytes>),
 }
 
 /// Something the caller acts on.
@@ -101,6 +104,12 @@ pub struct Node {
     identity: Option<Proof>,
     /// What connected peers showed about their identities.
     proofs: BTreeMap<PublicKey, Proof>,
+    /// The vouches and unvouches this node has tried to write, by (space,
+    /// node, hash of the certificate or revocation), so each is tried once
+    /// and writing one never starts writing it again.
+    tried: BTreeSet<(Hash, PublicKey, Hash)>,
+    /// Node revocations this node knows: (the identity, the node, the bytes).
+    revocations: Vec<(Hash, PublicKey, Bytes)>,
     /// The newest time this node has seen, for what it writes when a
     /// message comes (this crate has no clock).
     time: u64,
@@ -120,6 +129,8 @@ impl Node {
             nonce,
             identity: None,
             proofs: BTreeMap::new(),
+            revocations: Vec::new(),
+            tried: BTreeSet::new(),
             time: 0,
         }
     }
@@ -222,6 +233,60 @@ impl Node {
         Ok(did)
     }
 
+    /// Takes node revocations: from the identity space of this node, or
+    /// from a peer. Writes an `Unvouch` into each space here that still
+    /// counts the node as a node of its identity, and tells connected peers.
+    pub fn add_revocations(&mut self, revocations: Vec<Bytes>) -> Step {
+        let mut step = Step::default();
+        let mut new = Vec::new();
+        for bytes in revocations {
+            let Ok(r) = fos_id::NodeRevocation::from_bytes(&bytes.0) else {
+                continue;
+            };
+            let Ok(did) = fos_id::did_hash(&r.did) else {
+                continue;
+            };
+            if !self.revocations.iter().any(|(_, _, b)| *b == bytes) {
+                self.revocations.push((did, r.node, bytes.clone()));
+                new.push(bytes);
+            }
+        }
+        if !new.is_empty() {
+            for peer in &self.peers {
+                step.out.push((*peer, Msg::Revoked(new.clone())));
+            }
+            self.unvouch_all(&mut step);
+        }
+        step
+    }
+
+    /// Writes the `Unvouch`es that the spaces here still lack.
+    fn unvouch_all(&mut self, step: &mut Step) {
+        let time = self.last_time();
+        let todo: Vec<(Hash, PublicKey, Bytes)> = self
+            .revocations
+            .iter()
+            .flat_map(|(did, node, bytes)| {
+                self.spaces
+                    .values()
+                    .filter(|s| s.is_node_of(*node, *did))
+                    .filter(|s| !self.tried.contains(&(s.id(), *node, Hash::of(&bytes.0))))
+                    .map(|s| (s.id(), *node, bytes.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        for (space, node, bytes) in todo {
+            if !self.tried.insert((space, node, Hash::of(&bytes.0))) {
+                continue;
+            }
+            let act = Act::Unvouch { revocation: bytes };
+            if let Ok((_, more)) = self.write(space, time, vec![act]) {
+                step.out.extend(more.out);
+                step.events.extend(more.events);
+            }
+        }
+    }
+
     /// Writes a `Vouch` for `node` into each space here that names `did` and
     /// does not show yet that `node` is its node.
     fn vouch(
@@ -233,6 +298,13 @@ impl Node {
         time: u64,
         step: &mut Step,
     ) {
+        if self
+            .revocations
+            .iter()
+            .any(|(d, n, _)| *d == did && *n == node)
+        {
+            return;
+        }
         let spaces: Vec<Hash> = self
             .spaces
             .values()
@@ -240,6 +312,9 @@ impl Node {
             .map(Space::id)
             .collect();
         for space in spaces {
+            if !self.tried.insert((space, node, Hash::of(&cert.0))) {
+                continue;
+            }
             let act = Act::Vouch {
                 ops: ops.to_vec(),
                 cert: cert.clone(),
@@ -331,6 +406,9 @@ impl Node {
             && let Some((did, ops, cert)) = &self.identity
             && s.identities().contains(did)
             && !s.is_node_of(author.public(), *did)
+            && self
+                .tried
+                .insert((space, author.public(), Hash::of(&cert.0)))
         {
             new.push(s.write(
                 author,
@@ -453,6 +531,10 @@ impl Node {
                 },
             ));
         }
+        if !self.revocations.is_empty() {
+            let all = self.revocations.iter().map(|(_, _, b)| b.clone()).collect();
+            step.out.push((peer, Msg::Revoked(all)));
+        }
         step.out.push((peer, self.have_for(peer)));
         for id in &self.wanted {
             step.out.push((peer, Msg::Want(*id)));
@@ -539,6 +621,11 @@ impl Node {
                     self.proofs.insert(from, (did, ops, cert));
                     step.out.push((from, self.have_for(from)));
                 }
+            }
+            Msg::Revoked(revocations) => {
+                let more = self.add_revocations(revocations);
+                step.out.extend(more.out);
+                step.events.extend(more.events);
             }
             Msg::Snapshot { space, snapshot } => {
                 self.take_snapshot(from, space, *snapshot, contents, &mut step);
@@ -677,6 +764,9 @@ impl Node {
         self.ask_contents(from, space, contents, step);
         self.send_on(space, &new, Some(from), step);
         self.vouch_peers(step);
+        if !self.revocations.is_empty() {
+            self.unvouch_all(step);
+        }
         self.again(space, Vec::new(), step);
     }
 }

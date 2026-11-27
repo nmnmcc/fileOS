@@ -698,9 +698,19 @@ impl Node {
     /// node is not one of its nodes.
     pub fn identity_remove_node(&self, node: PublicKey) -> Result<(), Error> {
         let mut inner = self.inner();
-        let (_, signing, space) = inner.held_identity()?;
+        let (did, signing, space) = inner.held_identity()?;
         let path = format!("{IDENTITY_AT}{}", fos_id::node_path(node));
         inner.delete(Some(&signing), &path, &self.shared.changed)?;
+        // The revocation ends the node in every space that counted it as a
+        // node of the identity.
+        let revocation = fos_id::NodeRevocation::sign(&did, &signing, node);
+        let path = format!("{IDENTITY_AT}{}", fos_id::revocation_path(node));
+        inner.put(
+            Some(&signing),
+            &path,
+            &revocation.to_bytes(),
+            &self.shared.changed,
+        )?;
         let grants: Vec<Id> = inner
             .node
             .space(space)
@@ -1634,6 +1644,15 @@ impl Inner {
         let Some(space) = self.identity_space() else {
             return Ok(());
         };
+        let revocations: Vec<fos_core::Bytes> = self
+            .files_in(space, fos_id::REVOKED)
+            .into_iter()
+            .map(|(_, bytes)| fos_core::Bytes(bytes))
+            .collect();
+        if !revocations.is_empty() {
+            let step = self.node.add_revocations(revocations);
+            self.process(step, changed)?;
+        }
         let me = self.key.public().to_string();
         let ops: Vec<fos_core::Bytes> = self
             .files_in(space, fos_id::OPS)
