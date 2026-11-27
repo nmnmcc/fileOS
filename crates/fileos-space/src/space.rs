@@ -32,7 +32,7 @@ use fileos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
 use fileos_id::{NodeCert, NodeRevocation, Op as DidOp};
 use serde::{Deserialize, Serialize};
 
-use crate::crypto::{self, Key, Wrapped};
+use crate::crypto::{self, Key, Recipient, Wrapped};
 use crate::entry::{
     Act, Content, Effect, Entry, Id, KeyRef, Permission, Principal, Resource, Retention, Sealed,
     good_name,
@@ -40,6 +40,11 @@ use crate::entry::{
 
 /// The place of what came from the base, before every entry.
 const BASE: usize = usize::MAX;
+
+/// An epoch older than this is changed for a new one, so that keys of
+/// deleted data and old secrets stop being of use (a policy, with a
+/// default: 30 days, the time deleted files stay in the bin).
+pub const EPOCH_MAX_AGE: u64 = 30 * 24 * 60 * 60 * 1000;
 
 /// One version of a file.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -119,6 +124,9 @@ pub struct Summary {
     pub sealed: Vec<Sealed>,
     /// The data keys of files, wrapped again under the newest epochs.
     pub rewrap: Vec<(Id, Wrapped)>,
+    /// The newest recipient key of each device, with the time it was made.
+    #[serde(default)]
+    pub recipients: Vec<(PublicKey, Bytes, u64)>,
 }
 
 impl Summary {
@@ -205,6 +213,8 @@ struct State {
     sealed: Vec<(usize, Sealed)>,
     /// (place of the entry, a file, its data key wrapped again)
     rewraps: Vec<(usize, Id, Wrapped)>,
+    /// (place of the entry, a device, its recipient key, the time)
+    recipients: Vec<(usize, PublicKey, Key, u64)>,
     /// (place of the entry, the group, its owner)
     groups: Vec<(usize, Id, Principal)>,
     /// (place of the entry, the identity, its DID operations, a certificate)
@@ -603,6 +613,17 @@ impl View<'_> {
             .collect();
         sealed.sort_by(|a, b| (a.to, &a.refs, &a.keys.0).cmp(&(b.to, &b.refs, &b.keys.0)));
         sealed.dedup();
+        // Keys sealed to an old recipient key of a device are of no use.
+        sealed.retain(|x| {
+            x.recipient.as_ref().map(|b| b.0.as_slice())
+                == self.recipient(x.to).as_ref().map(|k| &k[..])
+        });
+        let mut recipients: Vec<(PublicKey, Bytes, u64)> = self
+            .newest_recipients()
+            .into_iter()
+            .map(|(d, k, t)| (d, Bytes(k.to_vec()), t))
+            .collect();
+        recipients.sort_by_key(|r| r.0);
         Summary {
             files,
             grants,
@@ -613,7 +634,33 @@ impl View<'_> {
             epochs,
             sealed,
             rewrap,
+            recipients,
         }
+    }
+
+    /// The newest recipient key of each device at this point, with its time.
+    fn newest_recipients(&self) -> Vec<(PublicKey, Key, u64)> {
+        let mut newest: BTreeMap<PublicKey, (usize, Key, u64)> = BTreeMap::new();
+        for (at, device, key, time) in &self.state.recipients {
+            if !self.counts(*at) {
+                continue;
+            }
+            // BASE comes first; later entries of one log come later in order.
+            let rank = if *at == BASE { 0 } else { at + 1 };
+            let e = newest.entry(*device).or_insert((rank, *key, *time));
+            if rank >= e.0 {
+                *e = (rank, *key, *time);
+            }
+        }
+        newest.into_iter().map(|(d, (_, k, t))| (d, k, t)).collect()
+    }
+
+    /// The newest recipient key of `device` at this point.
+    fn recipient(&self, device: PublicKey) -> Option<Key> {
+        self.newest_recipients()
+            .into_iter()
+            .find(|(d, _, _)| *d == device)
+            .map(|(_, k, _)| k)
     }
 
     /// The newest epochs at this point: those that no other epoch comes
@@ -783,6 +830,21 @@ impl View<'_> {
                         .ok_or("a revocation for an identity that is not shown here")?;
                     if !r.verify(signing) {
                         return Err("a revocation not signed by the signing key".into());
+                    }
+                }
+                Act::Recipient { key } => {
+                    if key.0.len() != 32 {
+                        return Err("a recipient key that is not 32 bytes".into());
+                    }
+                    // Only a device that may read something here gets keys.
+                    let reads = Principal::Key(author) == self.space.owner
+                        || self.grants().iter().any(|g| {
+                            g.effect == Effect::Allow
+                                && g.permissions.contains(&Permission::FilesRead)
+                                && self.acts_as(who, g.to, 0)
+                        });
+                    if !reads {
+                        return Err(format!("{author} may read nothing here"));
                     }
                 }
                 Act::Keys {
@@ -1256,6 +1318,11 @@ impl Space {
             state
                 .rewraps
                 .extend(summary.rewrap.iter().map(|(f, w)| (BASE, *f, w.clone())));
+            for (device, key, time) in &summary.recipients {
+                if let Ok(key) = key.0.as_slice().try_into() {
+                    state.recipients.push((BASE, *device, key, *time));
+                }
+            }
             for given in &base.snapshot.summary.grants {
                 state.gives.push(Giv {
                     at: BASE,
@@ -1309,6 +1376,16 @@ impl Space {
                                 .filter_map(|o| DidOp::from_bytes(&o.0).ok())
                                 .collect();
                             state.vouches.push((at, did, ops, cert));
+                        }
+                    }
+                    Act::Recipient { key } => {
+                        if let Ok(key) = key.0.as_slice().try_into() {
+                            state.recipients.push((
+                                at,
+                                k.entry.header.author,
+                                key,
+                                k.entry.header.time,
+                            ));
                         }
                     }
                     Act::Keys {
@@ -1659,21 +1736,34 @@ impl Space {
     }
 
     /// The keys sealed to any of `mine`, opened.
+    pub fn keyring(&self, mine: &[&SecretKey]) -> Keyring {
+        self.keyring_with(mine, &[])
+    }
+
+    /// The keys sealed to any of `mine`, or to any of the recipient keys
+    /// `recipients` that this node still holds, opened.
     ///
     /// # Panics
     ///
     /// Never: the keys are cut in pieces of 32 bytes.
-    pub fn keyring(&self, mine: &[&SecretKey]) -> Keyring {
+    pub fn keyring_with(&self, mine: &[&SecretKey], recipients: &[Recipient]) -> Keyring {
         let view = self.now();
         let mut ring = Keyring::default();
         for (at, x) in &self.state.sealed {
-            if !view.counts(*at) {
+            if !view.counts(*at) || !mine.iter().any(|k| k.public() == x.to) {
                 continue;
             }
-            let Some(me) = mine.iter().find(|k| k.public() == x.to) else {
-                continue;
+            let keys = match &x.recipient {
+                Some(pk) => recipients
+                    .iter()
+                    .filter(|r| r.public[..] == pk.0[..])
+                    .find_map(|r| crypto::open_with_recipient(r, &self.id.0, &x.enc.0, &x.keys.0)),
+                None => mine
+                    .iter()
+                    .find(|k| k.public() == x.to)
+                    .and_then(|me| crypto::open_with(me, &self.id.0, &x.enc.0, &x.keys.0)),
             };
-            let Some(keys) = crypto::open_with(me, &self.id.0, &x.enc.0, &x.keys.0) else {
+            let Some(keys) = keys else {
                 continue;
             };
             for (r, key) in x.refs.iter().zip(keys.as_chunks::<32>().0) {
@@ -1825,22 +1915,62 @@ impl Space {
             .sealed
             .iter()
             .filter(|(at, _)| view.counts(*at))
+            .filter(|(_, x)| {
+                x.recipient.as_ref().map(|b| b.0.as_slice())
+                    == view.recipient(x.to).as_ref().map(|k| &k[..])
+            })
             .flat_map(|(_, x)| x.refs.iter().map(move |r| (x.to, r)))
             .collect();
+        // Keys go only to keys that show a recipient key.
         want.into_iter()
+            .filter(|(to, _)| view.recipient(*to).is_some())
             .filter(|(to, r)| !have.iter().any(|(t, h)| t == to && covers_key(h, r)))
             .collect()
     }
 
-    /// Says if the keys should change: there is no epoch yet, or a device
+    /// How long before `now` (or the newest time here, if later) the epoch
+    /// began.
+    fn epoch_age(&self, epoch: Hash, now: u64) -> u64 {
+        let started = self
+            .state
+            .epochs
+            .iter()
+            .filter(|(_, e)| *e == epoch)
+            .map(|(at, _)| {
+                if *at == BASE {
+                    self.base().map_or(0, |b| b.checkpoint.header.time)
+                } else {
+                    self.known[&self.state.order[*at]].entry.header.time
+                }
+            })
+            .min()
+            .unwrap_or(0);
+        self.latest_time().max(now).saturating_sub(started)
+    }
+
+    /// The recipient key that keys for `device` should be sealed to now, and
+    /// when it was made.
+    pub fn recipient_of(&self, device: PublicKey) -> Option<(Key, u64)> {
+        self.now()
+            .newest_recipients()
+            .into_iter()
+            .find(|(d, _, _)| *d == device)
+            .map(|(_, k, t)| (k, t))
+    }
+
+    /// Says if the keys should change: there is no epoch yet, the epoch is
+    /// older than [`EPOCH_MAX_AGE`] at `now`, or a device
     /// that was given a key of the newest epoch may no longer read what that
     /// key opens. This covers every way a device loses access: a take-back,
     /// a device taken away from an identity, a new signing key of an
     /// identity, and a member taken out of a group.
-    pub fn needs_new_epoch(&self) -> bool {
+    pub fn needs_new_epoch(&self, now: u64) -> bool {
         let Some(epoch) = self.epoch() else {
             return true;
         };
+        if self.epoch_age(epoch, now) >= EPOCH_MAX_AGE {
+            return true;
+        }
         let view = self.now();
         self.state
             .sealed

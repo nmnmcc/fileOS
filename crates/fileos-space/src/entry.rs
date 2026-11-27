@@ -109,6 +109,11 @@ pub struct Sealed {
     pub enc: Bytes,
     /// The keys, in the order of `refs`, one after the other.
     pub keys: Bytes,
+    /// The recipient key of the device that they were sealed to (see
+    /// [`Act::Recipient`]). With none, they were sealed to the X25519 form of
+    /// the device key itself.
+    #[serde(default)]
+    pub recipient: Option<Bytes>,
 }
 
 /// Allow or deny. A deny wins over every allow.
@@ -183,6 +188,9 @@ pub enum Act {
     /// Shows that a node is no longer a node of an identity: a revocation
     /// signed by the signing key of the identity. Anyone may write it.
     Unvouch { revocation: Bytes },
+    /// The X25519 key that the author, a device, gets keys with now. A device
+    /// changes it from time to time and destroys the old secret.
+    Recipient { key: Bytes },
     /// Keys. With `epoch`, starts a new epoch with that ID (random); only
     /// the owner, or a principal with `space.checkpoint`, may. `sealed`
     /// sends keys to devices; `rewrap` wraps the data keys of files again,

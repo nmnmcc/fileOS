@@ -7,7 +7,7 @@ description: How data is kept and synced with no ordering node, how conflicts ar
 Most of this page is built, in `fileos-space`, and the node runs on it: the
 data model, conflicts, strong removal, content in chunks, checkpoints,
 retention and [encryption](#encryption). Not built yet: bookmarks, the
-authority path, budgets, CRDT files, and HPKE keys that devices change. [Building it](#building-it-a-new-kernel) says
+authority path, budgets and CRDT files. [Building it](#building-it-a-new-kernel) says
 what is done.
 :::
 
@@ -352,13 +352,18 @@ on it.
   writes use one of them by a fixed rule. No ordering node is needed.
 - The cost is one HPKE message for each device. A family space of 10 people
   with 3 devices each is 30 messages, for a change that seldom happens.
-- Keys are sealed to the X25519 form of each device's ed25519 key (as
-  libsodium's `crypto_sign_ed25519_pk_to_curve25519` does), so there is no
-  key to look up first.
-- **Weak point:** a device gets keys with that one key. If it is stolen
-  later, and someone kept the sealed keys, they can open them. The next step
-  is for **each device to have an HPKE key of its own that it changes from
-  time to time, destroying the old one.**
+- **Each device has a recipient key**, an X25519 key that it uses only to
+  get keys, and shows it in each space it may read (`Act::Recipient`). Keys
+  are sealed to the newest recipient key of a device, never to its ed25519
+  key: that key cannot be changed, so whoever stole it later could open
+  every key ever sealed to it.
+- **A device changes its recipient key every 30 days** (a policy) and keeps
+  only the one before it, so older secrets are destroyed. Other nodes seal
+  the keys again to the new one.
+- **Each epoch lasts at most 30 days** (a policy), the time deleted files
+  stay in the bin. So keys of deleted data, and keys sealed to old
+  recipient keys, stop being of use: a deleted file cannot be opened
+  anywhere, even from copies, about 60 days at most after it was deleted.
 
 We looked at three group key agreements:
 

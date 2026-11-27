@@ -24,7 +24,7 @@ use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use fileos_core::{Bytes, PublicKey, SecretKey};
 use hpke::kem::X25519HkdfSha256;
-use hpke::{Deserializable as _, OpModeR, OpModeS, Serializable as _};
+use hpke::{Deserializable as _, Kem as _, OpModeR, OpModeS, Serializable as _};
 use serde::{Deserialize, Serialize};
 
 /// A secret key of 32 bytes.
@@ -214,6 +214,87 @@ pub fn unwrap(kek: &Key, wrapped: &Wrapped) -> Option<Key> {
     key.try_into().ok()
 }
 
+/// A key pair that a device uses only to get keys (an HPKE recipient key).
+///
+/// The device changes it from time to time and destroys the old secret, so
+/// keys sealed to an old one cannot be opened if the device is stolen later.
+#[derive(Clone)]
+pub struct Recipient {
+    /// The X25519 public key.
+    pub public: Key,
+    secret: Key,
+}
+
+impl std::fmt::Debug for Recipient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Recipient({:02x?})", &self.public[..4])
+    }
+}
+
+impl Recipient {
+    /// Makes a new key pair.
+    pub fn new(random: &mut Random) -> Self {
+        Self::from_secret(random.key())
+    }
+
+    /// The key pair whose secret was kept, as [`Recipient::secret`] gives.
+    ///
+    /// # Panics
+    ///
+    /// Never: every 32 bytes are good keying material.
+    pub fn from_secret(ikm: Key) -> Self {
+        let (sk, pk) = X25519HkdfSha256::derive_keypair(&ikm);
+        let _ = sk;
+        Self {
+            public: pk.to_bytes().into(),
+            secret: ikm,
+        }
+    }
+
+    /// The bytes to keep, to make the same key pair again.
+    pub fn secret(&self) -> Key {
+        self.secret
+    }
+
+    fn private(&self) -> <X25519HkdfSha256 as hpke::Kem>::PrivateKey {
+        X25519HkdfSha256::derive_keypair(&self.secret).0
+    }
+}
+
+/// Seals `plaintext` to the recipient key `to` (an X25519 public key).
+pub fn seal_to_recipient(
+    to: &Key,
+    info: &[u8],
+    plaintext: &[u8],
+    random: &mut Random,
+) -> Option<(Bytes, Bytes)> {
+    let pk = <X25519HkdfSha256 as hpke::Kem>::PublicKey::from_bytes(to).ok()?;
+    let (enc, ct) = hpke::single_shot_seal_with_rng::<HpkeAead, Kdf, X25519HkdfSha256>(
+        &OpModeS::Base,
+        &pk,
+        info,
+        plaintext,
+        b"",
+        random,
+    )
+    .ok()?;
+    Some((Bytes(enc.to_bytes().to_vec()), Bytes(ct)))
+}
+
+/// Opens what [`seal_to_recipient`] sealed to `me`.
+pub fn open_with_recipient(me: &Recipient, info: &[u8], enc: &[u8], ct: &[u8]) -> Option<Vec<u8>> {
+    let enc = <X25519HkdfSha256 as hpke::Kem>::EncappedKey::from_bytes(enc).ok()?;
+    hpke::single_shot_open::<HpkeAead, Kdf, X25519HkdfSha256>(
+        &OpModeR::Base,
+        &me.private(),
+        &enc,
+        info,
+        ct,
+        b"",
+    )
+    .ok()
+}
+
 /// Seals `plaintext` to the device key `to` with HPKE. Gives back the
 /// encapsulated key and the ciphertext. `None` when `to` is not a key.
 pub fn seal_to(
@@ -292,6 +373,15 @@ mod tests {
             open_with(&me, b"info", &enc.0, &ct.0).as_deref(),
             Some(&b"secret"[..])
         );
+        let r = Recipient::new(&mut random);
+        let (enc, ct) = seal_to_recipient(&r.public, b"i", b"k", &mut random).unwrap();
+        let again = Recipient::from_secret(r.secret());
+        assert_eq!(
+            open_with_recipient(&again, b"i", &enc.0, &ct.0).as_deref(),
+            Some(&b"k"[..])
+        );
+        let other_r = Recipient::new(&mut random);
+        assert_eq!(open_with_recipient(&other_r, b"i", &enc.0, &ct.0), None);
         let other = SecretKey::from_seed(&[4; 32]);
         assert_eq!(open_with(&other, b"info", &enc.0, &ct.0), None);
         assert_eq!(open_with(&me, b"other", &enc.0, &ct.0), None);

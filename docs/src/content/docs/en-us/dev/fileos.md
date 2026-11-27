@@ -290,15 +290,15 @@ Dependencies go down only. Apps depend only on `fileos-app`.
    is simple and right, and slow for large spaces; checkpoints keep spaces
    small, and the work can be made step by step later.
 2. **Names and sizes are not encrypted.** Content is; names, sizes and who
-   wrote what are in the open, because every node checks every entry. Devices
-   do not yet change their HPKE keys (see [Data](../data/)).
+   wrote what are in the open, because every node checks every entry. Each
+   device gets keys with a recipient key that it changes every 30 days (see
+   [Data](../data/)).
 3. **Reading part of a space** (one prefix or one file) is not yet sent to
    other nodes: a node keeps a whole space or none.
 4. Speed of WASM and of the kernel on home hardware is not measured yet.
 
 ## Next steps
 
-1. HPKE keys that each device changes from time to time.
-2. The picker (an app asks for a file), sharing between apps.
-3. Watch options, `wasi:filesystem`, and lists of nodes for each event.
-4. Sign-in for people at the gateway.
+1. The picker (an app asks for a file), sharing between apps.
+2. Watch options, `wasi:filesystem`, and lists of nodes for each event.
+3. Sign-in for people at the gateway.

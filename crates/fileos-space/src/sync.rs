@@ -27,7 +27,7 @@ use fileos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
 
 use crate::content;
-use crate::crypto::{self, Random, Wrapped};
+use crate::crypto::{self, Key, Random, Recipient, Wrapped};
 use crate::entry::{
     Act, Content, Entry, Id, KeyRef, Permission, Principal, Resource, Retention, Sealed,
 };
@@ -127,6 +127,10 @@ pub struct Node {
     random: Random,
     /// The opened keys of each space, with the heads they were opened at.
     rings: RefCell<BTreeMap<Hash, (Vec<Hash>, Keyring)>>,
+    /// The recipient keys of this node, with the time each was made, the
+    /// newest last. Keys are sealed to the newest; the one before is kept
+    /// until keys sealed to it are sealed again to the newest.
+    recipients: Vec<(u64, Recipient)>,
 }
 
 impl Node {
@@ -141,6 +145,7 @@ impl Node {
             keys: Vec::new(),
             random,
             rings: RefCell::new(BTreeMap::new()),
+            recipients: Vec::new(),
             key,
             spaces: BTreeMap::new(),
             wanted: BTreeSet::new(),
@@ -185,9 +190,74 @@ impl Node {
             return ring.clone();
         }
         let mine = self.mine();
-        let ring = s.keyring(&mine.iter().collect::<Vec<_>>());
+        let recipients: Vec<Recipient> = self.recipients.iter().map(|(_, r)| r.clone()).collect();
+        let ring = s.keyring_with(&mine.iter().collect::<Vec<_>>(), &recipients);
         self.rings.borrow_mut().insert(space, (heads, ring.clone()));
         ring
+    }
+
+    /// The recipient keys this node holds, as (time made, secret), to keep
+    /// on disk.
+    pub fn recipients(&self) -> Vec<(u64, Key)> {
+        self.recipients
+            .iter()
+            .map(|(t, r)| (*t, r.secret()))
+            .collect()
+    }
+
+    /// Puts the recipient keys kept on disk back in place.
+    pub fn set_recipients(&mut self, kept: Vec<(u64, Key)>) {
+        self.recipients = kept
+            .into_iter()
+            .map(|(t, k)| (t, Recipient::from_secret(k)))
+            .collect();
+        self.rings.borrow_mut().clear();
+    }
+
+    /// The time the newest recipient key was made, if there is one.
+    pub fn recipient_made(&self) -> Option<u64> {
+        self.recipients.last().map(|(t, _)| *t)
+    }
+
+    /// Makes a new recipient key, and destroys all but the one before it.
+    /// When to do it is the caller's policy (for example every 30 days). The
+    /// new key goes into every space this node may read, and other nodes
+    /// then seal keys to it.
+    pub fn rotate_recipient(&mut self, time: u64) -> Step {
+        let new = Recipient::new(&mut self.random);
+        self.recipients.push((time, new));
+        if self.recipients.len() > 2 {
+            self.recipients.drain(..self.recipients.len() - 2);
+        }
+        self.rings.borrow_mut().clear();
+        let mut step = Step::default();
+        let ids: Vec<Hash> = self.spaces.keys().copied().collect();
+        for id in ids {
+            self.upkeep_at(id, time, &mut step);
+        }
+        step
+    }
+
+    /// Seals `keys` for the key `to`, to its newest recipient key in the
+    /// space. Never to the key itself: it cannot be changed, so whoever
+    /// steals it later could open every key ever sealed to it.
+    fn seal_for(
+        &mut self,
+        space: Hash,
+        to: PublicKey,
+        refs: Vec<KeyRef>,
+        keys: &[u8],
+    ) -> Option<Sealed> {
+        let (recipient, _) = self.spaces.get(&space)?.recipient_of(to)?;
+        let (enc, sealed) =
+            crypto::seal_to_recipient(&recipient, &space.0, keys, &mut self.random)?;
+        Some(Sealed {
+            to,
+            refs,
+            enc,
+            keys: sealed,
+            recipient: Some(Bytes(recipient.to_vec())),
+        })
     }
 
     /// Makes content for a file named `name` (the file `file`, when it is
@@ -259,13 +329,39 @@ impl Node {
     /// starts a new epoch when access was taken back (or there is none),
     /// and sends readers the keys they do not have yet.
     fn upkeep(&mut self, space: Hash, step: &mut Step) {
+        self.upkeep_at(space, 0, step);
+    }
+
+    /// [`upkeep`](Self::upkeep), when the time now is `now` (or the newest
+    /// time in the space, if later).
+    fn upkeep_at(&mut self, space: Hash, now: u64, step: &mut Step) {
         let Some(s) = self.spaces.get(&space) else {
             return;
         };
-        let time = s.latest_time();
+        let time = s.latest_time().max(now);
+        // Show this node's newest recipient key for each key it signs with,
+        // so keys for them are sealed to it.
+        if let Some(public) = self.recipients.last().map(|(_, r)| r.public) {
+            for key in self.mine() {
+                let s = &self.spaces[&space];
+                if s.recipient_of(key.public()).map(|(k, _)| k) == Some(public) {
+                    continue;
+                }
+                let act = Act::Recipient {
+                    key: Bytes(public.to_vec()),
+                };
+                if let Ok(more) = self.write_inner(space, &key, time, vec![act]) {
+                    step.out.extend(more.out);
+                    step.events.extend(more.events);
+                }
+            }
+        }
+        let Some(s) = self.spaces.get(&space) else {
+            return;
+        };
         let whole = Resource::Prefix(String::new());
         let mine = self.mine();
-        if s.needs_new_epoch()
+        if s.needs_new_epoch(time)
             && let Some(author) = mine.iter().find(|k| {
                 s.may(
                     Principal::Key(k.public()),
@@ -295,18 +391,12 @@ impl Node {
                     ));
                 }
             }
-            let info = space.0;
-            if let Some((enc, keys)) =
-                crypto::seal_to(author.public(), &info, &root, &mut self.random)
+            if let Some(sealed) =
+                self.seal_for(space, author.public(), vec![KeyRef::Root(epoch)], &root)
             {
                 let act = Act::Keys {
                     epoch: Some(epoch),
-                    sealed: vec![Sealed {
-                        to: author.public(),
-                        refs: vec![KeyRef::Root(epoch)],
-                        enc,
-                        keys,
-                    }],
+                    sealed: vec![sealed],
                     rewrap,
                 };
                 let author = author.clone();
@@ -360,13 +450,8 @@ impl Node {
             }
             let mut sealed = Vec::new();
             for (to, (refs, keys)) in by_device {
-                if let Some((enc, keys)) = crypto::seal_to(to, &space.0, &keys, &mut self.random) {
-                    sealed.push(Sealed {
-                        to,
-                        refs,
-                        enc,
-                        keys,
-                    });
+                if let Some(x) = self.seal_for(space, to, refs, &keys) {
+                    sealed.push(x);
                 }
             }
             let act = Act::Keys {
@@ -712,12 +797,15 @@ impl Node {
         time: u64,
         retention: Retention,
     ) -> Result<Step, Error> {
+        // Keys first: a new epoch that is due goes in before the checkpoint,
+        // so the checkpoint can drop the keys of the old one.
+        let mut step = Step::default();
+        self.upkeep_at(space, time, &mut step);
         let s = self
             .spaces
             .get_mut(&space)
             .ok_or_else(|| Error(format!("space {space} is not here")))?;
         let entry = s.checkpoint(&self.key, time, retention)?;
-        let mut step = Step::default();
         step.events.push(Event::Changed(space));
         self.send_on(space, &[entry], None, &mut step);
         self.again(space, Vec::new(), &mut step);

@@ -53,13 +53,24 @@ impl World {
     /// Adds a node. Its key comes from `n`, so runs are the same every time.
     pub fn add(&mut self, n: u8) -> usize {
         let key = SecretKey::from_seed(&[n; 32]);
+        let mut node = Node::new(key.clone(), u64::from(n) << 32);
+        let _ = node.rotate_recipient(self.time);
         self.nodes.push(WorldNode {
-            node: Node::new(key.clone(), u64::from(n) << 32),
+            node,
             key,
             contents: MemContents::default(),
             events: Vec::new(),
         });
         self.nodes.len() - 1
+    }
+
+    /// Makes a node change its recipient key, and destroy all but the one
+    /// before it.
+    pub fn rotate(&mut self, node: usize) {
+        let time = self.tick();
+        let step = self.nodes[node].node.rotate_recipient(time);
+        self.apply(node, step);
+        self.run();
     }
 
     /// Lets `ms` milliseconds go by.
