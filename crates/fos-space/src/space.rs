@@ -32,8 +32,10 @@ use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey};
 use fos_id::{NodeCert, NodeRevocation, Op as DidOp};
 use serde::{Deserialize, Serialize};
 
+use crate::crypto::{self, Key, Wrapped};
 use crate::entry::{
-    Act, Content, Effect, Entry, Id, Permission, Principal, Resource, Retention, good_name,
+    Act, Content, Effect, Entry, Id, KeyRef, Permission, Principal, Resource, Retention, Sealed,
+    good_name,
 };
 
 /// The place of what came from the base, before every entry.
@@ -51,6 +53,8 @@ pub struct Version {
     /// Only for people and for retention; never for access.
     pub time: u64,
     pub parents: Vec<Id>,
+    /// The data key, wrapped, when the content is encrypted.
+    pub key: Option<Wrapped>,
 }
 
 /// A file and its newest versions. There is more than one when people
@@ -107,6 +111,14 @@ pub struct Summary {
     pub revocations: Vec<Bytes>,
     /// For each author: its last entry and the place of it.
     pub logs: Vec<(PublicKey, Hash, u64)>,
+    /// The newest epochs.
+    pub epochs: Vec<Hash>,
+    /// The sealed keys that the newest versions and the newest epochs still
+    /// need. Keys that nothing needs are left out, so content that is gone
+    /// cannot be opened again (crypto-shredding).
+    pub sealed: Vec<Sealed>,
+    /// The data keys of files, wrapped again under the newest epochs.
+    pub rewrap: Vec<(Id, Wrapped)>,
 }
 
 impl Summary {
@@ -187,6 +199,12 @@ struct State {
     gives: Vec<Giv>,
     /// (place of the entry, the grant taken back)
     takes: Vec<(usize, Id)>,
+    /// (place of the entry, the ID of a new epoch)
+    epochs: Vec<(usize, Hash)>,
+    /// (place of the entry, keys sealed to a device)
+    sealed: Vec<(usize, Sealed)>,
+    /// (place of the entry, a file, its data key wrapped again)
+    rewraps: Vec<(usize, Id, Wrapped)>,
     /// (place of the entry, the group, its owner)
     groups: Vec<(usize, Id, Principal)>,
     /// (place of the entry, the identity, its DID operations, a certificate)
@@ -476,7 +494,7 @@ impl View<'_> {
             .filter(|v| self.counts(v.at))
             .map(|v| v.file)
             .collect();
-        let files = ids
+        let files: Vec<(Id, Vec<Version>)> = ids
             .into_iter()
             .filter_map(|id| {
                 let mut heads: Vec<Version> = self.heads(id).into_iter().cloned().collect();
@@ -552,6 +570,39 @@ impl View<'_> {
             .collect();
         revocations.sort_by(|a, b| a.0.cmp(&b.0));
         revocations.dedup();
+        let epochs = self.latest_epochs();
+        let kept: BTreeSet<Id> = files.iter().map(|(id, _)| *id).collect();
+        let mut needed: BTreeSet<Hash> = epochs.iter().copied().collect();
+        for (_, heads) in &files {
+            needed.extend(heads.iter().filter_map(|v| v.key.as_ref().map(|w| w.epoch)));
+        }
+        let mut rewrap: Vec<(Id, Wrapped)> = self
+            .state
+            .rewraps
+            .iter()
+            .filter(|(at, file, w)| {
+                self.counts(*at) && kept.contains(file) && epochs.contains(&w.epoch)
+            })
+            .map(|(_, file, w)| (*file, w.clone()))
+            .collect();
+        rewrap.sort_by(|a, b| {
+            (a.0, &a.1.epoch, &a.1.sealed.0).cmp(&(b.0, &b.1.epoch, &b.1.sealed.0))
+        });
+        let mut sealed: Vec<Sealed> = self
+            .state
+            .sealed
+            .iter()
+            .filter(|(at, _)| self.counts(*at))
+            .filter(|(_, x)| {
+                x.refs.iter().any(|r| match r {
+                    KeyRef::Root(e) | KeyRef::Prefix(e, _) => needed.contains(e),
+                    KeyRef::File(id, _) => kept.contains(id),
+                })
+            })
+            .map(|(_, x)| x.clone())
+            .collect();
+        sealed.sort_by(|a, b| (a.to, &a.refs, &a.keys.0).cmp(&(b.to, &b.refs, &b.keys.0)));
+        sealed.dedup();
         Summary {
             files,
             grants,
@@ -559,7 +610,35 @@ impl View<'_> {
             identities,
             revocations,
             logs: logs.into_iter().map(|(k, (h, s))| (k, h, s)).collect(),
+            epochs,
+            sealed,
+            rewrap,
         }
+    }
+
+    /// The newest epochs at this point: those that no other epoch comes
+    /// after.
+    fn latest_epochs(&self) -> Vec<Hash> {
+        let here: Vec<&(usize, Hash)> = self
+            .state
+            .epochs
+            .iter()
+            .filter(|(at, _)| self.counts(*at))
+            .collect();
+        let mut latest: Vec<Hash> = here
+            .iter()
+            .filter(|(at, _)| {
+                !here.iter().any(|(other, _)| {
+                    other != at
+                        && *other != BASE
+                        && (*at == BASE || self.state.past[*other].has(*at))
+                })
+            })
+            .map(|(_, e)| *e)
+            .collect();
+        latest.sort();
+        latest.dedup();
+        latest
     }
 
     /// Says why the acts of `entry` are not allowed at this point, if they
@@ -597,6 +676,7 @@ impl View<'_> {
                     parents,
                     name,
                     content,
+                    ..
                 } => {
                     if !good_name(name) {
                         return Err(format!("{name:?} is not a good name"));
@@ -703,6 +783,40 @@ impl View<'_> {
                         .ok_or("a revocation for an identity that is not shown here")?;
                     if !r.verify(signing) {
                         return Err("a revocation not signed by the signing key".into());
+                    }
+                }
+                Act::Keys {
+                    epoch,
+                    sealed,
+                    rewrap,
+                } => {
+                    let whole = Target::Prefix(String::new());
+                    if epoch.is_some() {
+                        need(Permission::SpaceCheckpoint, &whole)?;
+                    } else if !rewrap.is_empty() {
+                        return Err("wraps again with no new epoch".into());
+                    }
+                    for x in sealed {
+                        for r in &x.refs {
+                            let target = match r {
+                                KeyRef::Root(_) => {
+                                    need(Permission::SpaceCheckpoint, &whole)?;
+                                    continue;
+                                }
+                                KeyRef::Prefix(_, p) => Target::Prefix(p.clone()),
+                                KeyRef::File(id, _) => Target::File(*id, self.names(*id)),
+                            };
+                            // Who may give the access may give the key; and a
+                            // reader may give a key to a device that may read
+                            // it too, such as another device of the same
+                            // person, which leaks nothing.
+                            let to = Principal::Key(x.to);
+                            let shared = self.holds(who, Permission::FilesRead, &target)
+                                && self.holds(to, Permission::FilesRead, &target);
+                            if !shared {
+                                need(Permission::AccessGive, &target)?;
+                            }
+                        }
                     }
                 }
                 Act::Checkpoint { state, retention } => {
@@ -1132,6 +1246,16 @@ impl Space {
                         .push((BASE, *did, Vec::new(), NodeCert::from_bytes(&c.0).ok()));
                 }
             }
+            let summary = &base.snapshot.summary;
+            state
+                .epochs
+                .extend(summary.epochs.iter().map(|e| (BASE, *e)));
+            state
+                .sealed
+                .extend(summary.sealed.iter().map(|x| (BASE, x.clone())));
+            state
+                .rewraps
+                .extend(summary.rewrap.iter().map(|(f, w)| (BASE, *f, w.clone())));
             for given in &base.snapshot.summary.grants {
                 state.gives.push(Giv {
                     at: BASE,
@@ -1185,6 +1309,19 @@ impl Space {
                                 .collect();
                             state.vouches.push((at, did, ops, cert));
                         }
+                    }
+                    Act::Keys {
+                        epoch,
+                        sealed,
+                        rewrap,
+                    } => {
+                        if let Some(e) = epoch {
+                            state.epochs.push((at, *e));
+                        }
+                        state.sealed.extend(sealed.iter().map(|x| (at, x.clone())));
+                        state
+                            .rewraps
+                            .extend(rewrap.iter().map(|(f, w)| (at, *f, w.clone())));
                     }
                     _ => {}
                 }
@@ -1489,6 +1626,7 @@ impl Space {
                 file,
                 name,
                 content,
+                key,
                 ..
             } => {
                 let parents: Vec<Id> = self.file(*file)?.versions.iter().map(|v| v.id).collect();
@@ -1497,10 +1635,241 @@ impl Space {
                     parents,
                     name: name.clone(),
                     content: *content,
+                    key: key.clone(),
                 })
             }
             other => Some(other.clone()),
         }
+    }
+
+    /// The newest time that an entry here says.
+    pub fn latest_time(&self) -> u64 {
+        self.known
+            .values()
+            .map(|k| k.entry.header.time)
+            .max()
+            .unwrap_or_default()
+    }
+
+    /// The epoch that new content is encrypted under: of the newest epochs,
+    /// the one with the highest ID, so every node picks the same one.
+    pub fn epoch(&self) -> Option<Hash> {
+        self.now().latest_epochs().into_iter().max()
+    }
+
+    /// The keys sealed to any of `mine`, opened.
+    ///
+    /// # Panics
+    ///
+    /// Never: the keys are cut in pieces of 32 bytes.
+    pub fn keyring(&self, mine: &[&SecretKey]) -> Keyring {
+        let view = self.now();
+        let mut ring = Keyring::default();
+        for (at, x) in &self.state.sealed {
+            if !view.counts(*at) {
+                continue;
+            }
+            let Some(me) = mine.iter().find(|k| k.public() == x.to) else {
+                continue;
+            };
+            let Some(keys) = crypto::open_with(me, &self.id.0, &x.enc.0, &x.keys.0) else {
+                continue;
+            };
+            for (r, key) in x.refs.iter().zip(keys.as_chunks::<32>().0) {
+                let key: Key = *key;
+                match r {
+                    KeyRef::Root(e) => {
+                        ring.roots.insert(*e, key);
+                    }
+                    KeyRef::Prefix(e, p) => {
+                        ring.prefixes.insert((*e, p.clone()), key);
+                    }
+                    KeyRef::File(id, e) => {
+                        ring.files.insert((*id, *e), key);
+                    }
+                }
+            }
+        }
+        ring
+    }
+
+    /// The data keys that may open `version` of `file`, with `ring`: from
+    /// its own wrap, from wraps of the file under newer epochs, and from a
+    /// key of the file that was given. The caller tries them in order.
+    pub fn data_keys(&self, ring: &Keyring, file: Id, version: &Version) -> Vec<Key> {
+        let view = self.now();
+        let mut keys = Vec::new();
+        let wraps = version.key.iter().chain(
+            self.state
+                .rewraps
+                .iter()
+                .filter(|(at, f, _)| *f == file && view.counts(*at))
+                .map(|(_, _, w)| w),
+        );
+        for w in wraps {
+            if let Some(kek) = ring.prefix(w.epoch, &w.prefix)
+                && let Some(key) = crypto::unwrap(&kek, w)
+                && !keys.contains(&key)
+            {
+                keys.push(key);
+            }
+        }
+        for ((_, _), key) in ring
+            .files
+            .range((file, Hash([0; 32]))..=(file, Hash([255; 32])))
+        {
+            if !keys.contains(key) {
+                keys.push(*key);
+            }
+        }
+        keys
+    }
+
+    /// The data key of `file` in `epoch`, with `ring`: from a wrap of the
+    /// file under that epoch, or from that key given on its own.
+    pub fn data_key_in(&self, ring: &Keyring, file: Id, epoch: Hash) -> Option<Key> {
+        if let Some(key) = ring.files.get(&(file, epoch)) {
+            return Some(*key);
+        }
+        let view = self.now();
+        let own = self
+            .state
+            .versions
+            .iter()
+            .filter(|v| v.file == file && view.counts(v.at))
+            .filter_map(|v| v.version.key.as_ref());
+        let again = self
+            .state
+            .rewraps
+            .iter()
+            .filter(|(at, f, _)| *f == file && view.counts(*at))
+            .map(|(_, _, w)| w);
+        own.chain(again)
+            .filter(|w| w.epoch == epoch)
+            .find_map(|w| crypto::unwrap(&ring.prefix(epoch, &w.prefix)?, w))
+    }
+
+    /// The keys of the principal `who` acts for, as device keys: a key is
+    /// itself; a group is the keys in it; a person is their nodes.
+    fn devices(&self, view: &View<'_>, who: Principal) -> Vec<PublicKey> {
+        match who {
+            Principal::Key(k) => vec![k],
+            Principal::Group(_) | Principal::Identity(_) => {
+                let mut candidates: BTreeSet<PublicKey> =
+                    self.known.values().map(|k| k.entry.header.author).collect();
+                candidates.extend(
+                    self.state
+                        .vouches
+                        .iter()
+                        .filter_map(|(_, _, _, c)| c.as_ref().map(|c| c.node)),
+                );
+                for g in &self.state.gives {
+                    if let Principal::Key(k) = g.given.to {
+                        candidates.insert(k);
+                    }
+                }
+                if let Principal::Key(k) = self.owner {
+                    candidates.insert(k);
+                }
+                candidates
+                    .into_iter()
+                    .filter(|k| view.acts_as(Principal::Key(*k), who, 0))
+                    .collect()
+            }
+        }
+    }
+
+    /// The keys that devices should have now and were not given yet: the
+    /// root key of the epoch for the owner, and for each reader the key of
+    /// what its grant is on.
+    pub fn key_gaps(&self) -> Vec<(PublicKey, KeyRef)> {
+        let Some(epoch) = self.epoch() else {
+            return Vec::new();
+        };
+        let view = self.now();
+        let mut want: BTreeSet<(PublicKey, KeyRef)> = BTreeSet::new();
+        if let Principal::Key(k) = self.owner {
+            want.insert((k, KeyRef::Root(epoch)));
+        }
+        for g in self.grants() {
+            let given = &g.given;
+            if !g.in_effect
+                || given.effect != Effect::Allow
+                || !given.permissions.contains(&Permission::FilesRead)
+            {
+                continue;
+            }
+            let r = match &given.on {
+                Resource::Prefix(p) => KeyRef::Prefix(epoch, crypto::dir_of(p)),
+                Resource::File(id) => {
+                    // The epoch of the data key of the newest version.
+                    let Some(e) = self.file(*id).and_then(|f| {
+                        f.versions
+                            .iter()
+                            .max_by_key(|v| (v.time, v.id))
+                            .and_then(|v| v.key.as_ref().map(|w| w.epoch))
+                    }) else {
+                        continue;
+                    };
+                    KeyRef::File(*id, e)
+                }
+                Resource::Group(_) => continue,
+            };
+            for device in self.devices(&view, given.to) {
+                want.insert((device, r.clone()));
+            }
+        }
+        let have: Vec<(PublicKey, &KeyRef)> = self
+            .state
+            .sealed
+            .iter()
+            .filter(|(at, _)| view.counts(*at))
+            .flat_map(|(_, x)| x.refs.iter().map(move |r| (x.to, r)))
+            .collect();
+        want.into_iter()
+            .filter(|(to, r)| !have.iter().any(|(t, h)| t == to && covers_key(h, r)))
+            .collect()
+    }
+
+    /// Says if the keys should change: there is no epoch yet, or a device
+    /// that was given a key of the newest epoch may no longer read what that
+    /// key opens. This covers every way a device loses access: a take-back,
+    /// a device taken away from an identity, a new signing key of an
+    /// identity, and a member taken out of a group.
+    pub fn needs_new_epoch(&self) -> bool {
+        let Some(epoch) = self.epoch() else {
+            return true;
+        };
+        let view = self.now();
+        self.state
+            .sealed
+            .iter()
+            .filter(|(at, _)| view.counts(*at))
+            .any(|(_, x)| {
+                let who = Principal::Key(x.to);
+                x.refs.iter().any(|r| match r {
+                    KeyRef::Root(e) => {
+                        *e == epoch
+                            && !view.holds(
+                                who,
+                                Permission::SpaceCheckpoint,
+                                &Target::Prefix(String::new()),
+                            )
+                    }
+                    KeyRef::Prefix(e, p) => {
+                        *e == epoch
+                            && !view.holds(who, Permission::FilesRead, &Target::Prefix(p.clone()))
+                    }
+                    KeyRef::File(id, e) => {
+                        *e == epoch
+                            && !view.holds(
+                                who,
+                                Permission::FilesRead,
+                                &Target::File(*id, view.names(*id)),
+                            )
+                    }
+                })
+            })
     }
 
     /// Every file that is not deleted, with its newest versions.
@@ -1651,20 +2020,62 @@ impl Space {
     }
 }
 
+/// Says if having the key `have` gives the key `want`.
+fn covers_key(have: &KeyRef, want: &KeyRef) -> bool {
+    match (have, want) {
+        (KeyRef::Root(a), KeyRef::Root(b) | KeyRef::Prefix(b, _)) => a == b,
+        (KeyRef::Prefix(a, p), KeyRef::Prefix(b, q)) => a == b && q.starts_with(p.as_str()),
+        (KeyRef::File(a, e), KeyRef::File(b, f)) => a == b && e == f,
+        _ => false,
+    }
+}
+
+/// The keys a node has opened in one space.
+#[derive(Clone, Debug, Default)]
+pub struct Keyring {
+    pub roots: BTreeMap<Hash, Key>,
+    pub prefixes: BTreeMap<(Hash, String), Key>,
+    pub files: BTreeMap<(Id, Hash), Key>,
+}
+
+impl Keyring {
+    /// The key of a directory prefix in an epoch, if this ring has it or a
+    /// key above it.
+    pub fn prefix(&self, epoch: Hash, prefix: &str) -> Option<Key> {
+        if let Some(root) = self.roots.get(&epoch) {
+            return Some(crypto::prefix_key(root, prefix));
+        }
+        self.prefixes
+            .iter()
+            .filter(|((e, p), _)| *e == epoch && prefix.starts_with(p.as_str()))
+            .find_map(|((_, p), key)| crypto::derive(key, p, prefix))
+    }
+
+    /// The key that `r` names, if this ring has it or can work it out.
+    pub fn get(&self, r: &KeyRef) -> Option<Key> {
+        match r {
+            KeyRef::Root(e) => self.roots.get(e).copied(),
+            KeyRef::Prefix(e, p) => self.prefix(*e, p),
+            KeyRef::File(id, e) => self.files.get(&(*id, *e)).copied(),
+        }
+    }
+}
+
 /// The version that `act` makes, if it makes one.
 fn version_of(entry: &Entry, index: usize, act: &Act, at: usize) -> Option<Ver> {
     let id = Id {
         entry: entry.hash(),
         index: index as u32,
     };
-    let (file, name, content, parents) = match act {
-        Act::Create { name, content } => (id, name, Some(*content), Vec::new()),
+    let (file, name, content, parents, key) = match act {
+        Act::Create { name, content, key } => (id, name, Some(*content), Vec::new(), key.clone()),
         Act::Change {
             file,
             parents,
             name,
             content,
-        } => (*file, name, *content, parents.clone()),
+            key,
+        } => (*file, name, *content, parents.clone(), key.clone()),
         _ => return None,
     };
     Some(Ver {
@@ -1678,6 +2089,7 @@ fn version_of(entry: &Entry, index: usize, act: &Act, at: usize) -> Option<Ver> 
             author: entry.header.author,
             time: entry.header.time,
             parents,
+            key,
         },
     })
 }

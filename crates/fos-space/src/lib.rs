@@ -17,14 +17,16 @@
 //! This crate is portable: no threads, files, sockets or clocks.
 
 pub mod content;
+pub mod crypto;
 pub mod entry;
 pub mod space;
 pub mod sync;
 
 pub use entry::{
-    Act, Content, Effect, Entry, Header, Id, Permission, Principal, Resource, Retention,
+    Act, Content, Effect, Entry, Header, Id, KeyRef, Permission, Principal, Resource, Retention,
+    Sealed,
 };
-pub use space::{File, Given, Grant, Snapshot, Space, Summary, Version};
+pub use space::{File, Given, Grant, Keyring, Snapshot, Space, Summary, Version};
 pub use sync::{Contents, Event, Msg, Node, Step};
 
 #[cfg(test)]

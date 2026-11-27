@@ -9,6 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use fos_core::{Error, Hash, PublicKey, SecretKey};
+use fos_space::crypto::Wrapped;
 use fos_space::{
     Act, Content, Contents, Effect, Event, File, Id, Msg, Node, Permission, Principal, Resource,
     Retention, Space, Step,
@@ -125,6 +126,14 @@ impl World {
         Ok(())
     }
 
+    /// Gives a node revocations of nodes of an identity, as its identity
+    /// space would.
+    pub fn revoke(&mut self, node: usize, revocations: Vec<fos_core::Bytes>) {
+        let step = self.nodes[node].node.add_revocations(revocations);
+        self.apply(node, step);
+        self.run();
+    }
+
     /// Gives a principal (a key, a group or an identity) permissions.
     ///
     /// # Errors
@@ -187,13 +196,14 @@ impl World {
     ///
     /// When the node may not make it.
     pub fn put(&mut self, node: usize, space: Hash, name: &str, bytes: &[u8]) -> Result<Id, Error> {
-        let content = self.keep(node, bytes);
+        let (content, key) = self.keep(node, space, name, None, bytes)?;
         self.write(
             node,
             space,
             vec![Act::Create {
                 name: name.into(),
                 content,
+                key,
             }],
         )
     }
@@ -219,7 +229,13 @@ impl World {
             .iter()
             .map(|v| v.id)
             .collect();
-        let content = bytes.map(|b| self.keep(node, b));
+        let (content, key) = match bytes {
+            Some(b) => {
+                let (c, k) = self.keep(node, space, name, Some(file), b)?;
+                (Some(c), k)
+            }
+            None => (None, None),
+        };
         self.write(
             node,
             space,
@@ -228,6 +244,7 @@ impl World {
                 parents,
                 name: name.into(),
                 content,
+                key,
             }],
         )
     }
@@ -295,10 +312,20 @@ impl World {
         &self.nodes[node].events
     }
 
-    fn keep(&mut self, node: usize, bytes: &[u8]) -> Content {
-        let (content, pieces) = fos_space::content::split(bytes);
-        self.nodes[node].contents.0.extend(pieces);
-        content
+    /// Makes the content of a file on a node, encrypted as the node does it,
+    /// and keeps its pieces.
+    fn keep(
+        &mut self,
+        node: usize,
+        space: Hash,
+        name: &str,
+        file: Option<Id>,
+        bytes: &[u8],
+    ) -> Result<(Content, Option<Wrapped>), Error> {
+        let n = &mut self.nodes[node];
+        let (content, key, pieces) = n.node.seal(space, name, file, bytes)?;
+        n.contents.0.extend(pieces);
+        Ok((content, key))
     }
 
     pub fn space(&self, node: usize, id: Hash) -> Option<&Space> {
@@ -314,12 +341,13 @@ impl World {
 
     /// The content of every newest version of the file with `name`, as this
     /// node has it.
-    pub fn read(&self, node: usize, space: Hash, name: &str) -> Vec<Vec<u8>> {
-        self.find(node, space, name)
+    pub fn read(&mut self, node: usize, space: Hash, name: &str) -> Vec<Vec<u8>> {
+        let files = self.find(node, space, name);
+        let n = &mut self.nodes[node];
+        files
             .into_iter()
-            .flat_map(|f| f.versions)
-            .filter_map(|v| v.content)
-            .filter_map(|c| fos_space::content::join(&c, &self.nodes[node].contents))
+            .flat_map(|f| f.versions.into_iter().map(move |v| (f.id, v)))
+            .filter_map(|(id, v)| n.node.open(space, id, &v, &n.contents))
             .collect()
     }
 

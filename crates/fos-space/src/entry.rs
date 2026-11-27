@@ -10,6 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::crypto::Wrapped;
 use fos_core::{Bytes, Error, Hash, PublicKey, SecretKey, Signature, decode, encode};
 use serde::{Deserialize, Serialize};
 
@@ -86,6 +87,30 @@ pub enum Resource {
     Group(Id),
 }
 
+/// A key that a device may be given.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+pub enum KeyRef {
+    /// The root key of an epoch: every key of the space in that epoch.
+    Root(Hash),
+    /// The key of a directory prefix in an epoch, and of all under it.
+    Prefix(Hash, String),
+    /// The data key of one file, as it is in an epoch (a file gets a new
+    /// data key in a new epoch).
+    File(Id, Hash),
+}
+
+/// Keys sealed to one device with HPKE. Which keys they are is in the
+/// open, so every node can see who has which keys; the keys are not.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Sealed {
+    pub to: PublicKey,
+    pub refs: Vec<KeyRef>,
+    /// The HPKE encapsulated key.
+    pub enc: Bytes,
+    /// The keys, in the order of `refs`, one after the other.
+    pub keys: Bytes,
+}
+
 /// Allow or deny. A deny wins over every allow.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub enum Effect {
@@ -122,8 +147,13 @@ pub enum Act {
         /// So that two spaces made at the same time are different.
         nonce: u64,
     },
-    /// Makes a file. The ID of the file is the place of this act.
-    Create { name: String, content: Content },
+    /// Makes a file. The ID of the file is the place of this act. `key` is
+    /// the data key of the file, wrapped, when the content is encrypted.
+    Create {
+        name: String,
+        content: Content,
+        key: Option<Wrapped>,
+    },
     /// Makes a new version of a file, after the versions in `parents`. It can
     /// change the name, the content, or both. With no content, the file is
     /// deleted.
@@ -132,6 +162,7 @@ pub enum Act {
         parents: Vec<Id>,
         name: String,
         content: Option<Content>,
+        key: Option<Wrapped>,
     },
     /// Gives a grant. Its ID is the place of this act.
     Give {
@@ -152,6 +183,15 @@ pub enum Act {
     /// Shows that a node is no longer a node of an identity: a revocation
     /// signed by the signing key of the identity. Anyone may write it.
     Unvouch { revocation: Bytes },
+    /// Keys. With `epoch`, starts a new epoch with that ID (random); only
+    /// the owner, or a principal with `space.checkpoint`, may. `sealed`
+    /// sends keys to devices; `rewrap` wraps the data keys of files again,
+    /// under the new epoch.
+    Keys {
+        epoch: Option<Hash>,
+        sealed: Vec<Sealed>,
+        rewrap: Vec<(Id, Wrapped)>,
+    },
     /// Makes the state in the past of this entry final, and signs its hash
     /// (see `space::Summary`). Made by the owner, or by a principal with
     /// `space.checkpoint` on the whole space. It is alone in its entry.

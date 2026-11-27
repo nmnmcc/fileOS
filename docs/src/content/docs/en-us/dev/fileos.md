@@ -274,7 +274,7 @@ Dependencies go down only. Apps depend only on `fos-app`.
 | The node, store, network and gateway on the new kernel            | Yes                                    |
 | Identities: `did:fos`, node certificates, an identity space       | Yes                                    |
 | Apps over `wasi:http`, with the photos and chat apps              | Yes                                    |
-| Encryption: keys that follow prefixes, HPKE, crypto-shredding     | No                                     |
+| Encryption: keys that follow prefixes, HPKE, crypto-shredding     | Yes                                    |
 | People as principals (an identity acts for its devices)           | Yes                                    |
 | Views for apps, private app data, grants given at run time        | Yes                                    |
 | The picker, sharing between apps                                  | No                                     |
@@ -286,15 +286,16 @@ Dependencies go down only. Apps depend only on `fos-app`.
 1. **The state is worked out again** from all entries after each change. It
    is simple and right, and slow for large spaces; checkpoints keep spaces
    small, and the work can be made step by step later.
-2. **Data is not encrypted at rest yet.** A node with `data.keep` sees the
-   data. Keys that follow prefixes come next (see [Data](../data/)).
+2. **Names and sizes are not encrypted.** Content is; names, sizes and who
+   wrote what are in the open, because every node checks every entry. Devices
+   do not yet change their HPKE keys (see [Data](../data/)).
 3. **Reading part of a space** (one prefix or one file) is not yet sent to
    other nodes: a node keeps a whole space or none.
 4. Speed of WASM and of the kernel on home hardware is not measured yet.
 
 ## Next steps
 
-1. Encryption: keys that follow prefixes, HPKE, crypto-shredding.
+1. HPKE keys that each device changes from time to time.
 2. The picker (an app asks for a file), sharing between apps.
 3. Apps as workers: a new instance for each event, watch options, schedules.
 4. Sign-in for people at the gateway.

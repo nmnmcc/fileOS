@@ -15,6 +15,7 @@
 
 use fos_core::{Hash, decode, encode};
 
+use crate::crypto::{self, Key};
 use crate::entry::Content;
 use crate::sync::Contents;
 
@@ -68,15 +69,57 @@ fn cut(data: &[u8]) -> usize {
 /// in the content store by its hash: the chunks, and the list if there is
 /// more than one chunk.
 pub fn split(data: &[u8]) -> (Content, Vec<(Hash, Vec<u8>)>) {
+    split_with(data, <[u8]>::to_vec)
+}
+
+/// Cuts `data` into chunks and encrypts each one with `data_key`.
+///
+/// The nonce of a chunk comes from the key and the chunk, so the same chunk
+/// in a new version of the file gives the same bytes and is kept once. The
+/// pieces are named by the hash of what is kept: the nonce and the
+/// ciphertext.
+///
+/// # Panics
+///
+/// Never: a BLAKE3 hash has 32 bytes, so it has 24.
+pub fn seal(data: &[u8], data_key: &Key) -> (Content, Vec<(Hash, Vec<u8>)>) {
+    split_with(data, |chunk| {
+        let nonce: [u8; 24] = blake3::keyed_hash(data_key, chunk).as_bytes()[..24]
+            .try_into()
+            .expect("24 bytes");
+        let mut piece = nonce.to_vec();
+        piece.extend(crypto::seal(data_key, &nonce, chunk, b""));
+        piece
+    })
+}
+
+/// The bytes of content made by [`seal`], if all of it is here and the key
+/// is right.
+pub fn open(content: &Content, data_key: &Key, store: &dyn Contents) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(usize::try_from(content.size).ok()?);
+    for hash in chunks(content, store)? {
+        let piece = store.get(hash)?;
+        if Hash::of(&piece) != hash || piece.len() < 24 {
+            return None;
+        }
+        let (nonce, sealed) = piece.split_at(24);
+        let nonce: [u8; 24] = nonce.try_into().ok()?;
+        out.extend(crypto::open(data_key, &nonce, sealed, b"")?);
+    }
+    (out.len() as u64 == content.size).then_some(out)
+}
+
+fn split_with(data: &[u8], piece: impl Fn(&[u8]) -> Vec<u8>) -> (Content, Vec<(Hash, Vec<u8>)>) {
     let mut pieces = Vec::new();
     let mut list: Vec<(Hash, u64)> = Vec::new();
     let mut rest = data;
     loop {
         let n = cut(rest);
         let (chunk, tail) = rest.split_at(n);
-        let hash = Hash::of(chunk);
-        list.push((hash, chunk.len() as u64));
-        pieces.push((hash, chunk.to_vec()));
+        let bytes = piece(chunk);
+        let hash = Hash::of(&bytes);
+        list.push((hash, bytes.len() as u64));
+        pieces.push((hash, bytes));
         rest = tail;
         if rest.is_empty() {
             break;
@@ -160,6 +203,29 @@ mod tests {
                 x as u8
             })
             .collect()
+    }
+
+    #[test]
+    fn sealed_content_opens_only_with_its_key_and_keeps_chunks() {
+        let data = noise(1 << 20, 9);
+        let (key, other) = ([1; 32], [2; 32]);
+        let (c, pieces) = seal(&data, &key);
+        let mut store = Mem(pieces.into_iter().collect());
+        assert_eq!(open(&c, &key, &store).unwrap(), data);
+        assert_eq!(open(&c, &other, &store), None);
+        assert!(
+            store
+                .0
+                .values()
+                .all(|p| !p.windows(64).any(|w| data.windows(64).next() == Some(w)))
+        );
+        let mut edited = data.clone();
+        edited[1 << 19] ^= 1;
+        let before = store.0.len();
+        let (c2, pieces) = seal(&edited, &key);
+        store.0.extend(pieces);
+        assert!(store.0.len() - before <= 3);
+        assert_eq!(open(&c2, &key, &store).unwrap(), edited);
     }
 
     #[test]
