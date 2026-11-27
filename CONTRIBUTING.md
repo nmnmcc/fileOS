@@ -176,7 +176,7 @@ check    # formatting, Clippy, tests, Rustdoc, dependencies, WASM, Python, MSRV
 budget   # compile-time budget
 ```
 
-The workspace gives its MSRV (the oldest Rust version it supports) in `Cargo.toml`. Nix gives that compiler for a locked check of all native targets.
+The workspace gives its MSRV (the oldest Rust version it supports) in `Cargo.toml`. Nix gives that compiler for a locked check of all native targets. CI runs this check in its own job, alongside the other checks. CI saves Rust dependencies for `check` and starts each `budget` build with an empty build folder.
 
 `apps` builds the apps into `target/apps/`. The tests of `fos-runtime` and `fos-node` use them, so run `apps` before `cargo test`. `check` does this for you.
 
@@ -198,7 +198,7 @@ uv run scripts/budget.py
 3. Open a pull request into `main`. GitHub asks the code owners for a review.
 4. A pull request may be merged when the `ci` check is green and every comment thread is resolved. It is merged with "Squash and merge": `main` gets one commit for each pull request, with the title of the pull request as its first line. The branch is deleted after the merge.
 
-The `ci` check is green only when every job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is green: `check`, `budget`, `artifacts` and, for pull requests, `dco`. A pull request that changes `docs/` also makes the documentation site as a test. After a merge into `main`, the site goes to <https://hs.nmnm.cc/>.
+The `ci` check is green when `check`, `msrv`, `budget`, `artifacts` and, for pull requests, `dco` pass in [`.github/workflows/ci.yml`](.github/workflows/ci.yml). A pull request that changes `docs/` also makes the documentation site as a test. After a merge into `main`, the site goes to <https://hs.nmnm.cc/>.
 
 Dependabot opens pull requests for dependency updates: every week for GitHub Actions, and every month for Cargo, npm and uv. They go through the same checks. A major update is checked like a new dependency (see "Dependency policy").
 
@@ -234,4 +234,6 @@ knope prepare-release
 
 Knope works out the new version from the change files. It puts that version in `Cargo.toml` and `apps/Cargo.toml`, puts the change files into `CHANGELOG.md` under the new version, and deletes them. Then [`scripts/release_pr.py`](scripts/release_pr.py) makes the branch `release/v<version>` with one commit, and opens a pull request.
 
-When that pull request is merged, the [Release workflow](.github/workflows/release.yml) sees a version in `Cargo.toml` that has no tag. It makes the release files (`fos-<version>-linux-x86_64.tar.gz` with `fos` and the `.app` folders, the documentation, and `SHA256SUMS`) and runs `knope release`. Knope makes the tag `v<version>` and the GitHub release, with the part of `CHANGELOG.md` for that version as the release notes.
+After the checks pass on `main`, CI calls the [Release workflow](.github/workflows/release.yml). If the version in `Cargo.toml` has no tag, Release takes the files from that CI run. It writes `SHA256SUMS` for `fos-<version>-linux-x86_64.tar.gz` (with `fos` and the `.app` folders) and the documentation archive. Then `knope release` makes the tag `v<version>` and the GitHub release with the notes from `CHANGELOG.md`.
+
+To run this by hand, start the CI workflow on `main` with the `release` option on.
