@@ -137,6 +137,8 @@ pub struct Node {
     /// Other keys this node signs with, such as the signing key of an
     /// identity that it holds.
     keys: Vec<SecretKey>,
+    /// Keys that other nodes hold too, such as app keys.
+    shared: Vec<SecretKey>,
     random: Random,
     /// The opened keys of each space, with the heads they were opened at.
     rings: RefCell<BTreeMap<Hash, (Vec<Hash>, Keyring)>>,
@@ -156,6 +158,7 @@ impl Node {
         ));
         Self {
             keys: Vec::new(),
+            shared: Vec::new(),
             random,
             rings: RefCell::new(BTreeMap::new()),
             recipients: Vec::new(),
@@ -181,7 +184,12 @@ impl Node {
 
     /// Lets this node also sign with `key`, and open keys sealed to it.
     pub fn add_key(&mut self, key: SecretKey) {
-        if key.public() != self.me() && !self.keys.iter().any(|k| k.public() == key.public()) {
+        let known = self
+            .keys
+            .iter()
+            .chain(&self.shared)
+            .any(|k| k.public() == key.public());
+        if key.public() != self.me() && !known {
             self.keys.push(key);
         }
     }
@@ -189,7 +197,36 @@ impl Node {
     fn mine(&self) -> Vec<SecretKey> {
         std::iter::once(self.key.clone())
             .chain(self.keys.iter().cloned())
+            .chain(self.shared.iter().cloned())
             .collect()
+    }
+
+    /// Lets this node sign with `key`, a key that other nodes hold too, such
+    /// as the key of an app that runs on every node of a person. Keys for it
+    /// are sealed to a recipient key made from the key itself, so every
+    /// node that holds it can open them.
+    pub fn add_shared_key(&mut self, key: SecretKey) {
+        if !self.shared.iter().any(|k| k.public() == key.public()) {
+            self.shared.push(key);
+            self.rings.borrow_mut().clear();
+        }
+    }
+
+    /// The recipient key of a shared key: the same on every node.
+    fn shared_recipient(key: &SecretKey) -> Recipient {
+        Recipient::from_secret(blake3::derive_key(
+            "fileOS 2026 shared key recipient",
+            &key.seed(),
+        ))
+    }
+
+    /// The recipient key this node shows for `key`.
+    fn recipient_for(&self, key: &SecretKey) -> Option<Key> {
+        if self.shared.iter().any(|k| k.public() == key.public()) {
+            Some(Self::shared_recipient(key).public)
+        } else {
+            self.recipients.last().map(|(_, r)| r.public)
+        }
     }
 
     /// The keys this node has opened in a space.
@@ -204,7 +241,12 @@ impl Node {
             return ring.clone();
         }
         let mine = self.mine();
-        let recipients: Vec<Recipient> = self.recipients.iter().map(|(_, r)| r.clone()).collect();
+        let recipients: Vec<Recipient> = self
+            .recipients
+            .iter()
+            .map(|(_, r)| r.clone())
+            .chain(self.shared.iter().map(Self::shared_recipient))
+            .collect();
         let ring = s.keyring_with(&mine.iter().collect::<Vec<_>>(), &recipients);
         self.rings.borrow_mut().insert(space, (heads, ring.clone()));
         ring
@@ -356,10 +398,21 @@ impl Node {
             return;
         };
         let time = s.latest_time().max(now);
+        // Show that this node is a node of its identity, in a space that
+        // names the identity and does not show it yet.
+        if let Some((did, ops, cert)) = self.identity.clone()
+            && s.identities().contains(&did)
+            && !s.is_node_of(self.me(), did)
+        {
+            self.vouch(did, self.me(), &ops, &cert, time, step);
+        }
         // Show this node's newest recipient key for each key it signs with,
         // so keys for them are sealed to it.
-        if let Some(public) = self.recipients.last().map(|(_, r)| r.public) {
+        if self.recipients.last().is_some() {
             for key in self.mine() {
+                let Some(public) = self.recipient_for(&key) else {
+                    continue;
+                };
                 let s = &self.spaces[&space];
                 if s.recipient_of(key.public()).map(|(k, _)| k) == Some(public) {
                     continue;
@@ -532,6 +585,19 @@ impl Node {
         (id, step)
     }
 
+    /// Makes a space owned by `owner`, such as an identity: this node signs
+    /// its first entry. A node acts for the owner only as the space shows
+    /// (for an identity, with a `Vouch`).
+    pub fn create_owned(&mut self, owner: Principal, time: u64) -> (Hash, Step) {
+        self.nonce += 1;
+        let (space, _) = Space::create(owner, &self.key, time, self.nonce);
+        let id = space.id();
+        self.spaces.insert(id, space);
+        let mut step = Step::default();
+        step.events.push(Event::Changed(id));
+        (id, step)
+    }
+
     /// Makes this node a node of an identity: `ops` is its DID log, and
     /// `cert` the certificate of this node. Connected peers are told.
     ///
@@ -550,6 +616,10 @@ impl Node {
             return Ok(step);
         }
         self.identity = Some((did, ops.clone(), cert.clone()));
+        // Show it in the spaces here that name the identity, such as a
+        // space the identity owns.
+        let time = self.last_time();
+        self.vouch(did, self.me(), &ops, &cert, time, &mut step);
         for peer in &self.peers {
             step.out.push((
                 *peer,
@@ -708,7 +778,10 @@ impl Node {
     /// Starts to get a space from peers.
     pub fn follow(&mut self, id: Hash) -> Step {
         let mut step = Step::default();
-        if !self.spaces.contains_key(&id) && self.wanted.insert(id) {
+        // Asked again when it was asked before: a peer that did not send it
+        // then may send it now, for example after a grant or a vouch.
+        if !self.spaces.contains_key(&id) {
+            self.wanted.insert(id);
             for peer in &self.peers {
                 step.out.push((*peer, Msg::Want(id)));
             }

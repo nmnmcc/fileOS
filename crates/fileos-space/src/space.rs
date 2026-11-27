@@ -1238,8 +1238,10 @@ impl Space {
         };
         let view = self.now();
         let mut want: BTreeSet<(PublicKey, KeyRef)> = BTreeSet::new();
-        if let Principal::Key(k) = self.owner {
-            want.insert((k, KeyRef::Root(epoch)));
+        // The owner gets the root key: a key itself, or each device of an
+        // identity or a group that owns the space.
+        for device in self.devices(&view, self.owner) {
+            want.insert((device, KeyRef::Root(epoch)));
         }
         for g in self.grants() {
             let given = &g.given;

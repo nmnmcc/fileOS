@@ -11,7 +11,7 @@ use fileos_runtime::{AppHost, Bundle, ChangeKind, FsError, Host as RuntimeHost, 
 use fileos_space::{Act, Effect, Id, Permission, Principal, Resource};
 
 use super::{
-    APPDATA, AccessRequest, Changed, Inner, Node, REQUESTS, Shared, VIEWS, ViewMount, clean,
+    APPDATA, AccessRequest, Changed, Inner, Node, READ, REQUESTS, Shared, VIEWS, ViewMount, clean,
     grant_text, lock, parse_grant, parse_permissions,
 };
 
@@ -82,6 +82,7 @@ impl Node {
             let mut inner = self.inner();
             let app = bundle.manifest().id.clone();
             app_key = inner.app_key(&app);
+            inner.node.add_shared_key(app_key.clone());
             let now = (inner.clock)();
             let (id, step) = inner.node.create(now);
             space = id;
@@ -90,12 +91,27 @@ impl Node {
             for (path, data) in bundle.files() {
                 inner.put(None, &format!("{at}{path}"), data, &self.shared.changed)?;
             }
+            // Every node of the person runs the app: they may read and keep
+            // its files.
+            if let Some(person) = inner.identity_principal() {
+                inner.grant(None, &at, person, &READ, &self.shared.changed)?;
+            }
             // The private data of the app: a space that its key owns, so no
             // other app and no person has access to it unless given.
             if inner.app_data(&app).is_none() {
                 let (data, step) = inner.node.create_as(&app_key, now);
                 inner.process(step, &self.shared.changed)?;
                 inner.mount(data, &format!("{APPDATA}{app}"), &self.shared.changed)?;
+                // Every node of the person keeps it; only the app reads it.
+                if let Some(person) = inner.identity_principal() {
+                    inner.grant(
+                        Some(&app_key),
+                        &format!("/{APPDATA}{app}"),
+                        person,
+                        &[Permission::DataKeep],
+                        &self.shared.changed,
+                    )?;
+                }
             }
             // Each permission in the manifest is mounted in the app's view at
             // the name the manifest gives.
@@ -313,16 +329,48 @@ impl Node {
         }
     }
 
+    /// Starts the apps in the home space that are not running yet, such as
+    /// apps that another node of the person installed, once their files
+    /// are here.
+    pub(super) fn start_new_apps(&self) {
+        let running: BTreeSet<String> = lock(&self.shared.http).keys().cloned().collect();
+        let bundles = {
+            let Ok(inner) = self.shared.inner.try_lock() else {
+                return;
+            };
+            inner
+                .mounts()
+                .into_iter()
+                .filter(|(at, _)| at.starts_with("apps/"))
+                .filter_map(|(_, id)| Some((inner.bundle(id)?, id)))
+                .filter(|(b, id)| !running.contains(&app_id(&b.manifest().id, *id)))
+                .collect::<Vec<_>>()
+        };
+        for (bundle, space) in bundles {
+            if let Err(e) = self.start_app(&bundle, space) {
+                tracing::warn!("app {} did not start: {e}", bundle.manifest().id);
+            }
+        }
+    }
+
     /// Starts an app that is in the space `space`. Gives its app ID.
     fn start_app(&self, bundle: &Bundle, space: Hash) -> Result<String, Error> {
+        let key = self.inner().app_key(&bundle.manifest().id);
+        self.inner().node.add_shared_key(key);
         let host = RuntimeHost::new(Host {
             shared: Arc::downgrade(&self.shared),
         });
         let id = app_id(&bundle.manifest().id, space);
         let http = self.shared.runtime.http_app(bundle, host.clone())?;
         let app = self.shared.runtime.app(bundle, host)?;
+        // Another thread may have started it in the meantime.
+        let mut running = lock(&self.shared.http);
+        if running.contains_key(&id) {
+            return Ok(id);
+        }
+        running.insert(id.clone(), http);
+        drop(running);
         lock(&self.shared.apps).push(app);
-        lock(&self.shared.http).insert(id.clone(), http);
         lock(&self.shared.schedules).insert(id.clone(), bundle.manifest().schedule.clone());
         let mut asks = BTreeSet::new();
         for ask in &bundle.manifest().asks {
@@ -413,6 +461,7 @@ impl Node {
 
     /// Tells the apps about changed paths, until there are no more.
     pub fn pump(&self) {
+        self.start_new_apps();
         pump(&self.shared);
     }
 }
@@ -650,7 +699,7 @@ impl Inner {
         self.delete_name(None, home, &format!("{VIEWS}{app}/{name}"), changed)
     }
     pub(super) fn app_key(&self, app: &str) -> SecretKey {
-        self.key.derive(&format!("app:{app}"))
+        self.apps_root().derive(&format!("app:{app}"))
     }
 }
 

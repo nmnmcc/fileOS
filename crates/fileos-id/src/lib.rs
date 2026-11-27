@@ -44,6 +44,11 @@ pub const OPS: &str = "/did";
 /// The directory of node certificates, in the identity folder.
 pub const NODES: &str = "/nodes";
 
+/// The file in the identity space with the ID of the identity's home space,
+/// which the identity owns: its apps, settings and mounts, the same on
+/// every node.
+pub const HOME: &str = "/home";
+
 /// The verification method that signs node certificates.
 pub const SIGNING_METHOD: &str = "fileos";
 

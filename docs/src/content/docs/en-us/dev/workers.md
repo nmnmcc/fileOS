@@ -4,10 +4,9 @@ description: Apps belong to an identity and sync with it, are found by the ident
 ---
 
 :::note[Status: built in part]
-Built: a new instance for each event and each HTTP request. Not built yet:
-apps that belong to the identity and sync, `wasi:filesystem`, watch options,
-schedules, and lists of nodes for each event. Today an app is installed on
-one node, and its ID comes from that node.
+Built: a new instance for each event and each HTTP request, watch options,
+schedules, and apps that belong to the identity and sync. Not built yet:
+`wasi:filesystem`, lists of nodes for each event, and the shared domain.
 :::
 
 ## Apps belong to the identity, not to a node
@@ -30,9 +29,25 @@ its own data, and the person does not get one experience.
 - On a device with no node, an app is at `<app>.<identity>.<shared domain>`,
   and the request goes to a node of the identity that is online, found
   through [rendezvous](../identity/).
-- **An app acts with one key on every node.** The identity gives its nodes a
-  shared app seed (sent with HPKE when a node joins), and app keys come from
-  it. So access is given once, not once for each node.
+- **An app acts with one key on every node.** The home space keeps a seed
+  for app keys (encrypted, as all content is, so only the nodes of the
+  identity read it), and app keys come from it. So access is given once, not
+  once for each node.
+
+How it is built:
+
+- The home space is **owned by the identity** (`did:fileos`), so every node of
+  the person may write in it, as the `Vouch` in it shows. Its ID is the file
+  `/home` in the identity space.
+- **A node that has the home space uses it as its home**: its mounts, the
+  views of its apps and its apps are there. A node that joins brings the
+  mounts it had. So `/photos` mounted on one node is there on every node.
+- **When an app is in the home space and not running on a node**, the node
+  gets the app's space and starts it, with the same ID and key. The app's
+  files and its private data space are shared with the identity (the private
+  data only to keep: only the app reads it).
+- Every node that runs an app holds its key; keys for it are sealed to a
+  recipient key that comes from the app key, the same on every node.
 
 ## Apps are workers, not servers
 

@@ -632,7 +632,7 @@ impl View<'_> {
                         ));
                     }
                     // Only a device that may read something here gets keys.
-                    let reads = Principal::Key(author) == self.space.owner
+                    let reads = self.acts_as(who, self.space.owner, 0)
                         || self.grants().iter().any(|g| {
                             g.effect == Effect::Allow
                                 && g.permissions.contains(&Permission::FilesRead)
