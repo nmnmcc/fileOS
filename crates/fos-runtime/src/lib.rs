@@ -69,9 +69,78 @@ pub struct Permission {
     pub reason: String,
 }
 
+/// What happened to a path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChangeKind {
+    /// It was not there, and now it is.
+    Made,
+    /// It has a new version.
+    Changed,
+    /// It was there, and now it is not.
+    Deleted,
+}
+
+/// A path that an app watches, with options, as `fs.watch` and inotify have.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Watch {
     pub path: String,
+    /// Also the paths under it. On when not given.
+    #[serde(default = "yes")]
+    pub recursive: bool,
+    /// Only names that match one of these patterns (`*` is any text, `?` is
+    /// one letter), such as `*.jpg`. All names when empty.
+    #[serde(default)]
+    pub filter: Vec<String>,
+    /// Only these kinds of change. All kinds when empty.
+    #[serde(default)]
+    pub kinds: Vec<ChangeKind>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Watch {
+    /// Says if this watch wants to hear of `kind` at `path`.
+    pub fn wants(&self, path: &str, kind: ChangeKind) -> bool {
+        let rest = if self.path == "/" {
+            path.strip_prefix('/')
+        } else if path == self.path {
+            Some("")
+        } else {
+            path.strip_prefix(&self.path)
+                .and_then(|r| r.strip_prefix('/'))
+        };
+        let under = rest.is_some_and(|r| self.recursive || !r.contains('/'));
+        let name = path.rsplit('/').next().unwrap_or(path);
+        under
+            && (self.kinds.is_empty() || self.kinds.contains(&kind))
+            && (self.filter.is_empty() || self.filter.iter().any(|f| glob(f, name)))
+    }
+}
+
+/// Says if `name` matches `pattern`: `*` is any text, `?` one letter.
+pub fn glob(pattern: &str, name: &str) -> bool {
+    let (p, n): (Vec<char>, Vec<char>) = (pattern.chars().collect(), name.chars().collect());
+    let (mut pi, mut ni, mut star, mut mark) = (0, 0, None, 0);
+    while ni < n.len() {
+        if pi < p.len() && (p[pi] == '?' || p[pi] == n[ni]) {
+            pi += 1;
+            ni += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star = Some(pi);
+            mark = ni;
+            pi += 1;
+        } else if let Some(s) = star {
+            pi = s + 1;
+            mark += 1;
+            ni = mark;
+        } else {
+            return false;
+        }
+    }
+    p[pi..].iter().all(|c| *c == '*')
 }
 
 /// Where the kernel sends the request for a schedule of an app:
@@ -487,15 +556,16 @@ impl AppInstance {
         &self.manifest
     }
 
-    /// Says if the app watches `path`.
+    /// Says if the app watches `path` (for any kind of change).
     pub fn watches(&self, path: &str) -> bool {
-        self.manifest.watch.iter().any(|w| {
-            w.path == "/"
-                || path == w.path
-                || path
-                    .strip_prefix(&w.path)
-                    .is_some_and(|r| r.starts_with('/'))
-        })
+        [ChangeKind::Made, ChangeKind::Changed, ChangeKind::Deleted]
+            .into_iter()
+            .any(|k| self.wants(path, k))
+    }
+
+    /// Says if one of the app's watches wants to hear of `kind` at `path`.
+    pub fn wants(&self, path: &str, kind: ChangeKind) -> bool {
+        self.manifest.watch.iter().any(|w| w.wants(path, kind))
     }
 
     /// Tells the app that a path changed.

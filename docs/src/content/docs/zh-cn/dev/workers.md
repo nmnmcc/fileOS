@@ -51,6 +51,16 @@ App 不会一直运行。它被一个事件唤醒，完成工作，然后停止�
 | `batch`     | 攒多少个变化、或等多久，再调用一次                                                                       |
 | `since`     | 从之前给出的位置继续                                                                                     |
 
+目前已在 manifest 的 `[[watch]]` 中实现：`recursive`（不写时为开）、`kinds` 和 `filter`（用 `*` 和 `?` 的模式，匹配名字的最后一部分）。其余选项需要一个新的 App 调用，以后再做。
+
+```toml
+[[watch]]
+path      = "/photos"
+recursive = true
+filter    = ["*.jpg", "*.png"]
+kinds     = ["made", "deleted"]
+```
+
 每次调用收到一批变化和一个新的位置。调用成功结束，位置就向前推进；失败了，同一批变化会再送一次（至少一次）。
 
 ### 文件：`wasi:filesystem`
