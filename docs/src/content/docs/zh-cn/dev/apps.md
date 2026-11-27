@@ -108,6 +108,10 @@ reason = "reason.photos"  # resources/locales/ 里的键
 
 [[watch]]                 # on-change 会通知的路径
 path = "/photos"
+
+[[schedule]]              # 内核每天发送一次 POST /.well-known/fos/schedule/reindex，
+name = "reindex"          # 带 fos-event: schedule 头
+every = "1d"
 ```
 
 要把 App 交给别人，就把文件夹打包成一个 `.app` 文件：`fos app pack Photos.app/ out/Photos.app`。这不需要正在运行的节点。`.app` 文件是一个本身不压缩的 zip：

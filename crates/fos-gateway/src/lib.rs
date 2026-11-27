@@ -237,7 +237,13 @@ async fn serve(
 /// The headers that only the kernel may give an app. The kernel signs
 /// people in, so an app gets no cookies or credentials, and no person that
 /// the kernel did not say.
-const KERNEL_HEADERS: [&str; 3] = ["cookie", "authorization", "fos-user"];
+const KERNEL_HEADERS: [&str; 4] = ["cookie", "authorization", "fos-user", "fos-event"];
+
+/// Says if a path of an app is for the kernel only, such as the requests
+/// for schedules. Requests from outside never reach these paths.
+pub fn kernel_only(path: &str) -> bool {
+    path.starts_with("/.well-known/fos/")
+}
 
 /// A request for an app.
 async fn app(node: &Node, id: &str, req: Request<Incoming>) -> Reply {
@@ -249,6 +255,11 @@ async fn app(node: &Node, id: &str, req: Request<Incoming>) -> Reply {
         clean_app_headers(answer.headers_mut());
         return answer;
     };
+    if kernel_only(req.uri().path()) {
+        let mut answer = reply(StatusCode::FORBIDDEN, "this path is for the kernel only\n");
+        clean_app_headers(answer.headers_mut());
+        return answer;
+    }
     let (mut parts, body) = req.into_parts();
     for name in KERNEL_HEADERS {
         parts.headers.remove(name);
@@ -426,6 +437,13 @@ fn route(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn schedule_paths_are_for_the_kernel_only() {
+        assert!(kernel_only("/.well-known/fos/schedule/reindex"));
+        assert!(!kernel_only("/.well-known/other"));
+        assert!(!kernel_only("/photos"));
+    }
 
     #[test]
     fn requests_go_by_host_name() {

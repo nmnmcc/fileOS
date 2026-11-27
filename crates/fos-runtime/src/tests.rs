@@ -131,3 +131,17 @@ async fn the_photos_app_answers_http() {
     let response = app.handle(get("/nothing", None)).await.unwrap();
     assert_eq!(response.status(), 404);
 }
+
+#[test]
+fn schedule_times_are_read() {
+    let s = |every: &str| Schedule {
+        name: "x".into(),
+        every: every.into(),
+    };
+    assert_eq!(s("1h").seconds().unwrap(), 3600);
+    assert_eq!(s("2d").seconds().unwrap(), 172_800);
+    assert_eq!(s("90s").seconds().unwrap(), 90);
+    s("30s").seconds().unwrap_err();
+    s("5x").seconds().unwrap_err();
+    s("h").seconds().unwrap_err();
+}

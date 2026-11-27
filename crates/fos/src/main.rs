@@ -511,6 +511,7 @@ fn serve(
         let node = Node::open(dir)?;
         let token = fos_node::token(dir)?;
         node.start_net(config)?;
+        node.start_schedules();
         let port = fos_gateway::start(node.clone(), port, token).await?;
         fos_node::write_gateway_addr(dir, Some(port))?;
         eprintln!(

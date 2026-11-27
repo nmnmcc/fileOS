@@ -74,6 +74,51 @@ pub struct Watch {
     pub path: String,
 }
 
+/// Where the kernel sends the request for a schedule of an app:
+/// `POST /.well-known/fos/schedule/<name>`, with `fos-event: schedule`.
+/// Requests from outside never reach paths under `/.well-known/fos/`.
+pub const SCHEDULE_PATH: &str = "/.well-known/fos/schedule/";
+
+/// Work that an app wants done from time to time, as Cloudflare's Cron
+/// Triggers. The kernel sends a request to the app's own `wasi:http`
+/// handler, so it needs nothing new in the app interface.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct Schedule {
+    pub name: String,
+    /// How often: a number and `s`, `m`, `h` or `d`, at least one minute.
+    pub every: String,
+}
+
+impl Schedule {
+    /// How often, in seconds.
+    ///
+    /// # Errors
+    ///
+    /// When `every` is not a number and a unit, or is less than a minute.
+    pub fn seconds(&self) -> Result<u64, Error> {
+        let bad = || Error(format!("not a time for a schedule: {:?}", self.every));
+        let unit = self.every.chars().last().ok_or_else(bad)?;
+        let n: u64 = self.every[..self.every.len() - unit.len_utf8()]
+            .parse()
+            .ok()
+            .ok_or_else(bad)?;
+        let seconds = match unit {
+            's' => n,
+            'm' => n * 60,
+            'h' => n * 3600,
+            'd' => n * 86400,
+            _ => return Err(bad()),
+        };
+        if seconds < 60 {
+            return Err(Error(format!(
+                "a schedule runs at most once a minute: {:?}",
+                self.every
+            )));
+        }
+        Ok(seconds)
+    }
+}
+
 /// `manifest.toml` of an `.app` folder.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Manifest {
@@ -88,6 +133,8 @@ pub struct Manifest {
     pub permissions: Vec<Permission>,
     #[serde(default)]
     pub watch: Vec<Watch>,
+    #[serde(default)]
+    pub schedule: Vec<Schedule>,
 }
 
 /// The WIT version this runtime gives.
@@ -125,6 +172,20 @@ impl Bundle {
                 "{} is not in the .app folder",
                 manifest.main
             )));
+        }
+        for schedule in &manifest.schedule {
+            schedule.seconds()?;
+            if schedule.name.is_empty()
+                || !schedule
+                    .name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                return Err(Error(format!(
+                    "a schedule name has letters, digits, - and _: {:?}",
+                    schedule.name
+                )));
+            }
         }
         Ok(Self { manifest, files })
     }

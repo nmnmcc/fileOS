@@ -90,6 +90,24 @@ directories as their view (see [The model](../access/#what-an-app-sees)).
 - fileOS adds only what WASI does not have: watch, old versions, the versions
   of a conflict, and asking for links.
 
+### Schedules
+
+An app lists its schedules in its manifest, as Cloudflare's Cron Triggers:
+
+```toml
+[[schedule]]
+name  = "reindex"
+every = "1d"        # s, m, h or d; at least one minute
+```
+
+At those times the kernel sends `POST /.well-known/fos/schedule/<name>`,
+with the header `fos-event: schedule`, to the app's own `wasi:http` handler.
+So a schedule needs nothing new in the app interface. Requests from outside
+never reach paths under `/.well-known/fos/`, and the gateway takes
+`fos-event` away from them. A schedule runs first one period after the node
+starts; times missed while the node was off are not made up, as with cron.
+Today each node runs the schedules of its own apps.
+
 ### Sending a file as the answer
 
 As nginx's `X-Accel-Redirect` (X-Sendfile): to answer a request with a file,
