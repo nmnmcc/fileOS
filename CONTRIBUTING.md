@@ -48,10 +48,10 @@ Install:
 
 An ordinary laptop should be enough to contribute. Most of Rust's compile time depends on how the code is written. On every PR, CI checks these budgets with [`scripts/budget.py`](scripts/budget.py):
 
-| Measure                                | Budget  |
-| -------------------------------------- | ------- |
-| Clean debug build of the native crates | ≤ 360 s |
-| Rebuild after a change to a leaf crate | ≤ 5 s   |
+| Measure                                 | Budget  |
+| --------------------------------------- | ------- |
+| Clean debug build of the native crates  | ≤ 360 s |
+| Rebuild after a change to a leaf crate  | ≤ 5 s   |
 | Rebuild after a change to `fileos-core` | ≤ 20 s  |
 
 The budgets are for a laptop with 4 cores and 8 GB of RAM. We will change the budgets as the code gets bigger.
