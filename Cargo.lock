@@ -1067,6 +1067,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fileos-auth"
+version = "0.1.0"
+dependencies = [
+ "cbor4ii",
+ "fileos-core",
+ "ring",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "fileos-core"
 version = "0.1.0"
 dependencies = [
@@ -1081,12 +1092,16 @@ name = "fileos-gateway"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "fileos-auth",
  "fileos-core",
  "fileos-node",
  "http-body-util",
  "hyper",
  "hyper-util",
  "percent-encoding",
+ "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
 ]
@@ -1115,6 +1130,7 @@ dependencies = [
 name = "fileos-node"
 version = "0.1.0"
 dependencies = [
+ "fileos-auth",
  "fileos-core",
  "fileos-id",
  "fileos-net",

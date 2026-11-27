@@ -13,6 +13,7 @@
 //! spaces/<id>.log         the entries of each space, one after the other
 //! spaces/<id>.base        the snapshot at the last compaction, if any
 //! local/<app>.kv          cache files of each app, on this node only
+//! auth.cbor               sign-in: passkeys and refresh tokens (hashed)
 //! gateway.token           the token for the local gateway
 //! gateway.addr            the address the gateway listens on, while it runs
 //! ```
@@ -169,6 +170,27 @@ impl Store {
     pub fn set_recipients(&self, kept: &[(u64, [u8; 32])]) -> Result<(), Error> {
         let kept: Vec<(u64, Bytes)> = kept.iter().map(|(t, k)| (*t, Bytes(k.to_vec()))).collect();
         write_atomic(&self.dir.join("recipients.key"), &encode(&kept))
+    }
+
+    /// The sign-in state of this node, as `fileos-auth` keeps it.
+    ///
+    /// # Errors
+    ///
+    /// When the file is there but cannot be read.
+    pub fn auth(&self) -> Result<Option<Vec<u8>>, Error> {
+        let path = self.dir.join("auth.cbor");
+        match fs::read(&path) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(io_error(&path, &e)),
+        }
+    }
+
+    /// # Errors
+    ///
+    /// When the file cannot be written.
+    pub fn set_auth(&self, bytes: &[u8]) -> Result<(), Error> {
+        write_atomic(&self.dir.join("auth.cbor"), bytes)
     }
 
     /// The token that a local client gives to the gateway. It is made the first time.

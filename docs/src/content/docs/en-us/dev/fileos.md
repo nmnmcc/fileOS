@@ -282,7 +282,7 @@ Dependencies go down only. Apps depend only on `fileos-app`.
 | Apps as workers: a new instance for each event                    | Yes                                          |
 | Schedules: a request from the kernel to the app                   | Yes                                          |
 | Watch options, `wasi:filesystem`, lists of nodes                  | No                                           |
-| Sign-in for people (OAuth with PKCE and DPoP)                     | No                                           |
+| Sign-in for people (OAuth with PKCE and DPoP)                     | Yes                                          |
 
 ## Costs and open questions
 
@@ -301,4 +301,3 @@ Dependencies go down only. Apps depend only on `fileos-app`.
 
 1. The picker (an app asks for a file), sharing between apps.
 2. Watch options, `wasi:filesystem`, and lists of nodes for each event.
-3. Sign-in for people at the gateway.

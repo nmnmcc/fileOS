@@ -81,6 +81,7 @@ fileos node status
 - [x] **运行节点**
   - [x] 一个程序（`fileos`）加一个数据目录
   - [x] 本地网关和命令行
+  - [x] 用 passkey 登录 App：带 PKCE 的 OAuth 2.0，绑定 DPoP 的令牌，不用 Cookie
 
 ## 文档
 

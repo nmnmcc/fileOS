@@ -13,6 +13,7 @@ publish.workspace = true
 fileos-core.workspace = true
 fileos-space.workspace = true
 fileos-id.workspace = true
+fileos-auth.workspace = true
 fileos-store.workspace = true
 fileos-runtime.workspace = true
 fileos-net.workspace = true

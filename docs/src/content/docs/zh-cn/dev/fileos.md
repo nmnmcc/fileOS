@@ -224,7 +224,7 @@ wit/fileos.wit      App 接口
 | App 作为 Worker：每个事件一个新实例          | 是                                           |
 | 定时任务：内核向 App 发送请求                | 是                                           |
 | 监听选项、`wasi:filesystem`、事件的节点列表  | 否                                           |
-| 用户登录（带 PKCE 和 DPoP 的 OAuth）         | 否                                           |
+| 用户登录（带 PKCE 和 DPoP 的 OAuth）         | 是                                           |
 
 ## 代价和未决问题
 
@@ -237,4 +237,3 @@ wit/fileos.wit      App 接口
 
 1. 选择器（App 申请一个文件）、App 之间的分享。
 2. 监听选项、`wasi:filesystem`，以及每个事件的节点列表。
-3. 网关的用户登录。

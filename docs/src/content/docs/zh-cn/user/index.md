@@ -80,6 +80,15 @@ App 做了什么不在 `fileos` 里，要在 App 里看。`fileos help <组>` �
 
 `fileos identity` 显示你的身份、它的节点和它的链接。链接是你分享给别人的东西。只有保存签名密钥的节点才能添加节点（`fileos identity add-node`）或移除节点（`fileos identity remove-node`）。
 
+## 登录 App
+
+App 没有密码。你在节点自己的页面上用 passkey 登录 App，App 永远看不到你的 passkey。
+
+1. 运行 `fileos identity passkey`。它会打印一个链接；10 分钟内在同一台机器上打开它，添加一个 passkey（设备会要求你的面容、指纹或 PIN）。
+2. 当某个 App 要求你登录时，节点的页面会写明是哪个 App。选择 **Sign in with a passkey**，或者 **No**。
+
+之后，App 就知道你是谁（你的 DID），直到这次登录结束或被收回。
+
 ## App
 
 App 以 `.app` 文件的形式提供，比如 `Photos.app`。用 `fileos app install Photos.app` 安装。安装时，节点只给 App 它的 manifest 里申请的权限。`fileos app install` 会打印 App 的地址，例如 `http://photos-…localhost:7341/`，在浏览器里打开即可。`fileos` 命令只用于内核：App 做了什么，要在 App 里看。
